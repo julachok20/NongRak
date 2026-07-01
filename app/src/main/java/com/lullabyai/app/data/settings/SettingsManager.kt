@@ -43,6 +43,7 @@ class SettingsManager(private val context: Context) {
 
     private val SERVICE_USAGE = stringPreferencesKey("service_usage")
     private val REMINDED_KEYS = stringPreferencesKey("vaccine_reminded_keys")
+    private val MEDICINE_REMINDED_KEYS = stringPreferencesKey("medicine_reminded_keys")
 
     /** Dedupe markers (e.g. "vaccineId:3") so a vaccine reminder fires once per offset, not repeatedly. */
     suspend fun getRemindedKeys(): Set<String> =
@@ -50,6 +51,15 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setRemindedKeys(keys: Set<String>) {
         context.dataStore.edit { it[REMINDED_KEYS] = keys.joinToString("|||") }
+    }
+
+    /** Dedupe markers ("medicine:doseId") so a medicine dose reminder fires once, not repeatedly.
+     *  Kept separate from [REMINDED_KEYS] so each worker's own pruning logic can't wipe the other's keys. */
+    suspend fun getMedicineRemindedKeys(): Set<String> =
+        context.dataStore.data.first()[MEDICINE_REMINDED_KEYS]?.split("|||")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+
+    suspend fun setMedicineRemindedKeys(keys: Set<String>) {
+        context.dataStore.edit { it[MEDICINE_REMINDED_KEYS] = keys.joinToString("|||") }
     }
 
     /** Recently-opened service keys, newest first (comma-separated). For the dashboard "บริการล่าสุด". */

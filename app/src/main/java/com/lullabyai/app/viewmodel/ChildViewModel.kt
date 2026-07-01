@@ -33,6 +33,9 @@ data class ChildUiState(
     val reportLoading: Boolean = false,   // generating the doctor-export PDF
     val medicalDocuments: List<com.lullabyai.app.data.model.MedicalDocument> = emptyList(),
     val docUploading: Boolean = false,
+    val medicationSchedules: List<com.lullabyai.app.data.model.MedicationSchedule> = emptyList(),
+    val medicationDoses: List<com.lullabyai.app.data.model.MedicationDose> = emptyList(),
+    val medicationSaving: Boolean = false,
     /** Short-lived signed URL for the child photo (private bucket). Use this to display the avatar. */
     val childAvatarSignedUrl: String? = null,
     // --- Health-record detail screen (#7) ---
@@ -48,6 +51,7 @@ data class ChildUiState(
 class ChildViewModel : ViewModel() {
     private val childRepo = ChildRepository()
     private val healthRepo = HealthRepository()
+    private val medicationRepo = com.lullabyai.app.data.repository.MedicationRepository()
     private val aiRepo = AiRepository()
     private val chatRepo = com.lullabyai.app.data.repository.ChatRepository()
     private val notifRepo = com.lullabyai.app.data.repository.NotificationRepository()
@@ -457,6 +461,42 @@ class ChildViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(medicalDocuments = it)
             }
         }
+    }
+
+    /** Load the current child's medication schedules + individual dose timeline. */
+    fun loadMedications() {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            medicationRepo.getSchedules(childId).onSuccess { _uiState.value = _uiState.value.copy(medicationSchedules = it) }
+            medicationRepo.getDoses(childId).onSuccess { _uiState.value = _uiState.value.copy(medicationDoses = it) }
+        }
+    }
+
+    fun addMedicationSchedule(
+        medicineName: String, dosage: Double?, dosageUnit: String, frequency: String,
+        scheduleType: String, startDate: String?, endDate: String?, numDoses: Int?, notes: String?,
+        onDone: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            _uiState.value = _uiState.value.copy(medicationSaving = true)
+            medicationRepo.createSchedule(childId, medicineName, dosage, dosageUnit, frequency, scheduleType, startDate, endDate, numDoses, notes)
+            loadMedications()
+            _uiState.value = _uiState.value.copy(medicationSaving = false)
+            onDone()
+        }
+    }
+
+    fun markDoseTaken(id: String) {
+        viewModelScope.launch { medicationRepo.markDoseTaken(id); loadMedications() }
+    }
+
+    fun skipDose(id: String) {
+        viewModelScope.launch { medicationRepo.skipDose(id); loadMedications() }
+    }
+
+    fun deleteMedicationSchedule(id: String) {
+        viewModelScope.launch { medicationRepo.deleteSchedule(id); loadMedications() }
     }
 
     fun addGrowthRecord(record: GrowthRecord) {

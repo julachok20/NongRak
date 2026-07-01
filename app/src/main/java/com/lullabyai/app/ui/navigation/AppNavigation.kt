@@ -22,6 +22,9 @@ import com.lullabyai.app.ui.screens.child.ChildDevelopmentScreen
 import com.lullabyai.app.ui.screens.child.ChildHealthScreen
 import com.lullabyai.app.ui.screens.child.ChildSummaryScreen
 import com.lullabyai.app.ui.screens.child.VaccineBookScreen
+import com.lullabyai.app.ui.screens.child.MedicationHistoryScreen
+import com.lullabyai.app.ui.screens.child.AddMedicineScheduleScreen
+import com.lullabyai.app.ui.screens.child.MedicalDocumentHistoryScreen
 import com.lullabyai.app.ui.screens.common.MaintenanceScreen
 import com.lullabyai.app.ui.screens.dashboard.DashboardScreen
 import com.lullabyai.app.ui.screens.growth.GrowthMetricsScreen
@@ -252,6 +255,15 @@ fun AppNavigation(
         }
         composable(Screen.Maintenance.route) {
             MaintenanceScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Screen.MedicationHistory.route) {
+            MedicationHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.AddMedicineSchedule.route) {
+            AddMedicineScheduleScreen(childViewModel) { navController.popBackStack() }
+        }
+        composable(Screen.MedicalDocumentHistory.route) {
+            MedicalDocumentHistoryScreen(childViewModel) { navController.popBackStack() }
         }
         composable(Screen.GrowthMetrics.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("growth") }

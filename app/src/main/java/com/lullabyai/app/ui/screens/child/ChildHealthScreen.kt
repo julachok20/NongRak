@@ -40,12 +40,19 @@ fun ChildHealthScreen(
     val child = childState.child
     val healthRecords = childState.healthRecords
     val allergies = childState.allergies
+    val vaccines = childState.vaccines
+    val medicationDoses = childState.medicationDoses
+    val medicalDocuments = childState.medicalDocuments
 
     LaunchedEffect(child) {
         child?.let {
             chatViewModel.loadHealthAnalysis(it)
             chatViewModel.loadDiseaseRisk(it)
         }
+    }
+    LaunchedEffect(child?.id) {
+        childViewModel.loadMedications()
+        childViewModel.loadMedicalDocuments()
     }
 
     ChildScreenScaffold(title = if (s.isThai) "สุขภาพ" else "Health", currentTab = "health", navController = navController) { padding ->
@@ -160,6 +167,94 @@ fun ChildHealthScreen(
                             Spacer(Modifier.width(4.dp))
                             Text(if (s.isThai) "เพิ่ม / แก้ไขรายการ" else "Add / edit", color = Primary, style = MaterialTheme.typography.labelMedium)
                         }
+                    }
+                }
+            }
+
+            // Vaccine progress summary
+            item {
+                val total = vaccines.size
+                val completed = vaccines.count { it.status == "completed" }
+                val pct = if (total > 0) completed * 100 / total else 0
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { navController.navigate(Screen.VaccineBook.route) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Vaccines, null, tint = Primary, modifier = Modifier.size(20.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(if (s.isThai) "สมุดวัคซีน" else "Vaccine Book", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(if (s.isThai) "รับแล้ว $completed / $total เข็ม" else "$completed / $total doses received", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("$pct%", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Filled.ChevronRight, null, tint = Outline)
+                    }
+                }
+            }
+
+            // Medication summary + medicine alert
+            item {
+                val nextDose = medicationDoses.filter { it.status == "pending" }
+                    .mapNotNull { d -> runCatching { java.time.LocalDateTime.parse(d.scheduledAt) }.getOrNull()?.let { d to it } }
+                    .filter { it.second.isAfter(java.time.LocalDateTime.now()) }
+                    .minByOrNull { it.second }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Filled.Medication, null, tint = Tertiary, modifier = Modifier.size(20.dp))
+                                Text(if (s.isThai) "การทานยา" else "Medication", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = { navController.navigate(Screen.MedicationHistory.route) }) {
+                                Text(if (s.isThai) "ดูทั้งหมด" else "View all", color = Primary, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                        if (nextDose != null) {
+                            Surface(shape = RoundedCornerShape(12.dp), color = Primary.copy(0.08f)) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Icon(Icons.Filled.Alarm, null, tint = Primary, modifier = Modifier.size(20.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(if (s.isThai) "ยาครั้งถัดไป" else "Next dose", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(nextDose.second.toLocalTime().toString().take(5) + " น.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Primary)
+                                    }
+                                    Button(onClick = { childViewModel.markDoseTaken(nextDose.first.id) }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                                        Text(if (s.isThai) "ยืนยันให้ยาแล้ว" else "Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(if (s.isThai) "ไม่มีตารางการทานยาที่ต้องดำเนินการ" else "No pending doses", style = MaterialTheme.typography.bodySmall, color = Outline)
+                        }
+                    }
+                }
+            }
+
+            // Medical documents summary
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { navController.navigate(Screen.MedicalDocumentHistory.route) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(Secondary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Description, null, tint = Secondary, modifier = Modifier.size(20.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(if (s.isThai) "เอกสารทางการแพทย์" else "Medical Documents", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(if (s.isThai) "${medicalDocuments.size} ไฟล์" else "${medicalDocuments.size} files", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Filled.ChevronRight, null, tint = Outline)
                     }
                 }
             }

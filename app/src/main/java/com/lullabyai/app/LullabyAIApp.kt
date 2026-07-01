@@ -10,6 +10,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.work.VaccineReminderWorker
+import com.lullabyai.app.work.MedicineReminderWorker
 import java.util.concurrent.TimeUnit
 
 class NongRakApp : Application() {
@@ -27,6 +28,23 @@ class NongRakApp : Application() {
         // Create the system-notification channel up front so notifications can post.
         com.lullabyai.app.util.SystemNotifier.ensureChannel(this)
         scheduleVaccineReminders()
+        scheduleMedicineReminders()
+    }
+
+    /** Background reminders for due medicine doses (checks every 30 min + once now). */
+    private fun scheduleMedicineReminders() {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val wm = WorkManager.getInstance(this)
+        wm.enqueueUniquePeriodicWork(
+            "medicine_reminders",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<MedicineReminderWorker>(30, TimeUnit.MINUTES).setConstraints(constraints).build()
+        )
+        wm.enqueueUniqueWork(
+            "medicine_reminders_now",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<MedicineReminderWorker>().setConstraints(constraints).build()
+        )
     }
 
     /** Background reminders for upcoming vaccine appointments (checks ~twice a day + once now). */

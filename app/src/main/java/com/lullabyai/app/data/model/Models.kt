@@ -14,6 +14,35 @@ data class MedicalDocument(
 )
 
 @Serializable
+data class MedicationSchedule(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("medicine_name") val medicineName: String = "",
+    val dosage: Double? = null,
+    @SerialName("dosage_unit") val dosageUnit: String = "mg",
+    val frequency: String? = null,
+    @SerialName("schedule_type") val scheduleType: String = "times", // date_range | times | until_gone
+    @SerialName("start_date") val startDate: String? = null,
+    @SerialName("end_date") val endDate: String? = null,
+    @SerialName("num_doses") val numDoses: Int? = null,
+    @SerialName("doses_taken") val dosesTaken: Int = 0,
+    val notes: String? = null,
+    val status: String = "active", // active | completed | stopped
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class MedicationDose(
+    val id: String = "",
+    @SerialName("schedule_id") val scheduleId: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("scheduled_at") val scheduledAt: String = "",
+    @SerialName("taken_at") val takenAt: String? = null,
+    val status: String = "pending", // pending | taken | skipped
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
 data class Profile(
     val id: String = "",
     val username: String? = null,
