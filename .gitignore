@@ -1,0 +1,22 @@
+# Secrets — NEVER commit (contains all API keys + Supabase keys)
+local.properties
+
+# Signing keys
+*.jks
+*.keystore
+keystore.properties
+
+# Android / Gradle build output
+*.iml
+.gradle/
+/local.properties
+/.idea/
+/build/
+app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Misc
+*.log
+.DS_Store

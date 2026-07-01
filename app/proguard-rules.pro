@@ -1,0 +1,4 @@
+-keep class com.lullabyai.app.data.model.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn kotlinx.serialization.**

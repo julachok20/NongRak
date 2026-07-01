@@ -1,0 +1,145 @@
+// NongRak AI — server-side AI proxy. Keys live as Supabase secrets, never on the device.
+// Gemini key 1 -> 2 -> 3 -> 4 (across flash models) -> Claude Haiku -> friendly fallback.
+// Supports an optional per-request `system` override. When `system` is present we treat the
+// request as a STRUCTURED/JSON task and make Gemini return clean JSON reliably:
+//   * responseMimeType=application/json  (forces valid JSON; skipped when googleSearch is on,
+//     because Gemini rejects tools + JSON mime together)
+//   * thinkingConfig.thinkingBudget=0    (gemini-2.5-flash otherwise spends the whole token
+//     budget on hidden reasoning and returns EMPTY text -> empty lists in the app)
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
+const SYSTEM_PROMPT = `คุณคือ "น้องรัก" (NongRak) ผู้ช่วย AI สำหรับพ่อแม่ในการเลี้ยงดูเด็กแรกเกิดถึง 3 ปี ตอบเป็นภาษาไทยเสมอ ยกเว้นผู้ใช้พิมพ์ภาษาอังกฤษ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น และเข้าใจง่าย คุณเป็นผู้ช่วยที่แนะนำและให้กำลังใจ ไม่ทำสิ่งต่างๆ แทนพ่อแม่`;
+
+// gemini-1.5-flash* were retired (404 NOT_FOUND). Use current models; the -lite models have their
+// own quota pool, giving extra fallback within a key when the flash models hit 429 RESOURCE_EXHAUSTED.
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"];
+const CLAUDE_MODEL = "claude-3-5-haiku-20241022";
+const FALLBACK = "ขออภัยค่ะ ระบบผู้ช่วย AI ไม่พร้อมให้บริการในขณะนี้ กรุณาลองใหม่อีกครั้งในอีกสักครู่";
+
+type ImageInput = { data: string; mimeType: string } | null;
+
+async function tryGemini(prompt: string, useSearch: boolean, maxTokens: number, system: string, jsonMode: boolean, image: ImageInput) {
+  const raw = [
+    Deno.env.get("GEMINI_API_KEY_1"),
+    Deno.env.get("GEMINI_API_KEY_2"),
+    Deno.env.get("GEMINI_API_KEY_3"),
+    Deno.env.get("GEMINI_API_KEY_4"),
+    Deno.env.get("GEMINI_API_KEY_5"),
+  ];
+  // Track each key's real slot so `provider` reflects which key actually answered.
+  const present = raw.map((k, idx) => (k && k !== "null") ? (idx + 1) : 0).filter((x) => x !== 0);
+  const keys = raw.filter((k) => k && k !== "null") as string[];
+
+  for (let i = 0; i < keys.length; i++) {
+    const slot = present[i];
+    for (const model of GEMINI_MODELS) {
+      try {
+        const genCfg: Record<string, unknown> = { maxOutputTokens: maxTokens };
+        // Disable thinking on 2.5 for EVERY call (only 2.5 supports thinkingConfig) so short
+        // advisory text isn't starved by hidden reasoning tokens.
+        if (model.startsWith("gemini-2.5")) genCfg.thinkingConfig = { thinkingBudget: 0 };
+        // Force JSON output, but not together with googleSearch (Gemini rejects that combo).
+        if (jsonMode && !useSearch) genCfg.responseMimeType = "application/json";
+        const parts: Record<string, unknown>[] = [{ text: `${system}\n\n${prompt}` }];
+        if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+        const body: Record<string, unknown> = {
+          contents: [{ role: "user", parts }],
+          generationConfig: genCfg,
+        };
+        if (useSearch) body.tools = [{ googleSearch: {} }];
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys[i]}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+        );
+        const data = await res.json();
+        if (data.error) continue;
+        const text = (data.candidates?.[0]?.content?.parts ?? [])
+          .map((p: { text?: string }) => p.text ?? "").join("").trim();
+        if (text) return { text, provider: `Gemini ${slot}` };
+      } catch (_) { /* try next */ }
+    }
+  }
+  return null;
+}
+
+async function tryClaude(prompt: string, maxTokens: number, system: string, image: ImageInput) {
+  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!key || key === "null") return null;
+  try {
+    const content: Record<string, unknown>[] = [];
+    if (image) content.push({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } });
+    content.push({ type: "text", text: prompt });
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL, max_tokens: maxTokens, system: system,
+        messages: [{ role: "user", content }],
+      }),
+    });
+    const data = await res.json();
+    if (data.error) return null;
+    const text = (data.content ?? [])
+      .filter((c: { type?: string }) => c.type === "text")
+      .map((c: { text?: string }) => c.text ?? "").join("").trim();
+    if (text) return { text, provider: "Claude" };
+  } catch (_) { /* fall through */ }
+  return null;
+}
+
+// Final fallback: OpenRouter (OpenAI-compatible gateway). Used only if all Gemini keys AND Claude fail.
+async function tryOpenRouter(prompt: string, maxTokens: number, system: string, image: ImageInput) {
+  const key = Deno.env.get("OPENROUTER_API_KEY");
+  if (!key || key === "null") return null;
+  try {
+    const userContent: unknown = image
+      ? [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }]
+      : prompt;
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "NongRak AI" },
+      body: JSON.stringify({
+        model: "google/gemini-2.0-flash-exp:free",
+        max_tokens: maxTokens,
+        messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
+      }),
+    });
+    const data = await res.json();
+    if (data.error) return null;
+    const text = String(data.choices?.[0]?.message?.content ?? "").trim();
+    if (text) return { text, provider: "OpenRouter" };
+  } catch (_) { /* fall through */ }
+  return null;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "POST only" }), { status: 405, headers: { "Content-Type": "application/json" } });
+  }
+  let prompt = "", useSearch = false, maxTokens = 1024, system = SYSTEM_PROMPT, jsonMode = false;
+  let image: ImageInput = null;
+  try {
+    const b = await req.json();
+    prompt = b.prompt ?? "";
+    useSearch = !!b.useSearch;
+    maxTokens = typeof b.maxTokens === "number" ? b.maxTokens : 1024;
+    // A per-request system override means this is a structured/JSON task (not the chat persona).
+    if (typeof b.system === "string" && b.system.trim()) { system = b.system; jsonMode = true; }
+    // Optional image (base64, no data: prefix) for vision questions.
+    if (typeof b.imageBase64 === "string" && b.imageBase64.length > 0) {
+      image = { data: b.imageBase64, mimeType: typeof b.imageMimeType === "string" ? b.imageMimeType : "image/jpeg" };
+    }
+  } catch (_) { /* ignore */ }
+
+  // Text is required unless an image is attached (user may send just a photo).
+  if (!prompt && !image) {
+    return new Response(JSON.stringify({ error: "missing prompt" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  if (!prompt) prompt = "ช่วยดูรูปภาพนี้และให้คำแนะนำ";
+
+  const result = (await tryGemini(prompt, useSearch, maxTokens, system, jsonMode, image))
+    ?? (await tryClaude(prompt, maxTokens, system, image))
+    ?? (await tryOpenRouter(prompt, maxTokens, system, image));
+  const payload = result ?? { text: FALLBACK, provider: "" };
+  return new Response(JSON.stringify(payload), { headers: { "Content-Type": "application/json" } });
+});

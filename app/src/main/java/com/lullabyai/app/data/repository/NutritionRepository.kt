@@ -1,0 +1,111 @@
+package com.lullabyai.app.data.repository
+
+import com.lullabyai.app.data.model.ExerciseLog
+import com.lullabyai.app.data.model.FoodLog
+import com.lullabyai.app.data.remote.supabase
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import java.time.LocalDate
+
+/**
+ * Food + exercise logging for the Nutrition/Calorie/Exercise feature.
+ * All rows are RLS-scoped to the parent via the children table.
+ */
+class NutritionRepository {
+
+    private fun today(): String = LocalDate.now().toString()
+
+    // ---------------- FOOD ----------------
+
+    suspend fun getFoodLogs(childId: String, date: String = today()): List<FoodLog> = runCatching {
+        supabase.from("food_logs").select {
+            filter { eq("child_id", childId); eq("log_date", date) }
+            order("created_at", Order.ASCENDING)
+        }.decodeList<FoodLog>()
+    }.getOrDefault(emptyList())
+
+    suspend fun addFood(childId: String, mealType: String, itemName: String, calories: Int? = null, date: String = today()): Result<Unit> = runCatching {
+        supabase.from("food_logs").insert(buildJsonObject {
+            put("child_id", JsonPrimitive(childId))
+            put("log_date", JsonPrimitive(date))
+            put("meal_type", JsonPrimitive(mealType))
+            put("item_name", JsonPrimitive(itemName))
+            put("calories", calories?.let { JsonPrimitive(it) } ?: JsonNull)
+        })
+    }
+
+    suspend fun updateFood(id: String, itemName: String): Result<Unit> = runCatching {
+        supabase.from("food_logs").update(buildJsonObject { put("item_name", JsonPrimitive(itemName)) }) {
+            filter { eq("id", id) }
+        }
+    }
+
+    suspend fun setFoodCalories(id: String, calories: Int): Result<Unit> = runCatching {
+        supabase.from("food_logs").update(buildJsonObject { put("calories", JsonPrimitive(calories)) }) {
+            filter { eq("id", id) }
+        }
+    }
+
+    suspend fun deleteFood(id: String): Result<Unit> = runCatching {
+        supabase.from("food_logs").delete { filter { eq("id", id) } }
+    }
+
+    // ---------------- EXERCISE ----------------
+
+    suspend fun getExerciseLogs(childId: String, date: String = today()): List<ExerciseLog> = runCatching {
+        supabase.from("exercise_logs").select {
+            filter { eq("child_id", childId); eq("log_date", date) }
+            order("created_at", Order.ASCENDING)
+        }.decodeList<ExerciseLog>()
+    }.getOrDefault(emptyList())
+
+    /** Exercise logs for the whole current week (for the weekly goal progress ring). */
+    suspend fun getWeeklyExercise(childId: String): List<ExerciseLog> = runCatching {
+        val weekStart = LocalDate.now().with(java.time.DayOfWeek.MONDAY).toString()
+        supabase.from("exercise_logs").select {
+            filter { eq("child_id", childId); gte("log_date", weekStart) }
+            order("log_date", Order.DESCENDING)
+        }.decodeList<ExerciseLog>()
+    }.getOrDefault(emptyList())
+
+    suspend fun addExercise(
+        childId: String, activityName: String, durationMin: Int?, caloriesBurned: Int?, date: String = today()
+    ): Result<Unit> = runCatching {
+        supabase.from("exercise_logs").insert(buildJsonObject {
+            put("child_id", JsonPrimitive(childId))
+            put("log_date", JsonPrimitive(date))
+            put("activity_name", JsonPrimitive(activityName))
+            put("duration_min", durationMin?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("calories_burned", caloriesBurned?.let { JsonPrimitive(it) } ?: JsonNull)
+        })
+    }
+
+    suspend fun deleteExercise(id: String): Result<Unit> = runCatching {
+        supabase.from("exercise_logs").delete { filter { eq("id", id) } }
+    }
+
+    // ---------------- SUMMARY (computed, not stored) ----------------
+
+    data class DailySummary(
+        val intakeKcal: Int,
+        val burnedKcal: Int,
+        val perMeal: Map<String, Int>,   // meal_type -> kcal
+        val exerciseMinutes: Int
+    )
+
+    suspend fun getDailySummary(childId: String, date: String = today()): DailySummary {
+        val foods = getFoodLogs(childId, date)
+        val ex = getExerciseLogs(childId, date)
+        val perMeal = foods.groupBy { it.mealType }
+            .mapValues { (_, items) -> items.sumOf { it.calories ?: 0 } }
+        return DailySummary(
+            intakeKcal = foods.sumOf { it.calories ?: 0 },
+            burnedKcal = ex.sumOf { it.caloriesBurned ?: 0 },
+            perMeal = perMeal,
+            exerciseMinutes = ex.sumOf { it.durationMin ?: 0 }
+        )
+    }
+}

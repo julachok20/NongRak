@@ -1,0 +1,119 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+package com.lullabyai.app.ui.screens.settings
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lullabyai.app.data.model.AppNotification
+import com.lullabyai.app.data.repository.NotifCategory
+import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.viewmodel.NotificationViewModel
+
+@Composable
+fun NotificationsScreen(onBack: () -> Unit) {
+    val vm: NotificationViewModel = viewModel()
+    val state by vm.uiState.collectAsState()
+    LaunchedEffect(Unit) { vm.load() }
+
+    val tabs = listOf(
+        Triple("schedule", "กำหนดการ", NotifCategory.SCHEDULE),
+        Triple("warning", "คำเตือน", NotifCategory.WARNING),
+        Triple("normal", "ทั่วไป", NotifCategory.NORMAL)
+    )
+    var selectedTab by remember { mutableStateOf(0) }
+    val currentCategory = tabs[selectedTab].third
+    val filtered = state.all.filter { it.category == currentCategory }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("การแจ้งเตือน", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // Category tabs
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = MaterialTheme.colorScheme.background,
+                contentColor = Primary
+            ) {
+                tabs.forEachIndexed { i, (key, label, _) ->
+                    val count = state.all.count { it.category == tabs[i].third }
+                    Tab(
+                        selected = selectedTab == i,
+                        onClick = { selectedTab = i },
+                        text = { Text(if (count > 0) "$label ($count)" else label, style = MaterialTheme.typography.labelLarge) }
+                    )
+                }
+            }
+
+            if (state.isLoading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Primary) }
+            } else if (filtered.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.NotificationsNone, null, tint = Outline, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("ยังไม่มีการแจ้งเตือน", color = Outline, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    items(filtered) { n -> NotificationCard(n) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationCard(n: AppNotification) {
+    val (icon, color) = when (n.category) {
+        NotifCategory.SCHEDULE -> Icons.Filled.Event to Primary
+        NotifCategory.WARNING -> Icons.Filled.Warning to HealthRisk
+        else -> Icons.Filled.Notifications to HealthGood
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(0.12f)),
+                contentAlignment = Alignment.Center
+            ) { Icon(icon, null, tint = color, modifier = Modifier.size(22.dp)) }
+            Column(Modifier.weight(1f)) {
+                Text(n.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                n.body?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                com.lullabyai.app.util.TimeUtils.localDate(n.createdAt)?.let { d ->
+                    val t = com.lullabyai.app.util.TimeUtils.localTime(n.createdAt)
+                    Text(if (t != null) "$d • $t" else d, style = MaterialTheme.typography.labelSmall, color = Outline)
+                }
+            }
+        }
+    }
+}
