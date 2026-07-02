@@ -199,8 +199,8 @@ fun ChildHealthScreen(
             // Medication summary + medicine alert
             item {
                 val nextDose = medicationDoses.filter { it.status == "pending" }
-                    .mapNotNull { d -> runCatching { java.time.LocalDateTime.parse(d.scheduledAt) }.getOrNull()?.let { d to it } }
-                    .filter { it.second.isAfter(java.time.LocalDateTime.now()) }
+                    .mapNotNull { d -> com.lullabyai.app.util.TimeUtils.parseInstant(d.scheduledAt)?.let { d to it } }
+                    .filter { it.second.isAfter(java.time.Instant.now()) }
                     .minByOrNull { it.second }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -224,7 +224,7 @@ fun ChildHealthScreen(
                                     Icon(Icons.Filled.Alarm, null, tint = Primary, modifier = Modifier.size(20.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(if (s.isThai) "ยาครั้งถัดไป" else "Next dose", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(nextDose.second.toLocalTime().toString().take(5) + " น.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Primary)
+                                        Text((com.lullabyai.app.util.TimeUtils.localTime(nextDose.first.scheduledAt) ?: "") + " น.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Primary)
                                     }
                                     Button(onClick = { childViewModel.markDoseTaken(nextDose.first.id) }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
                                         Text(if (s.isThai) "ยืนยันให้ยาแล้ว" else "Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall)

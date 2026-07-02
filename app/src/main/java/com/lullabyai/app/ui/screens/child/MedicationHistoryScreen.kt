@@ -23,8 +23,11 @@ import com.lullabyai.app.data.model.MedicationSchedule
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.TimeUtils
 import com.lullabyai.app.viewmodel.ChildViewModel
-import java.time.LocalDateTime
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 @Composable
 fun MedicationHistoryScreen(
@@ -39,15 +42,15 @@ fun MedicationHistoryScreen(
 
     LaunchedEffect(state.child?.id) { childViewModel.loadMedications() }
 
-    val now = remember { LocalDateTime.now() }
+    val today = remember { LocalDate.now() }
     val todayDoses = remember(doses) {
-        doses.filter { runCatching { LocalDateTime.parse(it.scheduledAt).toLocalDate() == now.toLocalDate() }.getOrDefault(false) }
+        doses.filter { TimeUtils.parseInstant(it.scheduledAt)?.atZone(ZoneId.systemDefault())?.toLocalDate() == today }
             .sortedBy { it.scheduledAt }
     }
     val takenToday = todayDoses.count { it.status == "taken" }
     val nextDose = doses.filter { it.status == "pending" }
-        .mapNotNull { d -> runCatching { LocalDateTime.parse(d.scheduledAt) }.getOrNull()?.let { d to it } }
-        .filter { it.second.isAfter(now) }.minByOrNull { it.second }
+        .mapNotNull { d -> TimeUtils.parseInstant(d.scheduledAt)?.let { d to it } }
+        .filter { it.second.isAfter(Instant.now()) }.minByOrNull { it.second }
 
     Scaffold(
         topBar = {
@@ -70,7 +73,7 @@ fun MedicationHistoryScreen(
                     SummaryTile(if (s.isThai) "ทานยาแล้ววันนี้" else "Taken today", "$takenToday/${todayDoses.size}", Modifier.weight(1f))
                     SummaryTile(
                         if (s.isThai) "ยาครั้งถัดไป" else "Next dose",
-                        nextDose?.second?.toLocalTime()?.toString()?.take(5) ?: "-",
+                        nextDose?.first?.scheduledAt?.let { TimeUtils.localTime(it) } ?: "-",
                         Modifier.weight(1f)
                     )
                 }
@@ -125,7 +128,7 @@ private fun SummaryTile(label: String, value: String, modifier: Modifier = Modif
 @Composable
 private fun DoseRow(dose: MedicationDose, medicineName: String, dosageText: String, onTaken: () -> Unit, onSkip: () -> Unit) {
     val s = LocalStrings.current
-    val time = runCatching { LocalDateTime.parse(dose.scheduledAt).toLocalTime().toString().take(5) }.getOrDefault("")
+    val time = TimeUtils.localTime(dose.scheduledAt) ?: ""
     val (badgeColor, badgeText) = when (dose.status) {
         "taken" -> Color(0xFF4CAF50) to (if (s.isThai) "ทานแล้ว" else "Completed")
         "skipped" -> Color(0xFF9E9E9E) to (if (s.isThai) "ข้าม" else "Skipped")

@@ -9,8 +9,9 @@ import com.lullabyai.app.data.repository.MedicationRepository
 import com.lullabyai.app.data.repository.NotifCategory
 import com.lullabyai.app.data.repository.NotificationRepository
 import com.lullabyai.app.data.settings.SettingsManager
+import com.lullabyai.app.util.TimeUtils
 import io.github.jan.supabase.auth.auth
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * Runs in the background (WorkManager) to remind parents about due medicine doses.
@@ -26,7 +27,7 @@ class MedicineReminderWorker(ctx: Context, params: WorkerParameters) : Coroutine
         val children = ChildRepository().getChildren().getOrDefault(emptyList())
         if (children.isEmpty()) return Result.success()
 
-        val now = LocalDateTime.now()
+        val now = Instant.now()
         val settings = SettingsManager(applicationContext)
         val alreadyReminded = settings.getMedicineRemindedKeys()
         val notifRepo = NotificationRepository()
@@ -40,7 +41,7 @@ class MedicineReminderWorker(ctx: Context, params: WorkerParameters) : Coroutine
             val doses = medicationRepo.getDoses(child.id).getOrDefault(emptyList())
             for (dose in doses) {
                 if (dose.status != "pending") continue
-                val due = runCatching { LocalDateTime.parse(dose.scheduledAt) }.getOrNull() ?: continue
+                val due = TimeUtils.parseInstant(dose.scheduledAt) ?: continue
                 if (due.isAfter(now)) continue // not due yet
                 val key = dose.id
                 if (key in alreadyReminded || key in newlyReminded) continue

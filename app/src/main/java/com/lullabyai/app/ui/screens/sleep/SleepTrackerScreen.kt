@@ -22,10 +22,12 @@ import com.lullabyai.app.data.model.SleepLog
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.TimeUtils
 import com.lullabyai.app.viewmodel.ChildViewModel
 import java.time.Duration
-import java.time.LocalDateTime
-import java.time.LocalTime
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 @Composable
 fun SleepTrackerScreen(
@@ -43,16 +45,17 @@ fun SleepTrackerScreen(
     // Tick every 30s so the elapsed-time display stays live while a session is active.
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(active?.id) {
-        while (active != null) { kotlinx.coroutines.delay(30_000); tick++ }
+        if (active == null) return@LaunchedEffect
+        while (true) { kotlinx.coroutines.delay(30_000); tick++ }
     }
 
-    val elapsed = active?.let { runCatching { Duration.between(LocalDateTime.parse(it.startTime), LocalDateTime.now()) }.getOrNull() }
-    val today = LocalDateTime.now().toLocalDate()
-    val todayLogs = logs.filter { runCatching { LocalDateTime.parse(it.startTime).toLocalDate() == today }.getOrDefault(false) }
+    val elapsed = active?.let { TimeUtils.parseInstant(it.startTime)?.let { s -> Duration.between(s, Instant.now()) } }
+    val today = LocalDate.now()
+    val todayLogs = logs.filter { TimeUtils.parseInstant(it.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate() == today }
     val totalMinutesToday = todayLogs.sumOf { log ->
-        val start = runCatching { LocalDateTime.parse(log.startTime) }.getOrNull()
-        val end = log.endTime?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() } ?: LocalDateTime.now()
-        if (start != null) Duration.between(start, end).toMinutes().coerceAtLeast(0) else 0
+        val start = TimeUtils.parseInstant(log.startTime)
+        val end = log.endTime?.let { TimeUtils.parseInstant(it) } ?: Instant.now()
+        if (start != null) Duration.between(start, end).toMinutes().coerceAtLeast(0) else 0L
     }
 
     Scaffold(
@@ -79,11 +82,15 @@ fun SleepTrackerScreen(
                                 .then(Modifier),
                             contentAlignment = Alignment.Center
                         ) {
-                            IconButton(onClick = { childViewModel.toggleSleepSession() }, modifier = Modifier.fillMaxSize()) {
-                                Icon(
-                                    if (active != null) Icons.Filled.Hotel else Icons.Filled.Bedtime,
-                                    null, tint = if (active != null) Color.White else Primary, modifier = Modifier.size(40.dp)
-                                )
+                            IconButton(onClick = { childViewModel.toggleSleepSession() }, enabled = !state.sleepSaving, modifier = Modifier.fillMaxSize()) {
+                                if (state.sleepSaving) {
+                                    CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp, color = if (active != null) Color.White else Primary)
+                                } else {
+                                    Icon(
+                                        if (active != null) Icons.Filled.Hotel else Icons.Filled.Bedtime,
+                                        null, tint = if (active != null) Color.White else Primary, modifier = Modifier.size(40.dp)
+                                    )
+                                }
                             }
                         }
                         Text(
@@ -151,10 +158,10 @@ private fun SleepStat(label: String, value: String, modifier: Modifier = Modifie
 @Composable
 private fun SleepLogRow(log: SleepLog, onDelete: () -> Unit) {
     val s = LocalStrings.current
-    val start = runCatching { LocalDateTime.parse(log.startTime) }.getOrNull()
-    val end = log.endTime?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
-    val durationText = if (start != null) {
-        val dur = Duration.between(start, end ?: LocalDateTime.now())
+    val startInstant = TimeUtils.parseInstant(log.startTime)
+    val endInstant = log.endTime?.let { TimeUtils.parseInstant(it) }
+    val durationText = if (startInstant != null) {
+        val dur = Duration.between(startInstant, endInstant ?: Instant.now())
         "${dur.toHours()}${if (s.isThai) "ชม." else "h"} ${dur.toMinutes() % 60}${if (s.isThai) "น." else "m"}"
     } else ""
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
@@ -165,7 +172,7 @@ private fun SleepLogRow(log: SleepLog, onDelete: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(if (log.sleepType == "nap") (if (s.isThai) "งีบ" else "Nap") else (if (s.isThai) "นอนหลัก" else "Main sleep"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    (start?.toLocalTime()?.toString()?.take(5) ?: "") + " - " + (end?.toLocalTime()?.toString()?.take(5) ?: (if (s.isThai) "กำลังหลับ" else "ongoing")),
+                    (TimeUtils.localTime(log.startTime) ?: "") + " - " + (TimeUtils.localTime(log.endTime) ?: (if (s.isThai) "กำลังหลับ" else "ongoing")),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

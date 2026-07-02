@@ -83,7 +83,7 @@ fun DashboardScreen(
     val open: (String) -> Unit = { k -> svcMap[k]?.nav?.invoke() }
     val recentKeys = (recent + listOf("nutrition", "growth")).distinct().take(2)
     // "บริการหลัก" reorders by the user's activity: most-used first, with a stable default order on ties.
-    val mainCandidates = listOf("vaccine", "development", "health", "nutrition", "growth", "sleep")
+    val mainCandidates = listOf("vaccine", "development", "health", "nutrition", "growth")
     val mainKeys = mainCandidates
         .sortedWith(compareByDescending<String> { usage[it] ?: 0 }.thenBy { mainCandidates.indexOf(it) })
         .take(3)
@@ -194,6 +194,9 @@ fun DashboardScreen(
                 mainKeys.forEach { k ->
                     svcMap[k]?.let { sv -> ServiceRow(sv.label, sv.sub, sv.icon, sv.color) { open(k) } }
                 }
+                // Sleep tracker — always shown here (not part of the usage-ranked rotation above,
+                // which caps at 3 slots and would otherwise make this unreachable for new users).
+                svcMap["sleep"]?.let { sv -> ServiceRow(sv.label, sv.sub, sv.icon, sv.color) { open("sleep") } }
 
                 // Help center
                 Card(

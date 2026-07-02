@@ -3,6 +3,7 @@ package com.lullabyai.app.data.repository
 import com.lullabyai.app.data.model.MedicationDose
 import com.lullabyai.app.data.model.MedicationSchedule
 import com.lullabyai.app.data.remote.supabase
+import com.lullabyai.app.util.TimeUtils
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.json.JsonPrimitive
@@ -72,7 +73,7 @@ class MedicationRepository {
             buildJsonObject {
                 put("schedule_id", JsonPrimitive(schedule.id))
                 put("child_id", JsonPrimitive(childId))
-                put("scheduled_at", JsonPrimitive(time.toString()))
+                put("scheduled_at", JsonPrimitive(TimeUtils.toUtcIso(time)))
             }
         }
         if (doseRows.isNotEmpty()) supabase.from("medication_doses").insert(doseRows)
@@ -102,7 +103,7 @@ class MedicationRepository {
         supabase.from("medication_doses").update(
             buildJsonObject {
                 put("status", JsonPrimitive("taken"))
-                put("taken_at", JsonPrimitive(LocalDateTime.now().toString()))
+                put("taken_at", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.now())))
             }
         ) { filter { eq("id", id) } }
         // Best-effort: bump the parent schedule's doses_taken counter.

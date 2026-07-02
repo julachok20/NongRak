@@ -517,12 +517,18 @@ class ChildViewModel : ViewModel() {
 
     /** One-tap sleep tracking: starts a session if none is active, otherwise ends the active one. */
     fun toggleSleepSession(sleepType: String = "main", mood: String? = null) {
+        // Guard against a double-tap firing two inserts: startSession/endSession are both async,
+        // so without this a second tap before loadSleep() refreshes state would still see the old
+        // activeSleepSession and repeat the same action (e.g. two "start" calls → two open sessions).
+        if (_uiState.value.sleepSaving) return
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
+            _uiState.value = _uiState.value.copy(sleepSaving = true)
             val active = _uiState.value.activeSleepSession
             if (active != null) sleepRepo.endSession(active.id, mood)
             else sleepRepo.startSession(childId, sleepType)
             loadSleep()
+            _uiState.value = _uiState.value.copy(sleepSaving = false)
         }
     }
 

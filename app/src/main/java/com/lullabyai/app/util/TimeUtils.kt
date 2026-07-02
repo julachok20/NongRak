@@ -52,4 +52,17 @@ object TimeUtils {
         if (d.length < 10) return null
         return d.substring(8, 10) + "/" + d.substring(5, 7)
     }
+
+    /** Parse any Supabase ISO timestamp (offset / Z / naive-as-UTC) into an [Instant], for
+     *  programmatic use — Duration math, isBefore/isAfter comparisons. Returns null if unparseable. */
+    fun parseInstant(iso: String?): Instant? {
+        if (iso.isNullOrBlank()) return null
+        return parseLocal(iso)?.toInstant()
+    }
+
+    /** Convert a device-local wall-clock date+time into the UTC ISO string Supabase expects for a
+     *  timestamptz column. Use this for every write — never send LocalDateTime.now().toString()
+     *  directly, since Postgres treats an offset-less string as UTC, silently shifting local times. */
+    fun toUtcIso(local: LocalDateTime): String =
+        local.atZone(ZoneId.systemDefault()).toInstant().toString()
 }

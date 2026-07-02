@@ -3,6 +3,7 @@ package com.lullabyai.app.data.repository
 import com.lullabyai.app.data.model.SleepLog
 import com.lullabyai.app.data.model.SleepSchedule
 import com.lullabyai.app.data.remote.supabase
+import com.lullabyai.app.util.TimeUtils
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.json.JsonNull
@@ -31,7 +32,7 @@ class SleepRepository {
             buildJsonObject {
                 put("child_id", JsonPrimitive(childId))
                 put("sleep_type", JsonPrimitive(sleepType))
-                put("start_time", JsonPrimitive(LocalDateTime.now().toString()))
+                put("start_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.now())))
             }
         ) { select() }.decodeSingle<SleepLog>()
     }
@@ -39,20 +40,21 @@ class SleepRepository {
     suspend fun endSession(id: String, mood: String?): Result<Unit> = runCatching {
         supabase.from("sleep_logs").update(
             buildJsonObject {
-                put("end_time", JsonPrimitive(LocalDateTime.now().toString()))
+                put("end_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.now())))
                 put("mood", mood?.let { JsonPrimitive(it) } ?: JsonNull)
             }
         ) { filter { eq("id", id) } }
     }
 
-    /** Manually log a completed sleep period (both start + end known up front). */
+    /** Manually log a completed sleep period. [start]/[end] are naive local wall-clock ISO strings
+     *  (e.g. "2026-07-02T20:00:00") — converted to proper UTC instants before writing. */
     suspend fun addManualLog(childId: String, sleepType: String, start: String, end: String): Result<Unit> = runCatching {
         supabase.from("sleep_logs").insert(
             buildJsonObject {
                 put("child_id", JsonPrimitive(childId))
                 put("sleep_type", JsonPrimitive(sleepType))
-                put("start_time", JsonPrimitive(start))
-                put("end_time", JsonPrimitive(end))
+                put("start_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(start))))
+                put("end_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(end))))
             }
         )
     }
