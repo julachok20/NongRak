@@ -25,6 +25,10 @@ import com.lullabyai.app.ui.screens.child.VaccineBookScreen
 import com.lullabyai.app.ui.screens.child.MedicationHistoryScreen
 import com.lullabyai.app.ui.screens.child.AddMedicineScheduleScreen
 import com.lullabyai.app.ui.screens.child.MedicalDocumentHistoryScreen
+import com.lullabyai.app.ui.screens.sleep.SleepTrackerScreen
+import com.lullabyai.app.ui.screens.sleep.AddSleepTimeScreen
+import com.lullabyai.app.ui.screens.sleep.SleepScheduleScreen
+import com.lullabyai.app.ui.screens.sleep.SleepGuidanceScreen
 import com.lullabyai.app.ui.screens.common.MaintenanceScreen
 import com.lullabyai.app.ui.screens.dashboard.DashboardScreen
 import com.lullabyai.app.ui.screens.growth.GrowthMetricsScreen
@@ -217,7 +221,8 @@ fun AppNavigation(
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToHelp = { navController.navigate(Screen.HelpFaq.route) },
                 onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
-                onNavigateToStats = { navController.navigate(Screen.Maintenance.route) }
+                onNavigateToStats = { navController.navigate(Screen.Maintenance.route) },
+                onNavigateToSleep = { navController.navigate(Screen.SleepTracker.route) }
             )
         }
         composable(Screen.AiChat.route) {
@@ -264,6 +269,19 @@ fun AppNavigation(
         }
         composable(Screen.MedicalDocumentHistory.route) {
             MedicalDocumentHistoryScreen(childViewModel) { navController.popBackStack() }
+        }
+        composable(Screen.SleepTracker.route) {
+            androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("sleep") }
+            SleepTrackerScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.AddSleepTime.route) {
+            AddSleepTimeScreen(childViewModel) { navController.popBackStack() }
+        }
+        composable(Screen.SleepSchedule.route) {
+            SleepScheduleScreen(childViewModel) { navController.popBackStack() }
+        }
+        composable(Screen.SleepGuidance.route) {
+            SleepGuidanceScreen { navController.popBackStack() }
         }
         composable(Screen.GrowthMetrics.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("growth") }

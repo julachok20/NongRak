@@ -47,4 +47,8 @@ sealed class Screen(val route: String) {
     object MedicationHistory : Screen("medication_history")
     object AddMedicineSchedule : Screen("add_medicine_schedule")
     object MedicalDocumentHistory : Screen("medical_document_history")
+    object SleepTracker : Screen("sleep_tracker")
+    object AddSleepTime : Screen("add_sleep_time")
+    object SleepSchedule : Screen("sleep_schedule")
+    object SleepGuidance : Screen("sleep_guidance")
 }

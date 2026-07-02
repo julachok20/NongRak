@@ -43,6 +43,30 @@ data class MedicationDose(
 )
 
 @Serializable
+data class SleepLog(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("sleep_type") val sleepType: String = "main", // main | nap
+    @SerialName("start_time") val startTime: String = "",
+    @SerialName("end_time") val endTime: String? = null,       // null while a session is in progress
+    val mood: String? = null,
+    val notes: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class SleepSchedule(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    val label: String = "",
+    @SerialName("sleep_type") val sleepType: String = "main",
+    @SerialName("start_time") val startTime: String = "",   // "HH:mm"
+    @SerialName("end_time") val endTime: String = "",        // "HH:mm"
+    @SerialName("days_of_week") val daysOfWeek: String = "ALL", // "MON,TUE,..." or "ALL"
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
 data class Profile(
     val id: String = "",
     val username: String? = null,

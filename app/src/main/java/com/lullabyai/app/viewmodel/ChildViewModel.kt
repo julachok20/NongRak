@@ -36,6 +36,10 @@ data class ChildUiState(
     val medicationSchedules: List<com.lullabyai.app.data.model.MedicationSchedule> = emptyList(),
     val medicationDoses: List<com.lullabyai.app.data.model.MedicationDose> = emptyList(),
     val medicationSaving: Boolean = false,
+    val sleepLogs: List<com.lullabyai.app.data.model.SleepLog> = emptyList(),
+    val sleepSchedules: List<com.lullabyai.app.data.model.SleepSchedule> = emptyList(),
+    val activeSleepSession: com.lullabyai.app.data.model.SleepLog? = null,
+    val sleepSaving: Boolean = false,
     /** Short-lived signed URL for the child photo (private bucket). Use this to display the avatar. */
     val childAvatarSignedUrl: String? = null,
     // --- Health-record detail screen (#7) ---
@@ -52,6 +56,7 @@ class ChildViewModel : ViewModel() {
     private val childRepo = ChildRepository()
     private val healthRepo = HealthRepository()
     private val medicationRepo = com.lullabyai.app.data.repository.MedicationRepository()
+    private val sleepRepo = com.lullabyai.app.data.repository.SleepRepository()
     private val aiRepo = AiRepository()
     private val chatRepo = com.lullabyai.app.data.repository.ChatRepository()
     private val notifRepo = com.lullabyai.app.data.repository.NotificationRepository()
@@ -497,6 +502,57 @@ class ChildViewModel : ViewModel() {
 
     fun deleteMedicationSchedule(id: String) {
         viewModelScope.launch { medicationRepo.deleteSchedule(id); loadMedications() }
+    }
+
+    /** Load the current child's sleep sessions + recurring schedules. */
+    fun loadSleep() {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            sleepRepo.getLogs(childId).onSuccess { logs ->
+                _uiState.value = _uiState.value.copy(sleepLogs = logs, activeSleepSession = logs.firstOrNull { it.endTime == null })
+            }
+            sleepRepo.getSchedules(childId).onSuccess { _uiState.value = _uiState.value.copy(sleepSchedules = it) }
+        }
+    }
+
+    /** One-tap sleep tracking: starts a session if none is active, otherwise ends the active one. */
+    fun toggleSleepSession(sleepType: String = "main", mood: String? = null) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            val active = _uiState.value.activeSleepSession
+            if (active != null) sleepRepo.endSession(active.id, mood)
+            else sleepRepo.startSession(childId, sleepType)
+            loadSleep()
+        }
+    }
+
+    fun addManualSleepLog(sleepType: String, start: String, end: String) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            _uiState.value = _uiState.value.copy(sleepSaving = true)
+            sleepRepo.addManualLog(childId, sleepType, start, end)
+            loadSleep()
+            _uiState.value = _uiState.value.copy(sleepSaving = false)
+        }
+    }
+
+    fun deleteSleepLog(id: String) {
+        viewModelScope.launch { sleepRepo.deleteLog(id); loadSleep() }
+    }
+
+    fun addSleepSchedule(label: String, sleepType: String, startTime: String, endTime: String, daysOfWeek: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            _uiState.value = _uiState.value.copy(sleepSaving = true)
+            sleepRepo.createSchedule(childId, label, sleepType, startTime, endTime, daysOfWeek)
+            loadSleep()
+            _uiState.value = _uiState.value.copy(sleepSaving = false)
+            onDone()
+        }
+    }
+
+    fun deleteSleepSchedule(id: String) {
+        viewModelScope.launch { sleepRepo.deleteSchedule(id); loadSleep() }
     }
 
     fun addGrowthRecord(record: GrowthRecord) {

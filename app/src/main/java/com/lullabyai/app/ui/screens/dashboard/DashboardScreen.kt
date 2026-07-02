@@ -40,7 +40,8 @@ fun DashboardScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToNotifications: () -> Unit = {},
-    onNavigateToStats: () -> Unit = {}
+    onNavigateToStats: () -> Unit = {},
+    onNavigateToSleep: () -> Unit = {}
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val isThai = s.isThai
@@ -73,6 +74,7 @@ fun DashboardScreen(
         DashSvc("health", if (isThai) "ประวัติสุขภาพ" else "Health history", if (isThai) "บันทึกอาการและประวัติการรักษา" else "Symptoms & care history", Icons.Filled.HealthAndSafety, Color(0xFF00897B), onNavigateToHealth),
         DashSvc("nutrition", if (isThai) "โภชนาการ" else "Nutrition", if (isThai) "บันทึกอาหารและคำนวณแคลอรี่" else "Log food & calories", Icons.Filled.Restaurant, Color(0xFFEF6C00), onNavigateToNutrition),
         DashSvc("growth", if (isThai) "การเจริญเติบโต" else "Growth", if (isThai) "น้ำหนักและส่วนสูงตามวัย" else "Weight & height", Icons.Filled.MonitorWeight, Color(0xFF6A1B9A), onNavigateToGrowth),
+        DashSvc("sleep", if (isThai) "การนอน" else "Sleep", if (isThai) "ติดตามและตั้งตารางการนอน" else "Track & schedule sleep", Icons.Filled.Bedtime, Color(0xFF3949AB), onNavigateToSleep),
         DashSvc("chat", if (isThai) "คุยกับ AI" else "Chat with AI", "", Icons.Filled.AutoAwesome, Primary, onNavigateToChat),
     )
     val svcMap = services.associateBy { it.key }
@@ -81,7 +83,7 @@ fun DashboardScreen(
     val open: (String) -> Unit = { k -> svcMap[k]?.nav?.invoke() }
     val recentKeys = (recent + listOf("nutrition", "growth")).distinct().take(2)
     // "บริการหลัก" reorders by the user's activity: most-used first, with a stable default order on ties.
-    val mainCandidates = listOf("vaccine", "development", "health", "nutrition", "growth")
+    val mainCandidates = listOf("vaccine", "development", "health", "nutrition", "growth", "sleep")
     val mainKeys = mainCandidates
         .sortedWith(compareByDescending<String> { usage[it] ?: 0 }.thenBy { mainCandidates.indexOf(it) })
         .take(3)
