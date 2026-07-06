@@ -25,14 +25,18 @@ import kotlinx.coroutines.launch
 
 private data class ChildTab(val key: String, val icon: ImageVector, val label: String, val route: String)
 
+// Order matches the design mockup's sidebar (vaccine_e_book_unified_dashboard) exactly:
+// ภาพรวม / พัฒนาการ / สุขภาพ / สมุดวัคซีน / ความเสี่ยงโรค / โภชนาการ / การออกกำลังกาย.
+// "การนอน" (Sleep) is appended at the end — a newer feature not present in the original mockups.
 private val childTabs = listOf(
     ChildTab("overview", Icons.Filled.GridView, "ภาพรวม", Screen.ChildSummary.route),
     ChildTab("development", Icons.Filled.TrendingUp, "พัฒนาการ", Screen.ChildDevelopment.route),
     ChildTab("health", Icons.Filled.FavoriteBorder, "สุขภาพ", Screen.ChildHealth.route),
+    ChildTab("vaccine", Icons.Filled.Vaccines, "สมุดวัคซีน", Screen.VaccineBook.route),
+    ChildTab("risk", Icons.Filled.Warning, "ความเสี่ยงโรค", Screen.DiseaseRisk.route),
     ChildTab("nutrition", Icons.Filled.Restaurant, "โภชนาการ", Screen.Nutrition.route),
     ChildTab("exercise", Icons.Filled.FitnessCenter, "ออกกำลังกาย", Screen.Exercise.route),
-    ChildTab("vaccine", Icons.Filled.Vaccines, "สมุดวัคซีน", Screen.VaccineBook.route),
-    ChildTab("risk", Icons.Filled.Warning, "ความเสี่ยงโรค", Screen.DiseaseRisk.route)
+    ChildTab("sleep", Icons.Filled.Bedtime, "การนอน", Screen.SleepTracker.route)
 )
 
 /**
@@ -45,6 +49,7 @@ fun ChildScreenScaffold(
     currentTab: String,
     navController: NavController,
     centerTitle: Boolean = false,
+    snackbarHostState: SnackbarHostState? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -109,6 +114,7 @@ fun ChildScreenScaffold(
                 }
             },
             bottomBar = { ChildBottomNav(navController = navController, currentTab = "child") },
+            snackbarHost = { if (snackbarHostState != null) SnackbarHost(snackbarHostState) },
             containerColor = MaterialTheme.colorScheme.background,
             content = content
         )

@@ -42,7 +42,7 @@ fun ProfileHistoryScreen(
     val child = childState.child
     val milestones = childState.milestones
 
-    LaunchedEffect(child) { child?.let { chatViewModel.loadChildInfoSummary(it) } }
+    LaunchedEffect(child) { child?.let { chatViewModel.loadChildInfoSummary(it, s.isThai) } }
 
     Scaffold(
         topBar = {
@@ -50,6 +50,16 @@ fun ProfileHistoryScreen(
                 title = { Text(if (s.isThai) "ประวัติเด็ก" else "Child Profile", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

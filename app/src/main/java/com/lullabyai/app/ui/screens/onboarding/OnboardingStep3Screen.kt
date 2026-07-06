@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,21 +21,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.provider.OpenableColumns
+import com.lullabyai.app.data.VaccineSetupCatalog
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.OnboardingViewModel
 
-// Dose-separated vaccination options (Thai NIP) so parents can tick exactly which doses were given.
-private val VACCINE_DOSE_OPTIONS = listOf(
-    "BCG", "HBV เข็ม 1",
-    "DTP-HB-Hib เข็ม 1", "DTP-HB-Hib เข็ม 2", "DTP-HB-Hib เข็ม 3",
-    "OPV เข็ม 1", "OPV เข็ม 2", "OPV เข็ม 3", "IPV",
-    "Rota เข็ม 1", "Rota เข็ม 2", "Rota เข็ม 3",
-    "MMR เข็ม 1", "MMR เข็ม 2",
-    "JE เข็ม 1", "JE เข็ม 2",
-    "DTP กระตุ้น", "OPV กระตุ้น", "ไข้หวัดใหญ่"
-)
+// Vaccine schedule UI uses [VaccineSetupCatalog] — same names as the vaccine book.
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OnboardingStep3Screen(
     onboardingViewModel: OnboardingViewModel,
@@ -44,7 +39,11 @@ fun OnboardingStep3Screen(
     val context = LocalContext.current
     var hasMedication by remember { mutableStateOf(state.hasTakenMedication) }
     var medDetails by remember { mutableStateOf(state.medicationDetails) }
-    var selectedVaccines by remember { mutableStateOf(state.selectedVaccines.toMutableSet()) }
+    var selectedVaccines by remember {
+        mutableStateOf(
+            state.selectedVaccines.map { VaccineSetupCatalog.normalizeSelection(it) ?: it }.toMutableSet()
+        )
+    }
     var conditions by remember { mutableStateOf(state.underlyingConditions) }
     var allergyName by remember { mutableStateOf("") }
     var allergySymptoms by remember { mutableStateOf("") }
@@ -67,10 +66,11 @@ fun OnboardingStep3Screen(
             }
         }
     }
-    var customVaccines by remember { mutableStateOf(state.selectedVaccines.filterNot { it in VACCINE_DOSE_OPTIONS }) }
+    var customVaccines by remember { mutableStateOf(state.selectedVaccines.filterNot { it in VaccineSetupCatalog.ALL_DB_NAMES }) }
     var customInput by remember { mutableStateOf("") }
 
-    val vaccineOptions = VACCINE_DOSE_OPTIONS
+    val childAgeMonths = remember(state.birthdate) { VaccineSetupCatalog.ageMonthsFromBirthdate(state.birthdate) }
+    val suggestedDoses = remember(childAgeMonths) { VaccineSetupCatalog.suggestedDosesForAge(childAgeMonths) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
@@ -133,18 +133,113 @@ fun OnboardingStep3Screen(
                     }
                 }
 
-                // Question 2
+                // Question 2 — vaccination (grouped by age for beginner parents)
                 MedicalCard {
                     Text("Question 2", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
                     Text("Vaccination history", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text("ประวัติการฉีดวัคซีน", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Select all that apply", style = MaterialTheme.typography.bodySmall, color = Outline)
-                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "เลือกวัคซีนที่ลูกได้รับแล้ว — ดูจากสมุดสุขภาพเด็ก (สมุดชมพู) หรือใบรับรองจากโรงพยาบาล",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (state.birthdate.isNotBlank()) {
+                        Text(
+                            "อายุลูกประมาณ $childAgeMonths เดือน — แนะนำเลือกวัคซีนที่ควรได้รับแล้วตามอายุ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Primary
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { selectedVaccines = mutableSetOf() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("ยังไม่เคยฉีด", style = MaterialTheme.typography.labelMedium) }
+                        Button(
+                            onClick = { selectedVaccines = suggestedDoses.toMutableSet() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = state.birthdate.isNotBlank()
+                        ) { Text("เลือกตามอายุ", style = MaterialTheme.typography.labelMedium) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "เลือกแล้ว ${selectedVaccines.count { it in VaccineSetupCatalog.ALL_DB_NAMES }} / ${VaccineSetupCatalog.SCHEDULE.size} เข็ม",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Outline
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    VaccineSetupCatalog.SETUP_GROUPS.forEach { group ->
+                        val groupNames = group.doses.map { it.dbName }
+                        val allSelected = groupNames.all { it in selectedVaccines }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("อายุ ${group.label}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                        if (group.hint.isNotBlank()) {
+                                            Text(group.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                    TextButton(onClick = {
+                                        selectedVaccines = selectedVaccines.toMutableSet().apply {
+                                            if (allSelected) groupNames.forEach { remove(it) }
+                                            else addAll(groupNames)
+                                        }
+                                    }) {
+                                        Text(if (allSelected) "ยกเลิกทั้งหมด" else "เลือกทั้งหมด", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                group.doses.forEach { dose ->
+                                    val checked = dose.dbName in selectedVaccines
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedVaccines = selectedVaccines.toMutableSet().apply {
+                                                    if (checked) remove(dose.dbName) else add(dose.dbName)
+                                                }
+                                            }
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = checked,
+                                            onCheckedChange = { isChecked ->
+                                                selectedVaccines = selectedVaccines.toMutableSet().apply {
+                                                    if (isChecked) add(dose.dbName) else remove(dose.dbName)
+                                                }
+                                            }
+                                        )
+                                        Column(Modifier.padding(start = 4.dp)) {
+                                            Text(dose.dbName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                            Text(dose.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Text("วัคซีนอื่น ๆ (ถ้ามี)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        (vaccineOptions + customVaccines).forEach { vaccine ->
+                        customVaccines.forEach { vaccine ->
                             val checked = selectedVaccines.contains(vaccine)
-                            val isCustom = vaccine in customVaccines
                             FilterChip(
                                 selected = checked,
                                 onClick = {
@@ -153,17 +248,15 @@ fun OnboardingStep3Screen(
                                     }
                                 },
                                 label = { Text(vaccine) },
-                                trailingIcon = if (isCustom) {
-                                    {
-                                        Icon(
-                                            Icons.Filled.Close, "ลบ",
-                                            modifier = Modifier.size(16.dp).clickable {
-                                                customVaccines = customVaccines - vaccine
-                                                selectedVaccines = selectedVaccines.toMutableSet().apply { remove(vaccine) }
-                                            }
-                                        )
-                                    }
-                                } else null,
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Filled.Close, "ลบ",
+                                        modifier = Modifier.size(16.dp).clickable {
+                                            customVaccines = customVaccines - vaccine
+                                            selectedVaccines = selectedVaccines.toMutableSet().apply { remove(vaccine) }
+                                        }
+                                    )
+                                },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = Primary.copy(0.12f),
                                     selectedLabelColor = Primary
@@ -172,7 +265,6 @@ fun OnboardingStep3Screen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    // Add a custom / other vaccine the child received
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = customInput,
@@ -186,7 +278,7 @@ fun OnboardingStep3Screen(
                         FilledIconButton(
                             onClick = {
                                 val v = customInput.trim()
-                                if (v.isNotEmpty() && v !in vaccineOptions && v !in customVaccines) {
+                                if (v.isNotEmpty() && v !in VaccineSetupCatalog.ALL_DB_NAMES && v !in customVaccines) {
                                     customVaccines = customVaccines + v
                                     selectedVaccines = selectedVaccines.toMutableSet().apply { add(v) }
                                     customInput = ""

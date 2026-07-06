@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.RelationshipLabels
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import java.time.LocalDate
@@ -51,6 +52,7 @@ fun DashboardScreen(
     val child = childState.child
     val username = authState.profile?.username?.takeIf { it.isNotBlank() }
         ?: authState.profile?.fullName?.takeIf { it.isNotBlank() }
+    val relationship = authState.profile?.relationship
 
     LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile() }
 
@@ -112,7 +114,13 @@ fun DashboardScreen(
                     Column {
                         Text("NONGRAK AI", style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
                         Text(
-                            if (username != null) (if (isThai) "สวัสดีค่ะ คุณ$username" else "Hello, $username") else (if (isThai) "สวัสดีค่ะ คุณแม่" else "Hello, Mom"),
+                            if (username != null) {
+                                if (isThai) "สวัสดีค่ะ คุณ$username" else "Hello, $username"
+                            } else if (isThai) {
+                                "สวัสดีค่ะ ${RelationshipLabels.thaiAddress(relationship)}"
+                            } else {
+                                "Hello, ${RelationshipLabels.englishAddress(relationship)}"
+                            },
                             style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold
                         )
                     }

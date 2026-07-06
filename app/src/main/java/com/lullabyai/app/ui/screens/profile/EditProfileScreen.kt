@@ -22,15 +22,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.components.PrimaryButton
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
 
 @Composable
 fun EditProfileScreen(
     authViewModel: AuthViewModel,
+    navController: NavController,
     onBack: () -> Unit
 ) {
     val uiState by authViewModel.uiState.collectAsState()
@@ -51,6 +54,16 @@ fun EditProfileScreen(
 
     Scaffold(
         topBar = { LullabyTopBar(title = "แก้ไขโปรไฟล์", onBack = onBack) },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.SETTINGS,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(

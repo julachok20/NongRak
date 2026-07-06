@@ -26,9 +26,7 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
     val ui by vm.ui.collectAsState()
     val isThai = lang.startsWith("th")
     LaunchedEffect(lang) { vm.load(lang) }
-    // Recompute meal recommendations whenever the logged food changes (a meal getting logged removes
-    // it from the recommendations) or the language changes. Idempotent — no-op if nothing changed.
-    LaunchedEffect(ui.foods, ui.child?.id, lang) { vm.ensureMealRecommendations(lang) }
+    LaunchedEffect(ui.child?.id, lang) { vm.ensureMenuRecommendations(lang) }
 
     ChildScreenScaffold(title = if (isThai) "โภชนาการ" else "Nutrition", currentTab = "nutrition", navController = navController) { padding ->
         LazyColumn(
@@ -112,11 +110,22 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
             item { Text(if (isThai) "อาหารของวันนี้" else "Today's food", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
             if (ui.foods.isEmpty()) {
                 item {
-                    Text(
-                        if (isThai) "ยังไม่มีรายการอาหารวันนี้ กดปุ่มด้านล่างเพื่อบันทึกและคำนวณแคลอรี่"
-                        else "No food logged today. Use the button below to log & calculate calories.",
-                        style = MaterialTheme.typography.bodySmall, color = Outline
-                    )
+                    // The old copy pointed to "the button below", but that button sits past an
+                    // entire menu-recommendations section — not actually adjacent. A CTA right
+                    // here is the honest fix rather than asking parents to scroll and hunt for it.
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            if (isThai) "ยังไม่มีรายการอาหารวันนี้" else "No food logged today.",
+                            style = MaterialTheme.typography.bodySmall, color = Outline
+                        )
+                        OutlinedButton(
+                            onClick = { navController.navigate(Screen.CalorieCalculator.route) },
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)
+                        ) {
+                            Icon(Icons.Filled.Calculate, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                            Text(if (isThai) "เริ่มบันทึกข้อมูล" else "Start logging", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             } else {
                 items(ui.foods, key = { it.id }) { f ->
@@ -132,35 +141,45 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                 }
             }
 
-            // Recommended meals — only the meals the child hasn't logged yet today. Recipes ("วิธีทำ")
-            // live here, on recommended food, not on the food already eaten above.
+            // Budget-friendly menu ideas — flat list, not split by meal.
             item {
-                Text(if (isThai) "แนะนำมื้อถัดไป" else "Recommended next meals", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    if (isThai) "เมนูแนะนำ (ประหยัด ทำง่าย)" else "Recommended menus (budget-friendly)",
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (isThai) "อาหารบ้านๆ ราคาไม่แพง เหมาะกับวัยลูกน้อย"
+                    else "Simple home cooking — affordable everyday ingredients",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            if (ui.mealRecs.isEmpty()) {
+            if (ui.menuRecs.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().height(64.dp), contentAlignment = Alignment.Center) {
-                        if (ui.mealRecsLoading) CircularProgressIndicator(color = Primary, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        else Text(if (isThai) "วันนี้ครบทุกมื้อแล้ว 🎉" else "All meals logged for today 🎉", style = MaterialTheme.typography.bodySmall, color = Outline)
+                        if (ui.menuRecsLoading) CircularProgressIndicator(color = Primary, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        else Text(
+                            if (isThai) "กำลังโหลดเมนูแนะนำ..." else "Loading menu ideas...",
+                            style = MaterialTheme.typography.bodySmall, color = Outline
+                        )
                     }
                 }
             } else {
-                listOf("breakfast", "lunch", "dinner").forEach { mk ->
-                    val rec = ui.mealRecs[mk]
-                    if (rec != null) {
-                        item {
-                            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(mealSectionLabel(mk, isThai), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Primary)
-                                    Text(rec.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                                    if (rec.subtitle.isNotBlank()) Text(rec.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Surface(
-                                        onClick = { vm.loadRecipe(rec.title, lang); navController.navigate(Screen.RecipeDetail.route) },
-                                        shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)
-                                    ) {
-                                        Text(if (isThai) "วิธีทำ" else "Recipe", modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = Primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                    }
-                                }
+                items(ui.menuRecs, key = { it.title }) { rec ->
+                    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(rec.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            if (rec.subtitle.isNotBlank()) {
+                                Text(rec.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Surface(
+                                onClick = { vm.loadRecipe(rec.title, lang); navController.navigate(Screen.RecipeDetail.route) },
+                                shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)
+                            ) {
+                                Text(
+                                    if (isThai) "วิธีทำ" else "Recipe",
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                    color = Primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
@@ -180,13 +199,6 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
             }
         }
     }
-}
-
-private fun mealSectionLabel(key: String, isThai: Boolean) = when (key) {
-    "breakfast" -> if (isThai) "มื้อเช้า" else "Breakfast"
-    "lunch" -> if (isThai) "มื้อกลางวัน" else "Lunch"
-    "dinner" -> if (isThai) "มื้อเย็น" else "Dinner"
-    else -> if (isThai) "ของว่าง / แนะนำ" else "Snack / Suggestion"
 }
 
 @Composable

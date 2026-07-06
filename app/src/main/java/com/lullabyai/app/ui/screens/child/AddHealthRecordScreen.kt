@@ -47,6 +47,13 @@ fun AddHealthRecordScreen(
                    else listOf("Fever", "Cough", "Runny nose", "Rash", "Lethargic")
     var selected by remember { mutableStateOf(setOf<String>()) }
 
+    // A typo like "395" instead of "39.5" was previously saved as-is, silently polluting the
+    // health history. Validate against a plausible human body-temperature range instead.
+    val tempC = remember(temperature, celsius) {
+        temperature.toDoubleOrNull()?.let { if (celsius) it else (it - 32) * 5 / 9 }
+    }
+    val tempOutOfRange = tempC != null && (tempC < 35.0 || tempC > 43.0)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -56,10 +63,8 @@ fun AddHealthRecordScreen(
                 },
                 actions = {
                     Button(
+                        enabled = !tempOutOfRange,
                         onClick = {
-                            val tempC = temperature.toDoubleOrNull()?.let {
-                                if (celsius) it else (it - 32) * 5 / 9
-                            }
                             // First selected symptom = main (title); the rest = additional symptoms.
                             val selectedList = selected.toList()
                             val title = selectedList.firstOrNull() ?: (if (s.isThai) "บันทึกสุขภาพ" else "Health Record")
@@ -91,7 +96,7 @@ fun AddHealthRecordScreen(
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
-                onStats = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
@@ -139,6 +144,15 @@ fun AddHealthRecordScreen(
                 ) {
                     UnitToggle("°C", celsius) { celsius = true }
                     UnitToggle("°F", !celsius) { celsius = false }
+                }
+            }
+            if (tempOutOfRange) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.Filled.WarningAmber, null, tint = Error, modifier = Modifier.size(14.dp))
+                    Text(
+                        if (s.isThai) "อุณหภูมิดูผิดปกติ ตรวจสอบอีกครั้ง" else "Temperature looks wrong — check again",
+                        style = MaterialTheme.typography.labelSmall, color = Error
+                    )
                 }
             }
 

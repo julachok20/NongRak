@@ -148,23 +148,51 @@ class HealthRepository {
         }.decodeList<GrowthRecord>()
     }
 
+    // Builds an explicit JSON payload (no "id") rather than inserting the data class directly —
+    // GrowthRecord.id defaults to "" (not null), and growth_records.id is a NOT NULL uuid column,
+    // so serializing the whole object would send an invalid empty-string uuid and fail every insert.
     suspend fun addGrowthRecord(record: GrowthRecord): Result<GrowthRecord> = runCatching {
-        supabase.from("growth_records").insert(record) {
-            select()
-        }.decodeSingle<GrowthRecord>()
+        supabase.from("growth_records").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(record.childId))
+                put("weight_kg", record.weightKg?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("height_cm", record.heightCm?.let { JsonPrimitive(it) } ?: JsonNull)
+                record.recordedAt?.let { put("recorded_at", JsonPrimitive(it)) }
+                put("record_type", JsonPrimitive(record.recordType))
+                record.notes?.let { put("notes", JsonPrimitive(it)) }
+            }
+        ) { select() }.decodeSingle<GrowthRecord>()
     }
 
+    // recorded_at alone isn't a reliable sort key — the add-record screen only lets a parent pick a
+    // date, not a time, so entries logged the same day (e.g. "ไข้" then "อาการดีขึ้น" that afternoon)
+    // all get midnight as their recorded_at and become indistinguishable. created_at (the real insert
+    // timestamp, added via migration) breaks the tie so same-day entries list in the order they were
+    // actually logged, not an arbitrary DB-decided one.
     suspend fun getHealthRecords(childId: String): Result<List<HealthRecord>> = runCatching {
         supabase.from("health_records").select {
             filter { eq("child_id", childId) }
             order("recorded_at", Order.DESCENDING)
+            order("created_at", Order.DESCENDING)
         }.decodeList<HealthRecord>()
     }
 
+    // Same reason as addGrowthRecord above — HealthRecord.id also defaults to "" against a NOT
+    // NULL uuid column, so an explicit JSON payload (no "id") is required, not the raw data class.
     suspend fun addHealthRecord(record: HealthRecord): Result<HealthRecord> = runCatching {
-        supabase.from("health_records").insert(record) {
-            select()
-        }.decodeSingle<HealthRecord>()
+        supabase.from("health_records").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(record.childId))
+                put("event_type", JsonPrimitive(record.eventType))
+                put("title", JsonPrimitive(record.title))
+                record.description?.let { put("description", JsonPrimitive(it)) }
+                put("severity", JsonPrimitive(record.severity))
+                put("temperature", record.temperature?.let { JsonPrimitive(it) } ?: JsonNull)
+                record.additionalSymptoms?.let { syms -> put("additional_symptoms", buildJsonArray { syms.forEach { add(JsonPrimitive(it)) } }) }
+                record.photoUrl?.let { put("photo_url", JsonPrimitive(it)) }
+                record.recordedAt?.let { put("recorded_at", JsonPrimitive(it)) }
+            }
+        ) { select() }.decodeSingle<HealthRecord>()
     }
 
     /** Edit an existing health record from the detail screen. Explicit JSON so every field is
@@ -188,6 +216,13 @@ class HealthRepository {
         ) { filter { eq("id", id) } }
     }
 
+    /** Marks a health record recovered/monitoring — drives the status badge on HealthHistoryScreen. */
+    suspend fun updateHealthStatus(id: String, status: String): Result<Unit> = runCatching {
+        supabase.from("health_records").update(
+            buildJsonObject { put("status", JsonPrimitive(status)) }
+        ) { filter { eq("id", id) } }
+    }
+
     /** Uploads a health-record photo to the PRIVATE avatars bucket (per-user folder) and returns
      *  the stored bucket PATH (served later via a short-lived signed URL, like child avatars). */
     suspend fun uploadHealthPhoto(childId: String, recordId: String, bytes: ByteArray): Result<String> = runCatching {
@@ -207,51 +242,70 @@ class HealthRepository {
      *   • LAJE (ไข้สมองอักเสบชนิดเชื้อเป็น) เข็มที่ 1 ที่ 12 เดือน, เข็มที่ 2 ที่ 2 ปี 6 เดือน
      */
     suspend fun insertDefaultVaccines(childId: String, birthdate: String) {
-        // name | description | ageGroup | ageMonths
-        val schedule = listOf(
-            Triple("BCG", "วัคซีนวัณโรค ป้องกันวัณโรครุนแรงในเด็ก" to "แรกเกิด", 0),
-            Triple("HBV เข็มที่ 1", "วัคซีนตับอักเสบบี เข็มแรก" to "แรกเกิด", 0),
-            Triple("DTP-HB-Hib เข็มที่ 1", "คอตีบ-บาดทะยัก-ไอกรน-ตับอักเสบบี-ฮิบ" to "2 เดือน", 2),
-            Triple("OPV เข็มที่ 1", "วัคซีนโปลิโอชนิดหยอด" to "2 เดือน", 2),
-            Triple("Rota เข็มที่ 1", "ป้องกันท้องเสียรุนแรงจากไวรัสโรต้า" to "2 เดือน", 2),
-            Triple("DTP-HB-Hib เข็มที่ 2", "คอตีบ-บาดทะยัก-ไอกรน เข็มที่ 2" to "4 เดือน", 4),
-            Triple("OPV เข็มที่ 2", "โปลิโอชนิดหยอด เข็มที่ 2" to "4 เดือน", 4),
-            Triple("IPV", "โปลิโอชนิดฉีด" to "4 เดือน", 4),
-            Triple("Rota เข็มที่ 2", "ป้องกันท้องเสียรุนแรงจากไวรัสโรต้า เข็มที่ 2" to "4 เดือน", 4),
-            Triple("DTP-HB-Hib เข็มที่ 3", "คอตีบ-บาดทะยัก-ไอกรน เข็มที่ 3" to "6 เดือน", 6),
-            Triple("OPV เข็มที่ 3", "โปลิโอชนิดหยอด เข็มที่ 3" to "6 เดือน", 6),
-            Triple("Rota เข็มที่ 3", "ป้องกันท้องเสียรุนแรงจากไวรัสโรต้า เข็มที่ 3 (ถ้าใช้ชนิด 3 ครั้ง)" to "6 เดือน", 6),
-            Triple("ไข้หวัดใหญ่", "วัคซีนไข้หวัดใหญ่ ตามฤดูกาล (อายุ 6 เดือนขึ้นไป)" to "6 เดือน", 6),
-            Triple("MMR เข็มที่ 1", "หัด-คางทูม-หัดเยอรมัน เข็มแรก (อายุ 9 เดือน)" to "9 เดือน", 9),
-            Triple("JE เข็มที่ 1", "ไข้สมองอักเสบเจอี ชนิดเชื้อเป็น เข็มแรก" to "1 ปี", 12),
-            Triple("DTP กระตุ้น", "คอตีบ-บาดทะยัก-ไอกรน เข็มกระตุ้น ครั้งที่ 1" to "1 ปี 6 เดือน", 18),
-            Triple("OPV กระตุ้น", "โปลิโอชนิดหยอด เข็มกระตุ้น ครั้งที่ 1" to "1 ปี 6 เดือน", 18),
-            Triple("MMR เข็มที่ 2", "หัด-คางทูม-หัดเยอรมัน เข็มที่ 2" to "1 ปี 6 เดือน", 18),
-            Triple("JE เข็มที่ 2", "ไข้สมองอักเสบเจอี ชนิดเชื้อเป็น เข็มที่ 2" to "2 ปี 6 เดือน", 30)
-        )
         val today = java.time.LocalDate.now()
         val birth = runCatching { java.time.LocalDate.parse(birthdate) }.getOrNull()
 
-        val rows = schedule.map { (name, descGroup, ageMonths) ->
-            val (description, group) = descGroup
-            val due = birth?.plusMonths(ageMonths.toLong())
+        val rows = com.lullabyai.app.data.VaccineSetupCatalog.SCHEDULE.map { dose ->
+            val due = birth?.plusMonths(dose.ageMonths.toLong())
+            // Provisional — onboarding selections override via applyOnboardingVaccineSelections.
             val status = when {
                 due == null -> "scheduled"
-                due.isBefore(today) -> "completed"
+                due.isBefore(today) -> "overdue"
                 due.isBefore(today.plusMonths(2)) -> "appointment"
                 else -> "upcoming"
             }
             VaccineRecord(
                 childId = childId,
-                vaccineName = name,
-                description = description,
-                ageGroup = group,
-                ageOrder = ageMonths,
+                vaccineName = dose.dbName,
+                description = dose.description,
+                ageGroup = dose.ageGroup,
+                ageOrder = dose.ageMonths,
                 scheduledDate = due?.toString(),
-                dateGiven = if (status == "completed") due?.toString() else null,
+                dateGiven = null,
                 status = status
             )
         }
         runCatching { supabase.from("vaccine_records").insert(rows) }
+    }
+
+    /** Marks parent-selected doses completed in the vaccine book; resets the rest from due dates. */
+    suspend fun applyOnboardingVaccineSelections(
+        childId: String,
+        selectedNames: List<String>,
+        customOnly: List<String> = emptyList()
+    ) {
+        val canonical = selectedNames.mapNotNull { com.lullabyai.app.data.VaccineSetupCatalog.normalizeSelection(it) }.toSet()
+        val records = getVaccineRecords(childId).getOrDefault(emptyList())
+        val today = java.time.LocalDate.now()
+        val known = records.map { it.vaccineName }.toSet()
+
+        for (r in records) {
+            if (r.vaccineName in canonical) {
+                val given = r.scheduledDate ?: today.toString()
+                updateVaccineStatus(r.id, "completed", given)
+            } else {
+                val due = r.scheduledDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+                val newStatus = when {
+                    due == null -> "scheduled"
+                    due.isBefore(today) -> "overdue"
+                    due.isBefore(today.plusMonths(2)) -> "appointment"
+                    else -> "upcoming"
+                }
+                updateVaccineStatus(r.id, newStatus, null)
+            }
+        }
+
+        for (name in customOnly) {
+            if (name !in known && com.lullabyai.app.data.VaccineSetupCatalog.normalizeSelection(name) == null) {
+                addVaccineRecord(
+                    VaccineRecord(
+                        childId = childId,
+                        vaccineName = name,
+                        status = "completed",
+                        dateGiven = today.toString()
+                    )
+                )
+            }
+        }
     }
 }

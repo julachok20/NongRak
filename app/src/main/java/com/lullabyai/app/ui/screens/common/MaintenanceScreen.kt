@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 
 private const val SUPPORT_EMAIL = "julachok2@gmail.com"
@@ -29,7 +31,7 @@ private const val SUPPORT_EMAIL = "julachok2@gmail.com"
  * Instructions, Recipe Detail) with one consistent screen.
  */
 @Composable
-fun MaintenanceScreen(onBack: () -> Unit) {
+fun MaintenanceScreen(navController: NavController? = null, onBack: () -> Unit) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val context = LocalContext.current
 
@@ -42,6 +44,18 @@ fun MaintenanceScreen(onBack: () -> Unit) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
+        },
+        bottomBar = {
+            if (navController != null) {
+                com.lullabyai.app.ui.components.AppBottomNav(
+                    selected = com.lullabyai.app.ui.components.BottomTab.HOME,
+                    onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                    onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                    onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                    onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                    onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->

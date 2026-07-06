@@ -117,6 +117,16 @@ object NutritionAiService {
         return SuggestionItem(o.str("title"), o.str("subtitle"))
     }
 
+    /** Recommend several simple, low-cost home-style dishes (not split by meal). */
+    suspend fun recommendBudgetMenus(ageMonths: Int, lang: String): List<SuggestionItem> {
+        val prompt = "Suggest 5 simple, LOW-COST, everyday home-style dishes suitable for a $ageMonths-month-old toddler. " +
+            "Focus on affordable Thai-family staples parents can cook at home (e.g. rice porridge, soft rice, boiled egg, mashed banana/pumpkin, simple vegetable soup, minced pork/rice). " +
+            "Do NOT suggest luxury, restaurant, imported, or expensive items (no steak, salmon, cheese boards, fancy desserts, etc.). " +
+            "subtitle = one short line on nutrition benefit AND that it is budget-friendly. " +
+            "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\"}]"
+        return parseSuggestions(ask(prompt, lang) ?: return emptyList())
+    }
+
     /** Recommend ONE dish for a specific meal (breakfast/lunch/dinner) the child hasn't had yet. */
     suspend fun recommendMealDish(meal: String, ageMonths: Int, lang: String): SuggestionItem? {
         val prompt = "Suggest ONE healthy, age-appropriate $meal dish for a $ageMonths-month-old child. " +
@@ -171,7 +181,8 @@ object NutritionAiService {
     // ---------------- Detail content ----------------
 
     suspend fun generateRecipe(foodName: String, ageMonths: Int, lang: String): RecipeContent? {
-        val prompt = "Create a simple, safe recipe of \"$foodName\" for a $ageMonths-month-old child. " +
+        val prompt = "Create a simple, low-cost, safe home recipe of \"$foodName\" for a $ageMonths-month-old child. " +
+            "Use common affordable ingredients; keep steps easy for busy parents. " +
             "Return JSON: {\"title\":..,\"timeMinutes\":..,\"ageRange\":..,\"servings\":..,\"nutritionNote\":..,\"ingredients\":[..],\"steps\":[..]}"
         val o = ask(prompt, lang, maxTokens = 1500)?.objOrNull() ?: return null
         return RecipeContent(

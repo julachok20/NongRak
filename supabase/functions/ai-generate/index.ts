@@ -1,11 +1,25 @@
 // NongRak AI — server-side AI proxy. Keys live as Supabase secrets, never on the device.
-// Gemini key 1 -> 2 -> 3 -> 4 (across flash models) -> Claude Haiku -> friendly fallback.
-// Supports an optional per-request `system` override. When `system` is present we treat the
-// request as a STRUCTURED/JSON task and make Gemini return clean JSON reliably:
+// Cost-ordered fallback: Gemini keys 1-5 (across flash models, all free-tier)
+//   -> OpenRouter free models (also $0)
+//   -> Claude Haiku (PAID — true last resort, only reached if every free option fails)
+//   -> friendly Thai fallback message.
+// Reordered 2026-07-03: OpenRouter used to be tried AFTER Claude, meaning paid Anthropic
+// calls happened before a free option was exhausted. Also fixed a real bug found the same
+// day: the old hardcoded OpenRouter model (`google/gemini-2.0-flash-exp:free`) no longer
+// exists in OpenRouter's catalog at all (same failure class as the gemini-1.5-flash
+// retirement below) — that fallback tier was silently dead. Now a real model LIST, verified
+// live against OpenRouter's /api/v1/models before deploying (free-model availability shifts
+// often — re-verify before trusting these IDs long-term).
+// Supports an optional per-request `system` override (custom persona/instructions) and an
+// independent `jsonMode` flag. When `jsonMode` is true we make Gemini return clean JSON reliably:
 //   * responseMimeType=application/json  (forces valid JSON; skipped when googleSearch is on,
 //     because Gemini rejects tools + JSON mime together)
 //   * thinkingConfig.thinkingBudget=0    (gemini-2.5-flash otherwise spends the whole token
 //     budget on hidden reasoning and returns EMPTY text -> empty lists in the app)
+// Back-compat: if a caller sends `system` but omits `jsonMode` entirely, jsonMode defaults to
+// true (the original behavior, still relied on by AiRepository/NutritionAiService callers).
+// Callers that want a custom system prompt WITHOUT JSON mode (e.g. plain-prose analysis text)
+// must explicitly send `jsonMode: false`.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SYSTEM_PROMPT = `คุณคือ "น้องรัก" (NongRak) ผู้ช่วย AI สำหรับพ่อแม่ในการเลี้ยงดูเด็กแรกเกิดถึง 3 ปี ตอบเป็นภาษาไทยเสมอ ยกเว้นผู้ใช้พิมพ์ภาษาอังกฤษ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น และเข้าใจง่าย คุณเป็นผู้ช่วยที่แนะนำและให้กำลังใจ ไม่ทำสิ่งต่างๆ แทนพ่อแม่`;
@@ -87,28 +101,61 @@ async function tryClaude(prompt: string, maxTokens: number, system: string, imag
   return null;
 }
 
-// Final fallback: OpenRouter (OpenAI-compatible gateway). Used only if all Gemini keys AND Claude fail.
+// Free tier (verified live against openrouter.ai/api/v1/models on 2026-07-03 — re-check
+// before relying on these long-term, free-model availability shifts often; e.g. Qwen3
+// Coder's :free endpoint was pulled shortly before this list was verified). Ordered by
+// general/multilingual instruction-following quality over coding-specific models, since
+// this is a Thai-language childcare assistant, not a code assistant.
+const OPENROUTER_FREE_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "google/gemma-4-31b-it:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "openai/gpt-oss-120b:free",
+];
+
+// Free-tier fallback: OpenRouter (OpenAI-compatible gateway), tried BEFORE paid Claude.
+// Rotates across up to 4 keys (OPENROUTER_API_KEY_1..4, mirroring the Gemini key-rotation
+// pattern) and, per key, across several free models — so one exhausted key or one
+// pulled/rate-limited model doesn't take out the whole tier. Falls back to the original
+// single OPENROUTER_API_KEY secret if no numbered keys are set, so this deploys safely
+// before any new keys have actually been added.
 async function tryOpenRouter(prompt: string, maxTokens: number, system: string, image: ImageInput) {
-  const key = Deno.env.get("OPENROUTER_API_KEY");
-  if (!key || key === "null") return null;
-  try {
-    const userContent: unknown = image
-      ? [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }]
-      : prompt;
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "NongRak AI" },
-      body: JSON.stringify({
-        model: "google/gemini-2.0-flash-exp:free",
-        max_tokens: maxTokens,
-        messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
-      }),
-    });
-    const data = await res.json();
-    if (data.error) return null;
-    const text = String(data.choices?.[0]?.message?.content ?? "").trim();
-    if (text) return { text, provider: "OpenRouter" };
-  } catch (_) { /* fall through */ }
+  const raw = [
+    Deno.env.get("OPENROUTER_API_KEY_1"),
+    Deno.env.get("OPENROUTER_API_KEY_2"),
+    Deno.env.get("OPENROUTER_API_KEY_3"),
+    Deno.env.get("OPENROUTER_API_KEY_4"),
+  ];
+  const keys = raw.filter((k) => k && k !== "null") as string[];
+  if (keys.length === 0) {
+    const legacy = Deno.env.get("OPENROUTER_API_KEY");
+    if (legacy && legacy !== "null") keys.push(legacy);
+  }
+  if (keys.length === 0) return null;
+
+  const userContent: unknown = image
+    ? [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }]
+    : prompt;
+
+  for (let i = 0; i < keys.length; i++) {
+    for (const model of OPENROUTER_FREE_MODELS) {
+      try {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${keys[i]}`, "Content-Type": "application/json", "X-Title": "NongRak AI" },
+          body: JSON.stringify({
+            model,
+            max_tokens: maxTokens,
+            messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
+          }),
+        });
+        const data = await res.json();
+        if (data.error) continue;
+        const text = String(data.choices?.[0]?.message?.content ?? "").trim();
+        if (text) return { text, provider: `OpenRouter ${i + 1} (${model.split("/")[1]})` };
+      } catch (_) { /* try next model/key */ }
+    }
+  }
   return null;
 }
 
@@ -123,8 +170,10 @@ Deno.serve(async (req: Request) => {
     prompt = b.prompt ?? "";
     useSearch = !!b.useSearch;
     maxTokens = typeof b.maxTokens === "number" ? b.maxTokens : 1024;
-    // A per-request system override means this is a structured/JSON task (not the chat persona).
-    if (typeof b.system === "string" && b.system.trim()) { system = b.system; jsonMode = true; }
+    // A per-request system override replaces the persona; jsonMode is independent (see header note).
+    if (typeof b.system === "string" && b.system.trim()) system = b.system;
+    if (typeof b.jsonMode === "boolean") jsonMode = b.jsonMode;
+    else if (system !== SYSTEM_PROMPT) jsonMode = true;
     // Optional image (base64, no data: prefix) for vision questions.
     if (typeof b.imageBase64 === "string" && b.imageBase64.length > 0) {
       image = { data: b.imageBase64, mimeType: typeof b.imageMimeType === "string" ? b.imageMimeType : "image/jpeg" };
@@ -137,9 +186,10 @@ Deno.serve(async (req: Request) => {
   }
   if (!prompt) prompt = "ช่วยดูรูปภาพนี้และให้คำแนะนำ";
 
+  // Cost order: free Gemini -> free OpenRouter -> PAID Claude (true last resort).
   const result = (await tryGemini(prompt, useSearch, maxTokens, system, jsonMode, image))
-    ?? (await tryClaude(prompt, maxTokens, system, image))
-    ?? (await tryOpenRouter(prompt, maxTokens, system, image));
+    ?? (await tryOpenRouter(prompt, maxTokens, system, image))
+    ?? (await tryClaude(prompt, maxTokens, system, image));
   const payload = result ?? { text: FALLBACK, provider: "" };
   return new Response(JSON.stringify(payload), { headers: { "Content-Type": "application/json" } });
 });

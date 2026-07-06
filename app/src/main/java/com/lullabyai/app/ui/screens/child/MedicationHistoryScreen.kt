@@ -44,8 +44,17 @@ fun MedicationHistoryScreen(
 
     val today = remember { LocalDate.now() }
     val todayDoses = remember(doses) {
+        // Actionable doses (due now / past due) surface first so a parent in a hurry sees them
+        // without scanning past "waiting" or already-resolved rows; chronological order within
+        // each group keeps it predictable.
+        fun priority(d: MedicationDose): Int = when {
+            d.status == "pending" && (TimeUtils.parseInstant(d.scheduledAt)
+                ?.let { java.time.Duration.between(java.time.Instant.now(), it).toMinutes() } ?: 0) <= 15 -> 0
+            d.status == "pending" -> 1
+            else -> 2
+        }
         doses.filter { TimeUtils.parseInstant(it.scheduledAt)?.atZone(ZoneId.systemDefault())?.toLocalDate() == today }
-            .sortedBy { it.scheduledAt }
+            .sortedWith(compareBy({ priority(it) }, { it.scheduledAt }))
     }
     val takenToday = todayDoses.count { it.status == "taken" }
     val nextDose = doses.filter { it.status == "pending" }
@@ -58,6 +67,16 @@ fun MedicationHistoryScreen(
                 title = { Text(if (s.isThai) "ประวัติการใช้ยา" else "Medication History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -93,7 +112,12 @@ fun MedicationHistoryScreen(
             }
 
             item {
-                Text(if (s.isThai) "ประวัติยา (วันนี้)" else "Today's history", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (s.isThai) "ประวัติยา (วันนี้)" else "Today's history", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { navController.navigate(Screen.FullMedicationHistory.route) }) {
+                        Text(if (s.isThai) "ดูประวัติทั้งหมด" else "View all history", color = Primary, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
 
             if (todayDoses.isEmpty()) {
@@ -129,28 +153,50 @@ private fun SummaryTile(label: String, value: String, modifier: Modifier = Modif
 private fun DoseRow(dose: MedicationDose, medicineName: String, dosageText: String, onTaken: () -> Unit, onSkip: () -> Unit) {
     val s = LocalStrings.current
     val time = TimeUtils.localTime(dose.scheduledAt) ?: ""
-    val (badgeColor, badgeText) = when (dose.status) {
-        "taken" -> Color(0xFF4CAF50) to (if (s.isThai) "ทานแล้ว" else "Completed")
-        "skipped" -> Color(0xFF9E9E9E) to (if (s.isThai) "ข้าม" else "Skipped")
-        else -> Primary to (if (s.isThai) "กำลังดำเนินการ" else "In progress")
+    // A dose becomes actionable (shown as due) starting 15 min before its scheduled time, and stays
+    // due after — only doses more than 15 min in the future show as "waiting".
+    val minutesUntilDue = com.lullabyai.app.util.TimeUtils.parseInstant(dose.scheduledAt)
+        ?.let { java.time.Duration.between(java.time.Instant.now(), it).toMinutes() } ?: 0
+    val isWaiting = dose.status == "pending" && minutesUntilDue > 15
+    val isActionableNow = dose.status == "pending" && !isWaiting
+    val (badgeColor, badgeText) = when {
+        dose.status == "taken" -> Color(0xFF4CAF50) to (if (s.isThai) "ทานแล้ว" else "Completed")
+        dose.status == "skipped" -> Color(0xFF9E9E9E) to (if (s.isThai) "ข้าม" else "Skipped")
+        isWaiting -> Outline to (if (s.isThai) "รอเวลา" else "Waiting")
+        else -> Primary to (if (s.isThai) "ถึงเวลาแล้ว" else "Due now")
     }
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+    var showSkipConfirm by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isActionableNow) Primary.copy(0.05f) else MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp)
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.Medication, null, tint = Primary, modifier = Modifier.size(20.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(medicineName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (isActionableNow) Icon(Icons.Filled.NotificationsActive, null, tint = Primary, modifier = Modifier.size(14.dp))
+                        Text(medicineName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
                     Text("$time น. • $dosageText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Surface(shape = RoundedCornerShape(100.dp), color = badgeColor.copy(0.12f)) {
                     Text(badgeText, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = badgeColor, fontWeight = FontWeight.Bold)
                 }
             }
-            if (dose.status == "pending") {
+            if (dose.status == "pending" && isWaiting) {
+                Text(
+                    if (s.isThai) "จะแสดงให้ทานยาได้ในอีก ${minutesUntilDue - 15} นาที" else "Actionable in ${minutesUntilDue - 15} min",
+                    style = MaterialTheme.typography.labelSmall, color = Outline
+                )
+            } else if (dose.status == "pending") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onSkip, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+                    OutlinedButton(onClick = { showSkipConfirm = true }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
                         Text(if (s.isThai) "ข้าม" else "Skip", style = MaterialTheme.typography.labelMedium)
                     }
                     Button(onClick = onTaken, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp), contentPadding = PaddingValues(vertical = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))) {
@@ -160,5 +206,15 @@ private fun DoseRow(dose: MedicationDose, medicineName: String, dosageText: Stri
                 }
             }
         }
+    }
+
+    if (showSkipConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSkipConfirm = false },
+            title = { Text(if (s.isThai) "ข้ามยานี้ใช่หรือไม่?" else "Skip this dose?") },
+            text = { Text(if (s.isThai) "$medicineName เวลา $time น. จะถูกบันทึกว่าข้าม" else "$medicineName at $time will be marked as skipped.") },
+            confirmButton = { TextButton(onClick = { showSkipConfirm = false; onSkip() }) { Text(if (s.isThai) "ข้าม" else "Skip", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { showSkipConfirm = false }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
+        )
     }
 }

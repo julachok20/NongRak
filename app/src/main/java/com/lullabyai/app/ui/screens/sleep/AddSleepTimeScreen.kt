@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.sleep
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,12 +10,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -22,15 +30,32 @@ import java.util.*
 @Composable
 fun AddSleepTimeScreen(
     childViewModel: ChildViewModel,
+    chatViewModel: ChatViewModel,
+    navController: NavController,
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
     val state by childViewModel.uiState.collectAsState()
+    val chatState by chatViewModel.uiState.collectAsState()
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+
+    LaunchedEffect(state.child?.id, state.sleepLogs.size) { state.child?.let { chatViewModel.loadSleepInsight(it, state.sleepLogs, s.isThai) } }
 
     var sleepType by remember { mutableStateOf("main") }
     var startTime by remember { mutableStateOf("20:00") }
     var endTime by remember { mutableStateOf("06:00") }
+
+    val durationMinutes = remember(startTime, endTime) {
+        fun toMin(t: String): Int? {
+            val p = t.split(":")
+            if (p.size != 2) return null
+            val h = p[0].toIntOrNull() ?: return null
+            val m = p[1].toIntOrNull() ?: return null
+            return h * 60 + m
+        }
+        val s0 = toMin(startTime); val e0 = toMin(endTime)
+        if (s0 != null && e0 != null) { val diff = e0 - s0; if (diff <= 0) diff + 24 * 60 else diff } else null
+    }
 
     Scaffold(
         topBar = {
@@ -62,6 +87,16 @@ fun AddSleepTimeScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
@@ -81,7 +116,42 @@ fun AddSleepTimeScreen(
                 TimeField(if (s.isThai) "เวลาจบ" else "End", endTime, Modifier.weight(1f)) { endTime = it }
             }
 
+            if (durationMinutes != null) {
+                DurationRing(durationMinutes, s.isThai)
+            }
+
+            if (chatState.sleepInsight != null) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
+                    Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(18.dp))
+                        Text(chatState.sleepInsight!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/** Circular visualization of the entered duration, capped visually at 16h (covers realistic
+ *  nightly-sleep + nap durations) — purely computed from the two time fields, no backend. */
+@Composable
+private fun DurationRing(durationMinutes: Int, isThai: Boolean) {
+    val maxMinutes = 16 * 60
+    val fraction = (durationMinutes / maxMinutes.toFloat()).coerceIn(0f, 1f)
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.size(180.dp)) {
+            val stroke = Stroke(width = 14.dp.toPx(), cap = StrokeCap.Round)
+            drawArc(color = Color(0xFFE0E3E5), startAngle = -90f, sweepAngle = 360f, useCenter = false, style = stroke, size = Size(size.width - stroke.width, size.height - stroke.width), topLeft = androidx.compose.ui.geometry.Offset(stroke.width / 2, stroke.width / 2))
+            drawArc(color = Primary, startAngle = -90f, sweepAngle = 360f * fraction, useCenter = false, style = stroke, size = Size(size.width - stroke.width, size.height - stroke.width), topLeft = androidx.compose.ui.geometry.Offset(stroke.width / 2, stroke.width / 2))
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(if (isThai) "ระยะเวลาทั้งหมด" else "Total duration", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "${durationMinutes / 60}${if (isThai) " ชม. " else "h "}${durationMinutes % 60}${if (isThai) " นาที" else "m"}",
+                style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Primary
+            )
         }
     }
 }

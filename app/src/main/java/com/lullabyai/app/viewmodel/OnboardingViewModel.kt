@@ -154,9 +154,13 @@ class OnboardingViewModel : ViewModel() {
                 val ageMonths = calculateAgeMonths(state.birthdate)
                 childRepo.insertDefaultMilestones(savedChild.id, ageMonths)
                 healthRepo.insertDefaultVaccines(savedChild.id, state.birthdate)
+                val customVaccines = state.selectedVaccines.filter {
+                    com.lullabyai.app.data.VaccineSetupCatalog.normalizeSelection(it) == null
+                }
+                healthRepo.applyOnboardingVaccineSelections(savedChild.id, state.selectedVaccines, customVaccines)
 
-                if (state.username.isNotBlank()) {
-                    authRepo.updateProfile(state.username, null, null, state.relationship)
+                if (!state.addMode) {
+                    authRepo.updateProfile(null, null, null, state.relationship)
                 }
 
                 // Create initial notifications

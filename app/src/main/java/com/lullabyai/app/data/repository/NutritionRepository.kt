@@ -53,6 +53,15 @@ class NutritionRepository {
         supabase.from("food_logs").delete { filter { eq("id", id) } }
     }
 
+    /** Multi-day food history (Statistics "ตารางย้อนหลัง") — one query instead of looping
+     *  getFoodLogs() per day, which is what SmartTrendsScreen/StatisticsInsightsScreen do today. */
+    suspend fun getFoodLogsRange(childId: String, fromDate: String, toDate: String = today()): List<FoodLog> = runCatching {
+        supabase.from("food_logs").select {
+            filter { eq("child_id", childId); gte("log_date", fromDate); lte("log_date", toDate) }
+            order("log_date", Order.DESCENDING)
+        }.decodeList<FoodLog>()
+    }.getOrDefault(emptyList())
+
     // ---------------- EXERCISE ----------------
 
     suspend fun getExerciseLogs(childId: String, date: String = today()): List<ExerciseLog> = runCatching {
@@ -86,6 +95,15 @@ class NutritionRepository {
     suspend fun deleteExercise(id: String): Result<Unit> = runCatching {
         supabase.from("exercise_logs").delete { filter { eq("id", id) } }
     }
+
+    /** Multi-day exercise history (Statistics "ตารางย้อนหลัง") — getWeeklyExercise() only covers
+     *  since Monday of the current week, not a real look-back window. */
+    suspend fun getExerciseLogsRange(childId: String, fromDate: String, toDate: String = today()): List<ExerciseLog> = runCatching {
+        supabase.from("exercise_logs").select {
+            filter { eq("child_id", childId); gte("log_date", fromDate); lte("log_date", toDate) }
+            order("log_date", Order.DESCENDING)
+        }.decodeList<ExerciseLog>()
+    }.getOrDefault(emptyList())
 
     // ---------------- SUMMARY (computed, not stored) ----------------
 

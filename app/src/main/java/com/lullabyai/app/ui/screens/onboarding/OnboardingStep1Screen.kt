@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.lullabyai.app.ui.components.BirthDatePickerField
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.OnboardingViewModel
@@ -70,13 +71,11 @@ fun OnboardingStep1Screen(
                 }
 
                 LabelField("วันเกิด") {
-                    OutlinedTextField(
-                        value = birthdate, onValueChange = { birthdate = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("YYYY-MM-DD (เช่น 2022-01-15)", color = Outline) },
-                        trailingIcon = { Icon(Icons.Filled.CalendarToday, null, tint = Outline) },
-                        singleLine = true, shape = RoundedCornerShape(12.dp),
-                        colors = fieldColors()
+                    BirthDatePickerField(
+                        value = birthdate,
+                        onValueChange = { birthdate = it },
+                        placeholder = "แตะเพื่อเลือกวันเกิดจากปฏิทิน",
+                        fieldColors = { fieldColors() }
                     )
                 }
 

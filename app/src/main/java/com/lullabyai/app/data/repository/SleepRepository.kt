@@ -63,6 +63,13 @@ class SleepRepository {
         supabase.from("sleep_logs").delete { filter { eq("id", id) } }
     }
 
+    /** Post-hoc mood tag on an existing log (not gated behind ending the session). */
+    suspend fun updateMood(id: String, mood: String): Result<Unit> = runCatching {
+        supabase.from("sleep_logs").update(
+            buildJsonObject { put("mood", JsonPrimitive(mood)) }
+        ) { filter { eq("id", id) } }
+    }
+
     // ---------------- Recurring schedules ----------------
 
     suspend fun getSchedules(childId: String): Result<List<SleepSchedule>> = runCatching {

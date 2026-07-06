@@ -42,7 +42,9 @@ object DoctorReportGenerator {
         val chronicDisease: String, val drugFoodAllergy: String, val medications: String,
         val majorIllness: String, val surgeryHospital: String, val followupDoctor: String,
         val healthHistoryDetail: String, val currentCare: String,
-        // §6 สรุปและข้อเสนอแนะ
+        // §6 การนอนและการทานยา (added — was tracked in-app but never reached this export)
+        val sleepSummary: String, val medicationSummary: String,
+        // §7 สรุปและข้อเสนอแนะ
         val overallSummary: String, val recommendations: String
     )
 
@@ -63,14 +65,16 @@ object DoctorReportGenerator {
     private const val CONTENT_BOTTOM = PAGE_H - 46f
     private val CONTENT_W get() = PAGE_W - MARGIN * 2
 
-    // -------- colors --------
-    private val NAVY = Color.rgb(22, 38, 60)
-    private val SECTION_BG = Color.rgb(236, 238, 242)
-    private val BOX_BORDER = Color.rgb(150, 162, 178)
-    private val GRID = Color.rgb(200, 202, 214)
-    private val LABEL = Color.rgb(90, 96, 108)
-    private val TEXT = Color.rgb(26, 28, 30)
-    private val FOOT = Color.rgb(120, 124, 132)
+    // -------- colors — NongRak brand blue (Primary = #3757AE in Color.kt) instead of generic
+    // navy/gray, and an accent-bar + banded-row style instead of the old boxed-grid look --------
+    private val BRAND = Color.rgb(0x37, 0x57, 0xAE)
+    private val BRAND_TINT = Color.rgb(234, 238, 248)
+    private val ROW_ALT = Color.rgb(245, 247, 251)
+    private val BOX_BORDER = Color.rgb(210, 216, 230)
+    private val HAIRLINE = Color.rgb(224, 228, 238)
+    private val LABEL = Color.rgb(100, 106, 122)
+    private val TEXT = Color.rgb(30, 32, 38)
+    private val FOOT = Color.rgb(130, 134, 144)
     private val WHITE = Color.WHITE
 
     // -------- paints --------
@@ -84,21 +88,23 @@ object DoctorReportGenerator {
     private class Block(val height: Float, val gapAfter: Float, val keepWithNext: Boolean = false, val draw: (android.graphics.Canvas, Float) -> Unit)
 
     fun generate(context: Context, data: ChildData): File {
-        val titleP = p(22f, WHITE, true)
-        val subP = p(9f, Color.rgb(205, 214, 228))
-        val metaP = p(9f, Color.rgb(205, 214, 228))
-        val secP = p(13f, TEXT, true)
+        val titleP = p(23f, WHITE, true)
+        val subP = p(9f, Color.rgb(220, 228, 245))
+        val metaP = p(9f, Color.rgb(220, 228, 245))
+        val secP = p(13f, BRAND, true)
         val labelP = p(9f, LABEL)
         val valueP = p(10.5f, TEXT)
-        val headP = p(9f, TEXT, true)
+        val headP = p(9f, BRAND, true)
         val cellP = p(9.5f, TEXT)
         val footP = p(8f, FOOT)
         val boxStroke = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 1f; color = BOX_BORDER; isAntiAlias = true }
-        val gridStroke = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 1f; color = GRID; isAntiAlias = true }
-        val secFill = Paint().apply { style = Paint.Style.FILL; color = SECTION_BG; isAntiAlias = true }
-        val headFill = Paint().apply { style = Paint.Style.FILL; color = SECTION_BG; isAntiAlias = true }
-        val bandFill = Paint().apply { style = Paint.Style.FILL; color = NAVY }
-        val footLine = Paint().apply { strokeWidth = 1f; color = Color.rgb(210, 214, 222) }
+        val hairline = Paint().apply { strokeWidth = 1f; color = HAIRLINE; isAntiAlias = true }
+        val secAccent = Paint().apply { style = Paint.Style.FILL; color = BRAND; isAntiAlias = true }
+        val secTint = Paint().apply { style = Paint.Style.FILL; color = BRAND_TINT; isAntiAlias = true }
+        val headFill = Paint().apply { style = Paint.Style.FILL; color = BRAND_TINT; isAntiAlias = true }
+        val rowAltFill = Paint().apply { style = Paint.Style.FILL; color = ROW_ALT; isAntiAlias = true }
+        val bandFill = Paint().apply { style = Paint.Style.FILL; color = BRAND }
+        val footLine = Paint().apply { strokeWidth = 1f; color = HAIRLINE }
 
         // ---- text helpers ----
         fun wrap(text: String, paint: Paint, maxW: Float): List<String> {
@@ -124,10 +130,13 @@ object DoctorReportGenerator {
         // ---- block builders ----
         val blocks = ArrayList<Block>()
 
+        // Left accent bar + light brand tint instead of a flat gray box — reads as a section
+        // heading rather than a form-field label, and carries the app's brand color throughout.
         fun sectionBar(title: String) {
-            blocks.add(Block(28f, 12f, keepWithNext = true) { c, top ->
-                c.drawRoundRect(RectF(MARGIN, top, MARGIN + CONTENT_W, top + 26f), 6f, 6f, secFill)
-                c.drawText(title, MARGIN + 12f, top + 18f, secP)
+            blocks.add(Block(30f, 14f, keepWithNext = true) { c, top ->
+                c.drawRect(RectF(MARGIN, top, MARGIN + CONTENT_W, top + 28f), secTint)
+                c.drawRect(RectF(MARGIN, top, MARGIN + 4f, top + 28f), secAccent)
+                c.drawText(title, MARGIN + 14f, top + 19f, secP)
             })
         }
 
@@ -165,33 +174,35 @@ object DoctorReportGenerator {
         }
 
         // Generic data table. colW must sum to CONTENT_W. Each row paginates independently; the
-        // header is emitted as its own block so a clean break never orphans it badly.
+        // header is emitted as its own block so a clean break never orphans it badly. Banded rows
+        // (alternating tint) + a single bottom hairline per row reads cleaner on a scan than a full
+        // grid of borders on every cell.
         fun table(headers: List<String>, colW: List<Float>, rows: List<List<String>>, centerCols: Set<Int> = emptySet()) {
-            val rowH = 30f
+            val rowH = 28f
             // header block
             blocks.add(Block(rowH, 0f, keepWithNext = true) { c, top ->
                 c.drawRect(RectF(MARGIN, top, MARGIN + CONTENT_W, top + rowH), headFill)
                 var x = MARGIN
                 headers.forEachIndexed { i, h ->
-                    c.drawRect(RectF(x, top, x + colW[i], top + rowH), gridStroke)
-                    c.drawText(fit(h, headP, colW[i] - 10f), x + 6f, top + 19f, headP)
+                    c.drawText(fit(h, headP, colW[i] - 10f), x + 8f, top + 18f, headP)
                     x += colW[i]
                 }
             })
             val drawRows = rows.ifEmpty { List(3) { headers.map { "" } } }  // a few blank rows if no data
-            drawRows.forEach { row ->
+            drawRows.forEachIndexed { rowIdx, row ->
                 blocks.add(Block(rowH, 0f) { c, top ->
+                    if (rowIdx % 2 == 1) c.drawRect(RectF(MARGIN, top, MARGIN + CONTENT_W, top + rowH), rowAltFill)
                     var x = MARGIN
                     row.forEachIndexed { i, cell ->
-                        c.drawRect(RectF(x, top, x + colW[i], top + rowH), gridStroke)
                         if (cell.isNotBlank()) {
                             if (i in centerCols) {
                                 val tw = cellP.measureText(cell)
-                                c.drawText(cell, x + (colW[i] - tw) / 2f, top + 19f, cellP)
-                            } else c.drawText(fit(cell, cellP, colW[i] - 10f), x + 6f, top + 19f, cellP)
+                                c.drawText(cell, x + (colW[i] - tw) / 2f, top + 18f, cellP)
+                            } else c.drawText(fit(cell, cellP, colW[i] - 10f), x + 8f, top + 18f, cellP)
                         }
                         x += colW[i]
                     }
+                    c.drawLine(MARGIN, top + rowH, MARGIN + CONTENT_W, top + rowH, hairline)
                 })
             }
             blocks.add(Block(0f, 14f) { _, _ -> })  // spacer after table
@@ -205,27 +216,18 @@ object DoctorReportGenerator {
             blocks.add(Block(rowH, 0f, keepWithNext = true) { c, top ->
                 c.drawRect(RectF(MARGIN, top, MARGIN + CONTENT_W, top + rowH), headFill)
                 var x = MARGIN
-                headers.forEachIndexed { i, h ->
-                    c.drawRect(RectF(x, top, x + cw[i], top + rowH), gridStroke)
-                    c.drawText(h, x + 6f, top + 19f, headP); x += cw[i]
-                }
+                headers.forEachIndexed { i, h -> c.drawText(h, x + 8f, top + 19f, headP); x += cw[i] }
             })
             DEV_DOMAINS.forEachIndexed { idx, domain ->
                 val st = data.development.getOrNull(idx) ?: DevStatus(false, false, "")
                 blocks.add(Block(rowH, 0f) { c, top ->
+                    if (idx % 2 == 1) c.drawRect(RectF(MARGIN, top, MARGIN + CONTENT_W, top + rowH), rowAltFill)
                     var x = MARGIN
-                    // domain
-                    c.drawRect(RectF(x, top, x + cw[0], top + rowH), gridStroke)
-                    c.drawText(fit(domain, cellP, cw[0] - 10f), x + 6f, top + 19f, cellP); x += cw[0]
-                    // ปกติ checkbox
-                    c.drawRect(RectF(x, top, x + cw[1], top + rowH), gridStroke)
+                    c.drawText(fit(domain, cellP, cw[0] - 10f), x + 8f, top + 19f, cellP); x += cw[0]
                     checkbox(c, x + cw[1] / 2f - 7f, top + rowH / 2f - 7f, st.normal, boxStroke, cellP); x += cw[1]
-                    // ควรติดตาม checkbox
-                    c.drawRect(RectF(x, top, x + cw[2], top + rowH), gridStroke)
                     checkbox(c, x + cw[2] / 2f - 7f, top + rowH / 2f - 7f, st.monitor, boxStroke, cellP); x += cw[2]
-                    // note
-                    c.drawRect(RectF(x, top, x + cw[3], top + rowH), gridStroke)
-                    if (st.note.isNotBlank()) c.drawText(fit(st.note, cellP, cw[3] - 10f), x + 6f, top + 19f, cellP)
+                    if (st.note.isNotBlank()) c.drawText(fit(st.note, cellP, cw[3] - 10f), x + 8f, top + 19f, cellP)
+                    c.drawLine(MARGIN, top + rowH, MARGIN + CONTENT_W, top + rowH, hairline)
                 })
             }
             blocks.add(Block(0f, 14f) { _, _ -> })
@@ -267,7 +269,13 @@ object DoctorReportGenerator {
         textArea("รายละเอียดประวัติสุขภาพ", data.healthHistoryDetail, minLines = 4)
         textArea("การดูแลสุขภาพปัจจุบัน หรือคำแนะนำจากแพทย์/ผู้ดูแล", data.currentCare)
 
-        sectionBar("6. สรุปและข้อเสนอแนะ")
+        // §6 — tracked in-app (sleep sessions, medication dose adherence) but previously never
+        // reached this export; both are things a doctor visit commonly asks about directly.
+        sectionBar("6. การนอนและการทานยา")
+        textArea("สรุปการนอน", data.sleepSummary)
+        textArea("ยาที่ใช้ประจำและความสม่ำเสมอในการทาน", data.medicationSummary)
+
+        sectionBar("7. สรุปและข้อเสนอแนะ")
         textArea("สรุปภาพรวม/ประเด็นสำคัญที่ควรติดตาม", data.overallSummary, minLines = 4)
         textArea("ข้อเสนอแนะสำหรับผู้ดูแล/ครู/เจ้าหน้าที่", data.recommendations)
 
@@ -295,7 +303,7 @@ object DoctorReportGenerator {
             // header band
             c.drawRect(RectF(0f, 0f, PAGE_W, BAND_H), bandFill)
             c.drawText("ข้อมูลเด็ก", MARGIN, 44f, titleP)
-            c.drawText("เอกสารข้อมูลเด็กสำหรับบันทึกสุขภาพ พัฒนาการ โภชนาการ และวัคซีน", MARGIN, 66f, subP)
+            c.drawText("เอกสารข้อมูลเด็กสำหรับบันทึกสุขภาพ พัฒนาการ โภชนาการ การนอน และวัคซีน", MARGIN, 66f, subP)
             val pageStr = "หน้า ${idx + 1} / $total"
             c.drawText(pageStr, PAGE_W - MARGIN - metaP.measureText(pageStr), 44f, metaP)
             val refStr = "เลขที่เอกสาร: ${data.documentRef}"
@@ -317,12 +325,12 @@ object DoctorReportGenerator {
         return file
     }
 
-    /** Draws a 14×14 form checkbox; a navy tick (two strokes, not a font glyph) when checked. */
+    /** Draws a 14×14 form checkbox; a brand-colored tick (two strokes, not a font glyph) when checked. */
     private fun checkbox(c: android.graphics.Canvas, x: Float, y: Float, checked: Boolean, stroke: Paint, @Suppress("UNUSED_PARAMETER") textPaint: Paint) {
         c.drawRoundRect(RectF(x, y, x + 14f, y + 14f), 2f, 2f, stroke)
         if (checked) {
             val tick = Paint().apply {
-                style = Paint.Style.STROKE; strokeWidth = 1.8f; color = NAVY; isAntiAlias = true
+                style = Paint.Style.STROKE; strokeWidth = 1.8f; color = BRAND; isAntiAlias = true
                 strokeCap = Paint.Cap.ROUND
             }
             // tick shape inside the 14×14 box

@@ -19,13 +19,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.lullabyai.app.data.model.AppNotification
 import com.lullabyai.app.data.repository.NotifCategory
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NotificationViewModel
 
 @Composable
-fun NotificationsScreen(onBack: () -> Unit) {
+fun NotificationsScreen(navController: NavController, onBack: () -> Unit) {
     val vm: NotificationViewModel = viewModel()
     val state by vm.uiState.collectAsState()
     LaunchedEffect(Unit) { vm.load() }
@@ -45,6 +47,16 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 title = { Text("การแจ้งเตือน", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.HOME,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

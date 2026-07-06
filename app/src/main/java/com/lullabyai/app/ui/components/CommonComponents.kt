@@ -9,19 +9,27 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import kotlinx.coroutines.delay
 
 /** The tabs of the app-wide bottom navigation. CHATBOT is launched from the center floating button, not a bar item. */
 enum class BottomTab { HOME, CHATBOT, CHILD, STATS, SETTINGS }
@@ -224,6 +232,38 @@ fun AIInsightCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * Renders an AI-generated [text] once it arrives; while null, shows a spinner for up to
+ * [timeoutMs], then swaps to [timeoutMessage] instead of spinning forever. Several screens
+ * (Disease Risk, Child Health, Sleep Tracker) loaded AI insights with a bare "if null, spin" —
+ * if the underlying call ever hung or failed silently without setting state, the spinner never
+ * resolved and a parent had no way to know something went wrong.
+ */
+@Composable
+fun AiTextOrTimeout(
+    text: String?,
+    timeoutMessage: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    textAlign: TextAlign? = null,
+    timeoutMs: Long = 12_000L
+) {
+    var timedOut by remember { mutableStateOf(false) }
+    LaunchedEffect(text) {
+        timedOut = false
+        if (text == null) {
+            delay(timeoutMs)
+            timedOut = true
+        }
+    }
+    when {
+        text != null -> Text(text, modifier = modifier, style = style, color = color, textAlign = textAlign)
+        timedOut -> Text(timeoutMessage, modifier = modifier, style = style, color = Error, textAlign = textAlign)
+        else -> LinearProgressIndicator(modifier = modifier.fillMaxWidth(), color = Primary)
     }
 }
 

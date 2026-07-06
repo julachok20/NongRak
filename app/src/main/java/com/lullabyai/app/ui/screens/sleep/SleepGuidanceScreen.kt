@@ -17,7 +17,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 
 private data class WakeWindow(val ageRange: String, val ageRangeEn: String, val window: String, val windowEn: String)
@@ -29,7 +31,7 @@ private val WAKE_WINDOWS = listOf(
 )
 
 @Composable
-fun SleepGuidanceScreen(onBack: () -> Unit) {
+fun SleepGuidanceScreen(navController: NavController, onBack: () -> Unit, onCreateSchedule: () -> Unit = {}) {
     val s = LocalStrings.current
     Scaffold(
         topBar = {
@@ -37,6 +39,16 @@ fun SleepGuidanceScreen(onBack: () -> Unit) {
                 title = { Text(if (s.isThai) "คำแนะนำการนอน" else "Sleep Guidance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -82,6 +94,14 @@ fun SleepGuidanceScreen(onBack: () -> Unit) {
                 RoutineStep(1, if (s.isThai) "ผ่อนคลายร่างกาย" else "Calm the body", if (s.isThai) "อาบน้ำอุ่นหรือเช็ดตัวเบาๆ" else "Warm bath or a gentle wipe-down")
                 RoutineStep(2, if (s.isThai) "กระตุ้นพัฒนาการ" else "Wind-down activity", if (s.isThai) "อ่านนิทานสั้นๆ ก่อนนอน" else "Read a short book together")
                 RoutineStep(3, if (s.isThai) "กล่อมเข้านอน" else "Settle to sleep", if (s.isThai) "เปิดเพลงกล่อมเบาๆ หรือร้องเพลงกล่อม" else "Soft lullaby music or singing")
+            }
+
+            Button(
+                onClick = onCreateSchedule, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Icon(Icons.Filled.CalendarMonth, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                Text(if (s.isThai) "สร้างตารางการนอน" else "Create sleep schedule", fontWeight = FontWeight.Bold)
             }
 
             androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))

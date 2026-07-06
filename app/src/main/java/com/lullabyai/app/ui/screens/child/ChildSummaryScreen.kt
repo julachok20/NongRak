@@ -68,7 +68,7 @@ fun ChildSummaryScreen(
     val categories = remember(milestones) { milestones.map { it.category }.distinct().take(2) }
 
     LaunchedEffect(child) {
-        child?.let { chatViewModel.loadChildInfoSummary(it) }
+        child?.let { chatViewModel.loadChildInfoSummary(it, s.isThai) }
     }
 
     // If the active child changed elsewhere (added a child, or switched on another screen), reload.

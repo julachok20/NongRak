@@ -92,6 +92,16 @@ fun HealthDetailScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.Settings.route) { launchSingleTop = true } }
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         if (record == null) {
@@ -119,6 +129,27 @@ fun HealthDetailScreen(
                 }
                 Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
                     Text(if (s.isThai) "บันทึกแล้ว" else "Saved", modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Recovered/monitoring toggle — feeds the status badge on HealthHistoryScreen's timeline.
+            val recovered = record.status == "recovered"
+            Surface(
+                onClick = { childViewModel.toggleHealthRecordStatus(record.id) },
+                shape = RoundedCornerShape(100.dp),
+                color = if (recovered) Color(0xFF2E7D32).copy(0.1f) else Color(0xFFED6C02).copy(0.1f)
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        if (recovered) Icons.Filled.CheckCircle else Icons.Filled.Visibility, null,
+                        tint = if (recovered) Color(0xFF2E7D32) else Color(0xFFED6C02), modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        if (recovered) (if (s.isThai) "หายแล้ว — แตะเพื่อทำเครื่องหมายว่ากำลังติดตาม" else "Recovered — tap to mark as monitoring")
+                        else (if (s.isThai) "กำลังติดตาม — แตะเพื่อทำเครื่องหมายว่าหายแล้ว" else "Monitoring — tap to mark as recovered"),
+                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                        color = if (recovered) Color(0xFF2E7D32) else Color(0xFFED6C02)
+                    )
                 }
             }
 

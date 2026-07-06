@@ -30,7 +30,6 @@ fun LastSetupScreen(
     onBack: () -> Unit
 ) {
     val state by onboardingViewModel.uiState.collectAsState()
-    var username by remember { mutableStateOf(state.username) }
     var relationship by remember { mutableStateOf(state.relationship) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding()) {
@@ -97,23 +96,6 @@ fun LastSetupScreen(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
-
-                Column(modifier = Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("USERNAME (ชื่อผู้ใช้)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Enter your username", color = Outline) },
-                        trailingIcon = { Icon(Icons.Filled.AlternateEmail, null, tint = Outline) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = fieldColors()
-                    )
-                    Text("ชื่อนี้จะแสดงในหน้าแดชบอร์ดและรายงานของคุณ", style = MaterialTheme.typography.bodySmall, color = Outline)
-                }
-
                 Spacer(Modifier.height(24.dp))
             }
 
@@ -138,7 +120,7 @@ fun LastSetupScreen(
                 PrimaryButton(
                     text = "Complete (เสร็จสิ้น) →",
                     onClick = {
-                        onboardingViewModel.updateLastSetup(username, null, relationship)
+                        onboardingViewModel.updateLastSetup("", null, relationship)
                         onboardingViewModel.completeOnboarding(onComplete)
                     },
                     isLoading = state.isLoading

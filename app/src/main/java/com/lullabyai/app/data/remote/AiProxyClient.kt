@@ -38,6 +38,7 @@ object AiProxyClient {
         maxTokens: Int,
         errors: MutableList<String> = mutableListOf(),
         system: String? = null,
+        jsonMode: Boolean? = null,
         imageBase64: String? = null,
         imageMimeType: String? = null
     ): Result {
@@ -52,6 +53,7 @@ object AiProxyClient {
                 put("useSearch", useSearch)
                 put("maxTokens", maxTokens)
                 if (!system.isNullOrBlank()) put("system", system)
+                if (jsonMode != null) put("jsonMode", jsonMode)
                 if (!imageBase64.isNullOrBlank()) {
                     put("imageBase64", imageBase64)
                     put("imageMimeType", imageMimeType ?: "image/jpeg")

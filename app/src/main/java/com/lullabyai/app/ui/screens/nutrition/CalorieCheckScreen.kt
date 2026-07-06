@@ -17,7 +17,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
 
@@ -26,7 +28,7 @@ import com.lullabyai.app.viewmodel.NutritionViewModel
  * Type any dish → AI estimates total kcal + macros + a tip, with a generated photo.
  */
 @Composable
-fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit) {
+fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
     val isThai = lang.startsWith("th")
     var food by remember { mutableStateOf("") }
@@ -38,6 +40,16 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit)
                 title = { Text(if (isThai) "ตรวจสอบแคลอรี่" else "Calorie check", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

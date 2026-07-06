@@ -6,7 +6,9 @@ import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChatSession
 import com.lullabyai.app.data.model.UiChatMessage
 import com.lullabyai.app.data.repository.AiRepository
+import com.lullabyai.app.data.repository.AuthRepository
 import com.lullabyai.app.data.repository.ChatRepository
+import com.lullabyai.app.util.RelationshipLabels
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -25,28 +27,38 @@ data class ChatUiState(
     val healthAnalysis: String? = null,
     val diseaseRiskAnalysis: String? = null,
     val growthInsight: String? = null,
+    val weeklyHealthReport: String? = null,
+    val sleepInsight: String? = null,
+    val quickTip: String? = null,
+    val trendInsights: String? = null,
     val diseaseList: List<RiskDisease> = emptyList(),
     val preventionList: List<PreventionTip> = emptyList(),
     val isRefreshing: Boolean = false,
     val analysisChildId: String? = null,  // which child the AI analyses below belong to (multi-child)
+    val parentRelationship: String? = null, // profiles.relationship — how the chatbot addresses the user
     val lastProvider: String = ""   // which AI model answered the latest message (debug indicator)
 )
 
 class ChatViewModel : ViewModel() {
     private val repo = ChatRepository()
     private val aiRepo = AiRepository()
+    private val authRepo = AuthRepository()
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
 
-    private val welcomeMessage = UiChatMessage(
+    private fun welcomeMessage(relationship: String?) = UiChatMessage(
         id = "welcome",
         role = "model",
-        content = "สวัสดีค่ะ! 👋\nมีอะไรให้ช่วยเกี่ยวกับลูกของคุณบ้างคะ?"
+        content = RelationshipLabels.chatWelcome(relationship)
     )
 
     fun loadSessions() {
         viewModelScope.launch {
+            val relationship = authRepo.getProfile().getOrNull()?.relationship
+            if (relationship != null) {
+                _uiState.value = _uiState.value.copy(parentRelationship = relationship)
+            }
             repo.getSessions().onSuccess { sessions ->
                 _uiState.value = _uiState.value.copy(sessions = sessions)
                 // Auto-open most recent, or create a new one if none
@@ -65,7 +77,7 @@ class ChatViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(
                     sessions = sessions,
                     currentSessionId = session.id,
-                    messages = listOf(welcomeMessage)
+                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship))
                 )
             }
         }
@@ -87,11 +99,15 @@ class ChatViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(currentSessionId = sessionId, isLoading = true)
         viewModelScope.launch {
             repo.getMessages(sessionId).onSuccess { msgs ->
-                val ui = if (msgs.isEmpty()) listOf(welcomeMessage)
+                val welcome = welcomeMessage(_uiState.value.parentRelationship)
+                val ui = if (msgs.isEmpty()) listOf(welcome)
                 else msgs.map { UiChatMessage(it.id, it.role, it.content) }
                 _uiState.value = _uiState.value.copy(messages = ui, isLoading = false)
             }.onFailure {
-                _uiState.value = _uiState.value.copy(isLoading = false, messages = listOf(welcomeMessage))
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship))
+                )
             }
         }
     }
@@ -117,9 +133,16 @@ class ChatViewModel : ViewModel() {
             isLoading = true
         )
         viewModelScope.launch {
-            repo.sendMessage(sessionId, content, child, imageBytes, imageMime)
+            repo.sendMessage(sessionId, content, child, imageBytes, imageMime, _uiState.value.parentRelationship)
                 .onSuccess { response ->
-                    val aiMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "model", content = response)
+                    // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
+                    // RelationshipLabels.chatSystemPrompt) — strip it into structured data for the
+                    // confirmation card / info popup; the visible bubble stays plain text.
+                    val (displayText, action, needInfo) = com.lullabyai.app.util.parseAgentAction(response)
+                    val aiMsg = UiChatMessage(
+                        id = java.util.UUID.randomUUID().toString(), role = "model", content = displayText,
+                        agentAction = action, needInfo = needInfo
+                    )
                     _uiState.value = _uiState.value.copy(
                         messages = _uiState.value.messages + aiMsg,
                         isLoading = false,
@@ -139,6 +162,155 @@ class ChatViewModel : ViewModel() {
     }
 
     /**
+     * Executes the [messageId] message's pending AgentAction — the ONLY path that actually writes
+     * data on the AI's behalf, and only ever runs when the user taps Confirm on the chat card.
+     * Scoped to additive/low-risk repository calls for this first version: logging sleep/food/
+     * exercise/health, updating growth numbers, and deleting the single most-recent log of a type.
+     * Not supported yet (out of scope for v1): editing an arbitrary existing record, medication
+     * schedules, vaccine records, or account/settings changes.
+     */
+    fun confirmAgentAction(messageId: String, childId: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        val action = msg.agentAction ?: return
+        viewModelScope.launch {
+            val ok = runCatching { dispatchAgentAction(action, childId) }
+                .onFailure { android.util.Log.e("AgentAction", "type=${action.type} params=${action.params} confirmText='${action.confirmText}' threw", it) }
+                .getOrDefault(false)
+            if (!ok) android.util.Log.w("AgentAction", "type=${action.type} params=${action.params} confirmText='${action.confirmText}' returned false (unmatched type or missing required param)")
+            _uiState.value = _uiState.value.copy(
+                messages = _uiState.value.messages.map {
+                    if (it.id == messageId) it.copy(actionStatus = if (ok) "confirmed" else "failed") else it
+                }
+            )
+        }
+    }
+
+    fun cancelAgentAction(messageId: String) {
+        _uiState.value = _uiState.value.copy(
+            messages = _uiState.value.messages.map { if (it.id == messageId) it.copy(actionStatus = "cancelled") else it }
+        )
+    }
+
+    /** Popup "Submit" — sends the answer as a normal chat message so the AI picks up straight from
+     *  where it left off (and can even log it via AgentAction itself, e.g. weight -> update_growth). */
+    fun answerNeedInfo(messageId: String, answer: String, child: Child?) {
+        dismissNeedInfo(messageId)
+        if (answer.isNotBlank()) sendMessage(answer, child)
+    }
+
+    /** Popup "Skip" — no cooldown by design (see NeedInfoRequest); just hides this instance. */
+    fun dismissNeedInfo(messageId: String) {
+        _uiState.value = _uiState.value.copy(
+            messages = _uiState.value.messages.map { if (it.id == messageId) it.copy(needInfoAnswered = true) else it }
+        )
+    }
+
+    // Models don't always reproduce a literal string exactly — "Log Sleep" / "log-sleep" instead
+    // of "log_sleep" would otherwise silently fall through to the `else -> false` branch with no
+    // trace of why.
+    private fun normalizeType(type: String) = type.trim().lowercase().replace(Regex("[ -]"), "_")
+
+    // Case-insensitivity alone wasn't enough: even after fixing the type-matching (confirmed via
+    // Supabase's API logs — no writes were ever attempted), fresh test messages STILL produced zero
+    // writes. The remaining gap is param *key* naming — the system prompt asks for camelCase
+    // ("startTime") but the model reliably drifts to snake_case ("start_time") regardless, and every
+    // required-param lookup below does `?: return false`, which bails out before any repository call
+    // even runs. Stripping delimiters (underscore/hyphen/space) from both sides before comparing
+    // makes the lookup tolerant of whichever convention the model actually used.
+    private fun canonicalKey(k: String) = k.lowercase().filter { it.isLetterOrDigit() }
+    private fun Map<String, String>.getCi(key: String): String? {
+        val target = canonicalKey(key)
+        return entries.firstOrNull { canonicalKey(it.key) == target }?.value
+    }
+    /** Same lookup, but logs exactly which required param was missing and what keys were actually
+     *  present — so if this still silently fails, the next check tells us precisely why instead of
+     *  another blind guess. */
+    private fun Map<String, String>.requireCi(key: String, type: String): String? =
+        getCi(key) ?: run { android.util.Log.w("AgentAction", "type='$type' missing required param '$key' — had keys: ${keys}"); null }
+
+    // Checked via Supabase's own API logs: zero POST attempts ever reached sleep_logs/food_logs/
+    // exercise_logs/health_records/growth_records, meaning the old exact `when("log_sleep" -> ...)`
+    // matching fell through to `else -> false` before any repository call — the model just isn't
+    // reproducing the literal type string reliably, no matter how precisely the prompt spells it
+    // out. Keyword matching on the normalized type is far more forgiving of whatever wording an
+    // LLM actually free-generates. "delete"/"remove" is checked first so e.g. "delete_sleep_log"
+    // (contains both "delete" and "sleep") routes to deletion, not to logging a new sleep entry.
+    private suspend fun dispatchAgentAction(action: com.lullabyai.app.data.model.AgentAction, childId: String): Boolean {
+        val p = action.params
+        val t = normalizeType(action.type)
+        return when {
+            "delete" in t || "remove" in t -> {
+                val logType = p.getCi("logType")?.lowercase() ?: when {
+                    "sleep" in t -> "sleep"
+                    "food" in t || "meal" in t -> "food"
+                    "exercise" in t || "activity" in t -> "exercise"
+                    else -> null
+                }
+                when (logType) {
+                    "sleep" -> com.lullabyai.app.data.repository.SleepRepository().getLogs(childId).getOrNull()
+                        ?.maxByOrNull { it.startTime }?.let { com.lullabyai.app.data.repository.SleepRepository().deleteLog(it.id).isSuccess } ?: false
+                    "food" -> com.lullabyai.app.data.repository.NutritionRepository().getFoodLogs(childId)
+                        .maxByOrNull { it.createdAt ?: "" }?.let { com.lullabyai.app.data.repository.NutritionRepository().deleteFood(it.id).isSuccess } ?: false
+                    "exercise" -> com.lullabyai.app.data.repository.NutritionRepository().getExerciseLogs(childId)
+                        .maxByOrNull { it.createdAt ?: "" }?.let { com.lullabyai.app.data.repository.NutritionRepository().deleteExercise(it.id).isSuccess } ?: false
+                    else -> false
+                }
+            }
+            "sleep" in t -> {
+                val today = java.time.LocalDate.now().toString()
+                val start = p.requireCi("startTime", t) ?: return false
+                val end = p.requireCi("endTime", t) ?: return false
+                val endDate = if (end < start) java.time.LocalDate.now().plusDays(1).toString() else today
+                com.lullabyai.app.data.repository.SleepRepository()
+                    .addManualLog(childId, p.getCi("sleepType") ?: "main", "${today}T$start:00", "${endDate}T$end:00")
+                    .isSuccess
+            }
+            "growth" in t || "weight" in t || "height" in t -> {
+                val weight = p.getCi("weightKg")?.toDoubleOrNull()
+                val height = p.getCi("heightCm")?.toDoubleOrNull()
+                if (weight == null && height == null) {
+                    android.util.Log.w("AgentAction", "type='$t' had neither weightKg nor heightCm — keys: ${p.keys}")
+                    return false
+                }
+                com.lullabyai.app.data.repository.HealthRepository().addGrowthRecord(
+                    com.lullabyai.app.data.model.GrowthRecord(
+                        childId = childId, weightKg = weight, heightCm = height,
+                        recordedAt = java.time.Instant.now().toString()
+                    )
+                ).isSuccess
+            }
+            "food" in t || "meal" in t -> {
+                com.lullabyai.app.data.repository.NutritionRepository()
+                    .addFood(childId, p.getCi("mealType") ?: "other", p.requireCi("itemName", t) ?: action.confirmText.ifBlank { return false }, p.getCi("calories")?.toIntOrNull())
+                    .isSuccess
+            }
+            "exercise" in t || "activity" in t -> {
+                com.lullabyai.app.data.repository.NutritionRepository()
+                    .addExercise(childId, p.requireCi("activityName", t) ?: action.confirmText.ifBlank { return false }, p.getCi("durationMin")?.toIntOrNull(), null)
+                    .isSuccess
+            }
+            "health" in t || "symptom" in t || "record" in t || "log" in t -> {
+                // Observed via logcat: the model sometimes emits params={} entirely for log_health
+                // (confirmed live — 3 identical failures) despite the type matching correctly.
+                // confirmText is the one field it reliably fills in (it's shown directly in the
+                // chat UI), so it's a much safer fallback than failing the whole action.
+                com.lullabyai.app.data.repository.HealthRepository().addHealthRecord(
+                    com.lullabyai.app.data.model.HealthRecord(
+                        childId = childId, eventType = "log", title = p.requireCi("title", t) ?: action.confirmText.ifBlank { return false },
+                        description = p.getCi("description"), severity = "mild",
+                        temperature = p.getCi("temperature")?.toDoubleOrNull(),
+                        recordedAt = java.time.LocalDate.now().toString()
+                    )
+                ).isSuccess
+            }
+            else -> {
+                android.util.Log.w("AgentAction", "no keyword match for normalized type '$t' (raw: '${action.type}')")
+                false
+            }
+        }
+    }
+
+    /**
      * Multi-child guard: if the child changed, immediately clear ALL cached AI analyses so the
      * previous child's insights never show for the new one. Loaders below also drop stale results
      * (a slow generation that finishes after the user switched again).
@@ -148,57 +320,64 @@ class ChatViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(
                 analysisChildId = childId,
                 dashboardSummary = null, childInfoSummary = null, healthAnalysis = null,
-                diseaseRiskAnalysis = null, growthInsight = null,
+                diseaseRiskAnalysis = null, growthInsight = null, weeklyHealthReport = null, sleepInsight = null,
+                quickTip = null, trendInsights = null,
                 diseaseList = emptyList(), preventionList = emptyList()
             )
         }
     }
     private fun isCurrent(childId: String) = _uiState.value.analysisChildId == childId
 
+    // The outer aiRepo cache (Supabase ai_analysis table) is keyed only by (childId, type) — without
+    // a language suffix, switching the app's language would still return yesterday's cached Thai
+    // text on an English-selected screen (or vice versa), same class of bug as the sleep_insight
+    // permanent-cache issue fixed earlier. langTag() keeps the two languages in separate cache rows.
+    private fun langTag(isThai: Boolean) = if (isThai) "th" else "en"
+
     // Dashboard insight (3-sentence child + risk summary)
-    fun loadDashboardSummary(child: Child) {
+    fun loadDashboardSummary(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
-            val text = aiRepo.getOrGenerate(child.id, "dashboard") {
-                repo.generateDashboardSummary(child).getOrDefault("กำลังวิเคราะห์...")
+            val text = aiRepo.getOrGenerate(child.id, "dashboard_${langTag(isThai)}") {
+                repo.generateDashboardSummary(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(dashboardSummary = text)
         }
     }
 
     // Child Summary page (factual, instruction-style, < 7 sentences)
-    fun loadChildInfoSummary(child: Child) {
+    fun loadChildInfoSummary(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
-            val text = aiRepo.getOrGenerate(child.id, "child_summary") {
-                repo.generateChildSummary(child).getOrDefault("กำลังวิเคราะห์...")
+            val text = aiRepo.getOrGenerate(child.id, "child_summary_${langTag(isThai)}") {
+                repo.generateChildSummary(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(childInfoSummary = text)
         }
     }
 
     // Loads from DB cache; generates + saves only if missing.
-    fun loadHealthAnalysis(child: Child) {
+    fun loadHealthAnalysis(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
-            val text = aiRepo.getOrGenerate(child.id, "health") {
-                repo.generateHealthAnalysis(child).getOrDefault("กำลังวิเคราะห์...")
+            val text = aiRepo.getOrGenerate(child.id, "health_${langTag(isThai)}") {
+                repo.generateHealthAnalysis(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(healthAnalysis = text)
         }
     }
 
-    fun loadDiseaseRisk(child: Child) {
+    fun loadDiseaseRisk(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
-            val prediction = aiRepo.getOrGenerate(child.id, "disease_risk") {
-                repo.generateDiseaseRiskAnalysis(child).getOrDefault("กำลังวิเคราะห์...")
+            val prediction = aiRepo.getOrGenerate(child.id, "disease_risk_${langTag(isThai)}") {
+                repo.generateDiseaseRiskAnalysis(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
-            val listRaw = aiRepo.getOrGenerate(child.id, "risk_diseases") {
-                repo.generateDiseaseList(child).getOrDefault("")
+            val listRaw = aiRepo.getOrGenerate(child.id, "risk_diseases_${langTag(isThai)}") {
+                repo.generateDiseaseList(child, isThai = isThai).getOrDefault("")
             }
-            val prevRaw = aiRepo.getOrGenerate(child.id, "prevention") {
-                repo.generatePrevention(child).getOrDefault("")
+            val prevRaw = aiRepo.getOrGenerate(child.id, "prevention_${langTag(isThai)}") {
+                repo.generatePrevention(child, isThai = isThai).getOrDefault("")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(
                 diseaseRiskAnalysis = prediction,
@@ -208,29 +387,90 @@ class ChatViewModel : ViewModel() {
         }
     }
 
-    fun loadGrowthInsight(child: Child) {
+    fun loadGrowthInsight(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
-            val text = aiRepo.getOrGenerate(child.id, "growth") {
-                repo.generateGrowthInsight(child).getOrDefault("กำลังวิเคราะห์...")
+            val text = aiRepo.getOrGenerate(child.id, "growth_${langTag(isThai)}") {
+                repo.generateGrowthInsight(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(growthInsight = text)
         }
     }
 
+    fun loadWeeklyHealthReport(child: Child, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "weekly_report_${langTag(isThai)}") {
+                repo.generateWeeklyHealthReport(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(weeklyHealthReport = text)
+        }
+    }
+
+    /** [logs] should be the caller's already-loaded sleep logs (ChildViewModel.uiState.sleepLogs) —
+     *  built into a plain-text summary here so ChatRepository doesn't need to know the SleepLog model. */
+    fun loadSleepInsight(child: Child, logs: List<com.lullabyai.app.data.model.SleepLog>, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        val recent = logs.filter { it.endTime != null }.sortedByDescending { it.startTime }.take(14)
+        val summary = if (recent.isEmpty()) "ยังไม่มีบันทึกการนอนที่เสร็จสมบูรณ์" else recent.joinToString("\n") { log ->
+            val start = com.lullabyai.app.util.TimeUtils.parseInstant(log.startTime)
+            val end = log.endTime?.let { com.lullabyai.app.util.TimeUtils.parseInstant(it) }
+            val minutes = if (start != null && end != null) java.time.Duration.between(start, end).toMinutes() else null
+            "${if (log.sleepType == "nap") "งีบ" else "นอนหลัก"} " +
+                (com.lullabyai.app.util.TimeUtils.localTime(log.startTime) ?: "") +
+                (minutes?.let { " (${it / 60}ชม.${it % 60}นาที)" } ?: "")
+        }
+        viewModelScope.launch {
+            // Sleep logs change many times a day (unlike growth/health), so this always
+            // regenerates from the current logs rather than returning a stale cached row —
+            // getOrGenerate would otherwise keep returning whatever was first generated
+            // (often when there was little/no data yet) forever, since nothing else refreshes it.
+            val text = aiRepo.refresh(child.id, "sleep_insight_${langTag(isThai)}") {
+                repo.generateSleepInsight(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(sleepInsight = text)
+        }
+    }
+
+    /** [activitySummary] is a caller-built plain-text summary of the child's most recent logs
+     *  across sleep/food/health/development — built by the screen since it already merges those
+     *  for display, so ChatViewModel doesn't need to depend on every log model. */
+    fun loadQuickTip(child: Child, activitySummary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "quick_tip_${langTag(isThai)}") {
+                repo.generateQuickTip(child, activitySummary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(quickTip = text)
+        }
+    }
+
+    /** [trendSummary] is a caller-built plain-text summary of the last 7 days of sleep/food logs. */
+    fun loadTrendInsights(child: Child, trendSummary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "trend_insights_${langTag(isThai)}") {
+                repo.generateTrendInsights(child, trendSummary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(trendInsights = text)
+        }
+    }
+
     /** อัปเดตข้อมูล button: force-regenerate all cached analyses. */
-    fun refreshAllAnalysis(child: Child) {
+    fun refreshAllAnalysis(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isRefreshing = true)
+            val tag = langTag(isThai)
             // forceRefresh = true bypasses search_cache so the AI is actually called fresh
-            val prediction = aiRepo.refresh(child.id, "disease_risk") { repo.generateDiseaseRiskAnalysis(child, forceRefresh = true).getOrDefault("") }
-            val listRaw = aiRepo.refresh(child.id, "risk_diseases") { repo.generateDiseaseList(child, forceRefresh = true).getOrDefault("") }
-            val prevRaw = aiRepo.refresh(child.id, "prevention") { repo.generatePrevention(child, forceRefresh = true).getOrDefault("") }
-            aiRepo.refresh(child.id, "health") { repo.generateHealthAnalysis(child, forceRefresh = true).getOrDefault("") }
-            aiRepo.refresh(child.id, "growth") { repo.generateGrowthInsight(child, forceRefresh = true).getOrDefault("") }
-            val dash = aiRepo.refresh(child.id, "dashboard") { repo.generateDashboardSummary(child, forceRefresh = true).getOrDefault("") }
-            val childSum = aiRepo.refresh(child.id, "child_summary") { repo.generateChildSummary(child, forceRefresh = true).getOrDefault("") }
+            val prediction = aiRepo.refresh(child.id, "disease_risk_$tag") { repo.generateDiseaseRiskAnalysis(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            val listRaw = aiRepo.refresh(child.id, "risk_diseases_$tag") { repo.generateDiseaseList(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            val prevRaw = aiRepo.refresh(child.id, "prevention_$tag") { repo.generatePrevention(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            aiRepo.refresh(child.id, "health_$tag") { repo.generateHealthAnalysis(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            aiRepo.refresh(child.id, "growth_$tag") { repo.generateGrowthInsight(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            val dash = aiRepo.refresh(child.id, "dashboard_$tag") { repo.generateDashboardSummary(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            val childSum = aiRepo.refresh(child.id, "child_summary_$tag") { repo.generateChildSummary(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
+            val weeklyReport = aiRepo.refresh(child.id, "weekly_report_$tag") { repo.generateWeeklyHealthReport(child, forceRefresh = true, isThai = isThai).getOrDefault("") }
             val parsedDiseases = parseDiseases(listRaw)
             // Only apply if the user hasn't switched to a different child mid-refresh.
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(
@@ -238,6 +478,7 @@ class ChatViewModel : ViewModel() {
                 diseaseRiskAnalysis = prediction,
                 diseaseList = parsedDiseases,
                 preventionList = parsePrevention(prevRaw),
+                weeklyHealthReport = weeklyReport,
                 isRefreshing = false
             ) else _uiState.value = _uiState.value.copy(isRefreshing = false)
             // Notifications: normal on refresh, warning if a high-risk disease is found

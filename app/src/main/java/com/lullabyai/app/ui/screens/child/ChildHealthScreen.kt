@@ -43,11 +43,17 @@ fun ChildHealthScreen(
     val vaccines = childState.vaccines
     val medicationDoses = childState.medicationDoses
     val medicalDocuments = childState.medicalDocuments
+    // No permanent dismissal by design — reappears every time this screen loads until an allergy
+    // record exists, since Health/Disease Risk AI both read allergy history (buildChildContext).
+    var showMissingInfo by remember { mutableStateOf(true) }
+    val missingFields = remember(child, allergies) {
+        if (child != null && allergies.isEmpty()) listOf(if (s.isThai) "ประวัติการแพ้" else "Allergy history") else emptyList()
+    }
 
     LaunchedEffect(child) {
         child?.let {
-            chatViewModel.loadHealthAnalysis(it)
-            chatViewModel.loadDiseaseRisk(it)
+            chatViewModel.loadHealthAnalysis(it, s.isThai)
+            chatViewModel.loadDiseaseRisk(it, s.isThai)
         }
     }
     LaunchedEffect(child?.id) {
@@ -115,11 +121,12 @@ fun ChildHealthScreen(
                             }
                             Icon(Icons.Filled.Info, null, tint = Outline, modifier = Modifier.size(18.dp))
                         }
-                        if (chatState.healthAnalysis != null) {
-                            Text(chatState.healthAnalysis!!, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                        }
+                        com.lullabyai.app.ui.components.AiTextOrTimeout(
+                            text = chatState.healthAnalysis,
+                            timeoutMessage = if (s.isThai) "ไม่สามารถโหลดข้อมูลเพิ่มเติม" else "Unable to load additional info",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             StatBox(if (s.isThai) "ภูมิคุ้มกัน" else "Immunity", if (s.isThai) "ระดับปกติ" else "Normal", Primary, Modifier.weight(1f))
                             StatBox(if (s.isThai) "ความเสี่ยงแพ้" else "Allergy risk", if (s.isThai) "ต่ำมาก" else "Very low", Secondary, Modifier.weight(1f))
@@ -198,10 +205,14 @@ fun ChildHealthScreen(
 
             // Medication summary + medicine alert
             item {
+                // Earliest pending dose — includes overdue ones, since a dose stays "due" until acted on.
                 val nextDose = medicationDoses.filter { it.status == "pending" }
                     .mapNotNull { d -> com.lullabyai.app.util.TimeUtils.parseInstant(d.scheduledAt)?.let { d to it } }
-                    .filter { it.second.isAfter(java.time.Instant.now()) }
                     .minByOrNull { it.second }
+                // Actionable once within 15 min of the scheduled time (before or after).
+                val nextDoseWaiting = nextDose?.let {
+                    java.time.Duration.between(java.time.Instant.now(), it.second).toMinutes() > 15
+                } ?: false
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -219,15 +230,17 @@ fun ChildHealthScreen(
                             }
                         }
                         if (nextDose != null) {
-                            Surface(shape = RoundedCornerShape(12.dp), color = Primary.copy(0.08f)) {
+                            Surface(shape = RoundedCornerShape(12.dp), color = (if (nextDoseWaiting) Outline else Primary).copy(0.08f)) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Icon(Icons.Filled.Alarm, null, tint = Primary, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Filled.Alarm, null, tint = if (nextDoseWaiting) Outline else Primary, modifier = Modifier.size(20.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(if (s.isThai) "ยาครั้งถัดไป" else "Next dose", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text((com.lullabyai.app.util.TimeUtils.localTime(nextDose.first.scheduledAt) ?: "") + " น.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Primary)
+                                        Text(if (nextDoseWaiting) (if (s.isThai) "ยาครั้งถัดไป (รอเวลา)" else "Next dose (waiting)") else (if (s.isThai) "ถึงเวลาทานยาแล้ว" else "Dose due now"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text((com.lullabyai.app.util.TimeUtils.localTime(nextDose.first.scheduledAt) ?: "") + " น.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = if (nextDoseWaiting) Outline else Primary)
                                     }
-                                    Button(onClick = { childViewModel.markDoseTaken(nextDose.first.id) }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
-                                        Text(if (s.isThai) "ยืนยันให้ยาแล้ว" else "Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                    if (!nextDoseWaiting) {
+                                        Button(onClick = { childViewModel.markDoseTaken(nextDose.first.id) }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                                            Text(if (s.isThai) "ยืนยันให้ยาแล้ว" else "Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                        }
                                     }
                                 }
                             }
@@ -289,11 +302,14 @@ fun ChildHealthScreen(
                                 Text(if (s.isThai) "ยังไม่มีบันทึกสุขภาพ" else "No health records yet", color = Outline, style = MaterialTheme.typography.bodyMedium)
                             }
                         } else {
-                            healthRecords.forEach { record ->
+                            healthRecords.take(5).forEach { record ->
                                 HealthRecordRow(record = record, onClick = {
                                     childViewModel.selectHealthRecord(record.id)
                                     navController.navigate(Screen.HealthDetail.route)
                                 })
+                            }
+                            TextButton(onClick = { navController.navigate(Screen.HealthHistory.route) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (s.isThai) "ดูประวัติสุขภาพทั้งหมด" else "View full health history", color = Primary, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -301,6 +317,14 @@ fun ChildHealthScreen(
                 Spacer(Modifier.height(8.dp))
             }
         }
+    }
+
+    if (showMissingInfo) {
+        com.lullabyai.app.ui.components.MissingChildInfoPrompt(
+            missingFields = missingFields, isThai = s.isThai,
+            onFillIn = { showMissingInfo = false; navController.navigate(Screen.AllergyHistory.route) },
+            onSkip = { showMissingInfo = false }
+        )
     }
 }
 

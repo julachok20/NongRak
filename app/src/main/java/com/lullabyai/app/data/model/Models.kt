@@ -172,7 +172,14 @@ data class HealthRecord(
     val temperature: Double? = null,
     @SerialName("additional_symptoms") val additionalSymptoms: List<String>? = null,
     @SerialName("photo_url") val photoUrl: String? = null,
-    @SerialName("recorded_at") val recordedAt: String? = null
+    @SerialName("recorded_at") val recordedAt: String? = null,
+    // recorded_at is date-only in practice (AddHealthRecordScreen only lets the user pick a date,
+    // not a time), so two records logged the same day are indistinguishable by it alone — created_at
+    // (a real insert-time timestamp, DB default now()) breaks the tie so the list order matches the
+    // order they were actually logged in, not an arbitrary one.
+    @SerialName("created_at") val createdAt: String? = null,
+    // monitoring | recovered — drives the status badge on HealthHistoryScreen's timeline.
+    val status: String = "monitoring"
 )
 
 @Serializable
@@ -211,7 +218,34 @@ data class UiChatMessage(
     val role: String,
     val content: String,
     val imageUri: String? = null,   // local content:// URI of an attached image (display only, this session)
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val agentAction: AgentAction? = null,   // non-null when the AI proposed a data-changing action
+    val actionStatus: String? = null,       // null = awaiting confirmation, "confirmed", "cancelled", "failed"
+    val needInfo: NeedInfoRequest? = null,  // non-null when the AI needs one piece of info to help further
+    val needInfoAnswered: Boolean = false   // true once the popup was submitted or skipped (hides it)
+)
+
+/**
+ * The AI asked a clarifying question via chat (e.g. it can't judge growth without the child's
+ * current weight). No skip cooldown by design — skipping just dismisses this instance; if the AI
+ * still lacks the info on a later turn, it asks again on its own.
+ */
+@Serializable
+data class NeedInfoRequest(
+    val question: String,
+    val fieldLabel: String = ""
+)
+
+/**
+ * A data-changing action the AI proposed via chat (log/edit/delete). Always requires an explicit
+ * user tap to execute — see ChatViewModel.confirmAgentAction — nothing in [type]/[params] runs on
+ * its own just because the model emitted it.
+ */
+@Serializable
+data class AgentAction(
+    val type: String,
+    val confirmText: String,
+    val params: Map<String, String> = emptyMap()
 )
 
 @Serializable

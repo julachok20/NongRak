@@ -100,18 +100,26 @@ fun AIChatScreen(
             ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.fillMaxSize().padding(12.dp)) {
                     Row(
-                        Modifier.fillMaxWidth().padding(8.dp),
+                        Modifier.fillMaxWidth().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("ประวัติแชท", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        FilledTonalButton(
-                            onClick = { scope.launch { drawerState.close() }; chatViewModel.newChat() },
-                            contentPadding = PaddingValues(horizontal = 12.dp)
-                        ) {
-                            Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("แชทใหม่")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            FilledTonalButton(
+                                onClick = { scope.launch { drawerState.close() }; chatViewModel.newChat() },
+                                contentPadding = PaddingValues(horizontal = 12.dp)
+                            ) {
+                                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("แชทใหม่")
+                            }
+                            // Swiping or tapping the scrim also closes the drawer, but neither is
+                            // obvious to someone unfamiliar with Material drawers — a plain, labeled
+                            // close button is the discoverable option.
+                            IconButton(onClick = { scope.launch { drawerState.close() } }) {
+                                Icon(Icons.Filled.Close, contentDescription = "ปิด", modifier = Modifier.size(22.dp))
+                            }
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -233,7 +241,13 @@ fun AIChatScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                items(chatState.messages) { message -> ChatBubble(message = message) }
+                items(chatState.messages) { message ->
+                    ChatBubble(
+                        message = message,
+                        onConfirmAction = { childState.child?.id?.let { chatViewModel.confirmAgentAction(message.id, it) } },
+                        onCancelAction = { chatViewModel.cancelAgentAction(message.id) }
+                    )
+                }
                 // Debug indicator: which AI model answered the latest reply
                 if (chatState.lastProvider.isNotBlank() && !chatState.isLoading) {
                     item {
@@ -261,6 +275,33 @@ fun AIChatScreen(
                 }
             }
         }
+    }
+
+    // The AI's most recent question wins if several are pending (e.g. a slow reply from an older
+    // turn) — showing more than one popup stacked would be confusing.
+    val pendingNeedInfo = chatState.messages.lastOrNull { it.needInfo != null && !it.needInfoAnswered }
+    pendingNeedInfo?.let { message ->
+        val request = message.needInfo!!
+        var answer by remember(message.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { chatViewModel.dismissNeedInfo(message.id) },
+            icon = { Icon(Icons.Filled.HelpOutline, null, tint = Primary) },
+            title = { Text(request.question) },
+            text = {
+                OutlinedTextField(
+                    value = answer, onValueChange = { answer = it },
+                    label = { Text(request.fieldLabel.ifBlank { "คำตอบ" }) }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { chatViewModel.answerNeedInfo(message.id, answer, childState.child) },
+                    enabled = answer.isNotBlank()
+                ) { Text("ส่ง", color = Primary, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { chatViewModel.dismissNeedInfo(message.id) }) { Text("ข้าม") } }
+        )
     }
 
     sessionToDelete?.let { id ->
@@ -302,39 +343,78 @@ fun AIChatScreen(
 }
 
 @Composable
-private fun ChatBubble(message: UiChatMessage) {
+private fun ChatBubble(message: UiChatMessage, onConfirmAction: () -> Unit = {}, onCancelAction: () -> Unit = {}) {
     val isUser = message.role == "user"
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Bottom
-    ) {
-        if (!isUser) { AIAvatar(); Spacer(Modifier.width(8.dp)) }
-        Surface(
-            shape = if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
-                    else RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
-            color = if (isUser) Primary else MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.fillMaxWidth(0.78f)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom
         ) {
-            Column(modifier = Modifier.padding(if (message.imageUri != null) 6.dp else 0.dp)) {
-                message.imageUri?.let { uri ->
-                    AsyncImage(
-                        model = uri, contentDescription = null,
-                        modifier = Modifier.widthIn(max = 240.dp).heightIn(max = 240.dp).clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Fit
-                    )
+            if (!isUser) { AIAvatar(); Spacer(Modifier.width(8.dp)) }
+            Surface(
+                shape = if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
+                        else RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+                color = if (isUser) Primary else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth(0.78f)
+            ) {
+                Column(modifier = Modifier.padding(if (message.imageUri != null) 6.dp else 0.dp)) {
+                    message.imageUri?.let { uri ->
+                        AsyncImage(
+                            model = uri, contentDescription = null,
+                            modifier = Modifier.widthIn(max = 240.dp).heightIn(max = 240.dp).clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    if (message.content.isNotBlank()) {
+                        Text(
+                            text = message.content,
+                            modifier = Modifier.padding(if (message.imageUri != null) 6.dp else 12.dp, if (message.imageUri != null) 4.dp else 10.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
-                if (message.content.isNotBlank()) {
-                    Text(
-                        text = message.content,
-                        modifier = Modifier.padding(if (message.imageUri != null) 6.dp else 12.dp, if (message.imageUri != null) 4.dp else 10.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
-                    )
+            }
+            if (isUser) { Spacer(Modifier.width(8.dp)) }
+        }
+        // Agentic action card — the AI proposed logging/editing/deleting data; nothing runs until
+        // the parent taps Confirm here (see ChatViewModel.confirmAgentAction).
+        message.agentAction?.let { action ->
+            Row(Modifier.fillMaxWidth().padding(start = 40.dp, top = 6.dp), horizontalArrangement = Arrangement.Start) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Primary.copy(0.08f),
+                    modifier = Modifier.fillMaxWidth(0.78f)
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.Bolt, null, tint = Primary, modifier = Modifier.size(16.dp))
+                            Text(action.confirmText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = Primary)
+                        }
+                        when (message.actionStatus) {
+                            null -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = onCancelAction, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                                    Text("ยกเลิก", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Button(onClick = onConfirmAction, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                                    Text("ยืนยัน", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                }
+                            }
+                            "confirmed" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(14.dp))
+                                Text("ดำเนินการแล้ว", style = MaterialTheme.typography.labelSmall, color = Color(0xFF4CAF50))
+                            }
+                            "cancelled" -> Text("ยกเลิกแล้ว", style = MaterialTheme.typography.labelSmall, color = Outline)
+                            "failed" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.ErrorOutline, null, tint = Error, modifier = Modifier.size(14.dp))
+                                Text("ดำเนินการไม่สำเร็จ", style = MaterialTheme.typography.labelSmall, color = Error)
+                            }
+                        }
+                    }
                 }
             }
         }
-        if (isUser) { Spacer(Modifier.width(8.dp)) }
     }
 }
 

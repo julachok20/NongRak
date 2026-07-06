@@ -51,6 +51,7 @@ fun VaccineBookScreen(
     val groupVaccines = vaccines
         .filter { (it.ageGroup ?: fallbackGroup) == currentGroup }
         .sortedBy { it.ageOrder ?: Int.MAX_VALUE }
+    val hasIncompleteAgeData = vaccines.any { it.ageGroup == null }
 
     val total = vaccines.size
     val completed = vaccines.count { it.status == "completed" }
@@ -123,6 +124,22 @@ fun VaccineBookScreen(
                             }
                         }
 }
+                }
+            }
+
+            // Legacy rows with no age_group land silently under "อื่นๆ" (Other) — flag it so a
+            // parent doesn't mistake an import/data gap for the child simply having no vaccines due.
+            if (hasIncompleteAgeData) {
+                item {
+                    Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF3E0)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.WarningAmber, null, tint = Color(0xFFE65100), modifier = Modifier.size(18.dp))
+                            Text(
+                                if (s.isThai) "บางรายการวัคซีนไม่มีข้อมูลช่วงอายุ — อาจต้องแก้ไข" else "Some vaccines are missing age-range data — may need updating",
+                                style = MaterialTheme.typography.labelMedium, color = Color(0xFFE65100)
+                            )
+                        }
+                    }
                 }
             }
 

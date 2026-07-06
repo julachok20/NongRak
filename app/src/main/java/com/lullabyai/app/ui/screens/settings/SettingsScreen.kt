@@ -64,7 +64,7 @@ fun SettingsScreen(
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
-                onStats = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = {}
             )
         },

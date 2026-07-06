@@ -28,9 +28,9 @@ data class NutritionUiState(
     val mealPlanLoading: Boolean = false,
     val activities: List<SuggestionItem> = emptyList(),
     val activitiesLoading: Boolean = false,
-    // Meal-aware recommendations: dish suggestion per meal the child hasn't logged yet today.
-    val mealRecs: Map<String, SuggestionItem> = emptyMap(),
-    val mealRecsLoading: Boolean = false,
+    // Simple budget-friendly menu ideas for the child (flat list — not split by meal).
+    val menuRecs: List<SuggestionItem> = emptyList(),
+    val menuRecsLoading: Boolean = false,
     val exerciseLogs: List<ExerciseLog> = emptyList(),
     val weeklyMinutes: Int = 0,
     val calculating: Boolean = false,
@@ -88,9 +88,9 @@ class NutritionViewModel : ViewModel() {
             // If the active child changed, drop the previous child's AI content so it doesn't show stale.
             if (child?.id != _ui.value.child?.id) {
                 suggestionsLang = null
-                mealRecsKey = null
+                menuRecsKey = null
                 _ui.value = _ui.value.copy(
-                    activities = emptyList(), mealRecs = emptyMap(),
+                    activities = emptyList(), menuRecs = emptyList(),
                     mealSuggestion = null, mealPlan = emptyMap()
                 )
             }
@@ -129,35 +129,19 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
-    private val mainMeals = listOf("breakfast", "lunch", "dinner")
-    // Cache key = language + the set of meals still remaining. Recommendations regenerate ONLY when
-    // that set changes (i.e. the user logs a new meal type) — not on every screen open.
-    private var mealRecsKey: String? = null
+    private var menuRecsKey: String? = null
 
-    /**
-     * Recommends a dish for each main meal the child HASN'T logged yet today (e.g. if breakfast is
-     * logged, recommend lunch + dinner). Driven by the user's food log; recipes are shown only on
-     * these recommendations, never on food already eaten.
-     */
-    fun ensureMealRecommendations(lang: String) {
-        val child = _ui.value.child ?: return  // wait until the child (and its age) is loaded
+    /** Loads a flat list of simple, budget-friendly dish ideas for the child's age. */
+    fun ensureMenuRecommendations(lang: String) {
+        val child = _ui.value.child ?: return
         val months = ageMonths(child)
-        val eaten = _ui.value.foods.map { it.mealType }.toSet()
-        val remaining = mainMeals.filter { it !in eaten }
-        // Age is part of the key so recs regenerate once the real age is known (not at age 0).
-        val key = "$lang|$months|${remaining.joinToString(",")}"
-        if (key == mealRecsKey) return
-        mealRecsKey = key
-        if (remaining.isEmpty()) {
-            _ui.value = _ui.value.copy(mealRecs = emptyMap(), mealRecsLoading = false)
-            return
-        }
+        val key = "$lang|$months"
+        if (key == menuRecsKey) return
+        menuRecsKey = key
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(mealRecsLoading = true)
-            val recs = remaining.mapNotNull { m ->
-                NutritionAiService.recommendMealDish(m, months, lang)?.let { m to it }
-            }.toMap()
-            _ui.value = _ui.value.copy(mealRecs = recs, mealRecsLoading = false)
+            _ui.value = _ui.value.copy(menuRecsLoading = true)
+            val recs = NutritionAiService.recommendBudgetMenus(months, lang)
+            _ui.value = _ui.value.copy(menuRecs = recs, menuRecsLoading = false)
         }
     }
 

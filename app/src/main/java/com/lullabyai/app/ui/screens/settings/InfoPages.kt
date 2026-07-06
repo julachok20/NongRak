@@ -12,16 +12,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.Primary
 
 @Composable
-private fun InfoScaffold(title: String, onBack: () -> Unit, body: @Composable ColumnScope.() -> Unit) {
+private fun InfoScaffold(title: String, navController: NavController, onBack: () -> Unit, body: @Composable ColumnScope.() -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.SETTINGS,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -45,7 +57,7 @@ private fun Heading(text: String) {
 }
 
 @Composable
-fun AboutUsScreen(onBack: () -> Unit) = InfoScaffold("เกี่ยวกับเรา", onBack) {
+fun AboutUsScreen(navController: NavController, onBack: () -> Unit) = InfoScaffold("เกี่ยวกับเรา", navController, onBack) {
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("NongRak", style = MaterialTheme.typography.headlineSmall, color = Primary, fontWeight = FontWeight.Bold)
@@ -61,7 +73,7 @@ fun AboutUsScreen(onBack: () -> Unit) = InfoScaffold("เกี่ยวกั�
 }
 
 @Composable
-fun PrivacyPolicyScreen(onBack: () -> Unit) = InfoScaffold("นโยบายความเป็นส่วนตัว", onBack) {
+fun PrivacyPolicyScreen(navController: NavController, onBack: () -> Unit) = InfoScaffold("นโยบายความเป็นส่วนตัว", navController, onBack) {
     Para("นโยบายนี้จัดทำตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA) อธิบายว่าเราเก็บรวบรวม ใช้ เปิดเผย และปกป้องข้อมูลของคุณและบุตรหลานอย่างไร (ปรับปรุงล่าสุด 13 มิถุนายน 2569)")
 
     Heading("1. ผู้ควบคุมข้อมูลส่วนบุคคล")
@@ -95,7 +107,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) = InfoScaffold("นโยบาย�
 }
 
 @Composable
-fun TermsOfUseScreen(onBack: () -> Unit) = InfoScaffold("ข้อกำหนดการใช้งาน", onBack) {
+fun TermsOfUseScreen(navController: NavController, onBack: () -> Unit) = InfoScaffold("ข้อกำหนดการใช้งาน", navController, onBack) {
     Para("กรุณาอ่านข้อกำหนดการใช้งานนี้อย่างละเอียดก่อนใช้แอปพลิเคชัน NongRak")
     Heading("1. การยอมรับข้อกำหนด")
     Para("การใช้แอปพลิเคชันถือว่าคุณยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัวทั้งหมด")

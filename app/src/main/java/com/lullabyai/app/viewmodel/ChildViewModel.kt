@@ -171,7 +171,44 @@ class ChildViewModel : ViewModel() {
                         (it.description?.takeIf { dsc -> dsc.isNotBlank() }?.let { dsc -> " — $dsc" } ?: "")
                 }
 
-                // §6 recommendations = overdue vaccines + pending milestones (concrete follow-ups).
+                // §6 sleep + medication — tracked in-app (SleepTracker, Medication History) but
+                // never reached this export before; fetched fresh rather than relying on whichever
+                // screens happen to have already populated ChildUiState this session.
+                val sleepLogs = com.lullabyai.app.data.repository.SleepRepository().getLogs(child.id).getOrDefault(emptyList())
+                val weekAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7))
+                val recentSleep = sleepLogs.filter { log ->
+                    com.lullabyai.app.util.TimeUtils.parseInstant(log.startTime)?.isAfter(weekAgo) == true && log.endTime != null
+                }
+                val sleepSummary = if (recentSleep.isEmpty()) {
+                    if (isThai) "ยังไม่มีบันทึกการนอนในช่วง 7 วันล่าสุด" else "No completed sleep sessions in the last 7 days"
+                } else {
+                    val totalMin = recentSleep.sumOf { log ->
+                        val start = com.lullabyai.app.util.TimeUtils.parseInstant(log.startTime)
+                        val end = log.endTime?.let { com.lullabyai.app.util.TimeUtils.parseInstant(it) }
+                        if (start != null && end != null) java.time.Duration.between(start, end).toMinutes().coerceAtLeast(0) else 0L
+                    }
+                    val daysWithSleep = recentSleep.mapNotNull { com.lullabyai.app.util.TimeUtils.parseInstant(it.startTime)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate() }.distinct().size
+                    if (isThai) "7 วันล่าสุด: นอน ${recentSleep.size} ครั้ง รวม ${totalMin / 60} ชม. ${totalMin % 60} นาที (มีบันทึก $daysWithSleep จาก 7 วัน) เฉลี่ย ${(totalMin / 7 / 60)} ชม./วัน"
+                    else "Last 7 days: ${recentSleep.size} sessions, ${totalMin / 60}h ${totalMin % 60}m total (logged on $daysWithSleep of 7 days), avg ${(totalMin / 7 / 60)}h/day"
+                }
+
+                val medSchedules = com.lullabyai.app.data.repository.MedicationRepository().getSchedules(child.id).getOrDefault(emptyList())
+                val medDoses = com.lullabyai.app.data.repository.MedicationRepository().getDoses(child.id).getOrDefault(emptyList())
+                val medicationSummary = if (medSchedules.isEmpty()) {
+                    if (isThai) "ไม่มีตารางการทานยาที่บันทึกไว้" else "No medication schedules on record"
+                } else buildString {
+                    medSchedules.forEach { sch ->
+                        val schDoses = medDoses.filter { it.scheduleId == sch.id }
+                        val taken = schDoses.count { it.status == "taken" }
+                        val skipped = schDoses.count { it.status == "skipped" }
+                        val total = schDoses.size
+                        append(if (isThai) "${sch.medicineName} (${sch.dosage ?: ""} ${sch.dosageUnit})" else sch.medicineName)
+                        if (total > 0) append(if (isThai) " — ทานแล้ว $taken/$total ครั้ง ข้าม $skipped ครั้ง" else " — taken $taken/$total, skipped $skipped")
+                        append("\n")
+                    }
+                }.trim()
+
+                // §7 recommendations = overdue vaccines + pending milestones (concrete follow-ups).
                 val overdueVac = st.vaccines.filter { it.status == "overdue" }
                 val recommendations = buildString {
                     if (overdueVac.isNotEmpty()) append("วัคซีนที่เลยกำหนด: " + overdueVac.joinToString(", ") { it.vaccineName } + "\n")
@@ -202,6 +239,8 @@ class ChildViewModel : ViewModel() {
                     followupDoctor = "",
                     healthHistoryDetail = healthDetail, currentCare = "",
                     // §6
+                    sleepSummary = sleepSummary, medicationSummary = medicationSummary,
+                    // §7
                     overallSummary = aiSummary, recommendations = recommendations
                 )
                 DoctorReportGenerator.generate(context, formData)
@@ -552,13 +591,40 @@ class ChildViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(sleepSaving = true)
             sleepRepo.createSchedule(childId, label, sleepType, startTime, endTime, daysOfWeek)
             loadSleep()
+            // createSchedule() doesn't return the new row, so pick the just-created one back out
+            // by recency to arm its reminder — "notification only, manual start" per product decision.
+            _uiState.value.sleepSchedules.maxByOrNull { it.createdAt ?: "" }
+                ?.let { com.lullabyai.app.util.SleepReminderScheduler.scheduleNext(it) }
             _uiState.value = _uiState.value.copy(sleepSaving = false)
             onDone()
         }
     }
 
     fun deleteSleepSchedule(id: String) {
+        com.lullabyai.app.util.SleepReminderScheduler.cancel(id)
         viewModelScope.launch { sleepRepo.deleteSchedule(id); loadSleep() }
+    }
+
+    /** Rough age-based recommended total daily sleep (hours) for 0-3y, per standard pediatric guidance. */
+    fun sleepTargetHours(): Int = when (com.lullabyai.app.data.VaccineSetupCatalog.ageMonthsFromBirthdate(_uiState.value.child?.birthdate ?: "")) {
+        in 0..3 -> 15
+        in 4..11 -> 14
+        in 12..23 -> 13
+        else -> 11
+    }
+
+    /** Post-hoc mood tag (mockup's mood grid isn't gated behind ending a session) — applies to
+     *  today's active session if one is running, else the most recent completed log today. */
+    fun logMoodForToday(mood: String) {
+        val logs = _uiState.value.sleepLogs
+        val today = java.time.LocalDate.now()
+        val target = _uiState.value.activeSleepSession
+            ?: logs.filter { log ->
+                com.lullabyai.app.util.TimeUtils.parseInstant(log.startTime)
+                    ?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate() == today
+            }.maxByOrNull { it.startTime }
+            ?: return
+        viewModelScope.launch { sleepRepo.updateMood(target.id, mood); loadSleep() }
     }
 
     fun addGrowthRecord(record: GrowthRecord) {
@@ -682,6 +748,18 @@ class ChildViewModel : ViewModel() {
             }
             _uiState.value = _uiState.value.copy(healthDetailSaving = false)
             onDone()
+        }
+    }
+
+    /** Toggle a health record between "monitoring" and "recovered" — feeds HealthHistoryScreen's badge. */
+    fun toggleHealthRecordStatus(recordId: String) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
+            val next = if (current.status == "recovered") "monitoring" else "recovered"
+            healthRepo.updateHealthStatus(recordId, next).onSuccess {
+                healthRepo.getHealthRecords(childId).onSuccess { _uiState.value = _uiState.value.copy(healthRecords = it) }
+            }
         }
     }
 

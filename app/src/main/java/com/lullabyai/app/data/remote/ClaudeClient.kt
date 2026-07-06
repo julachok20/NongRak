@@ -29,11 +29,12 @@ object ClaudeClient {
         useSearch: Boolean = true,
         maxTokens: Int = 1024,
         system: String? = null,
+        jsonMode: Boolean? = null,
         imageBase64: String? = null,
         imageMimeType: String? = null
     ): String {
         val errors = mutableListOf<String>()
-        val result = AiProxyClient.generate(prompt, useSearch, maxTokens, errors, system, imageBase64, imageMimeType)
+        val result = AiProxyClient.generate(prompt, useSearch, maxTokens, errors, system, jsonMode, imageBase64, imageMimeType)
         if (result.text != null) {
             lastProvider = result.provider
             android.util.Log.i("ClaudeClient", "answered by ${result.provider.ifBlank { "fallback" }}")

@@ -16,8 +16,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import com.lullabyai.app.data.model.GrowthRecord
 import com.lullabyai.app.ui.components.LullabyTopBar
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
@@ -26,17 +28,23 @@ import com.lullabyai.app.viewmodel.ChildViewModel
 fun GrowthMetricsScreen(
     childViewModel: ChildViewModel,
     chatViewModel: ChatViewModel,
+    navController: NavController,
     onBack: () -> Unit,
     onNavigateToNotifications: () -> Unit = {}
 ) {
+    val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val childState by childViewModel.uiState.collectAsState()
     val chatState by chatViewModel.uiState.collectAsState()
     val child = childState.child
     val growthRecords = childState.growthRecords
     var showAddDialog by remember { mutableStateOf(false) }
+    // No permanent dismissal by design — reappears every time this screen loads until weight/height
+    // are actually filled in, since those two fields are exactly what the Growth AI insight reads.
+    var showMissingInfo by remember { mutableStateOf(true) }
+    val missingFields = remember(child) { com.lullabyai.app.ui.components.missingChildInfo(child, hasAllergyRecords = true, isThai = s.isThai) }
 
     LaunchedEffect(child) {
-        child?.let { chatViewModel.loadGrowthInsight(it) }
+        child?.let { chatViewModel.loadGrowthInsight(it, s.isThai) }
     }
 
     Scaffold(
@@ -46,6 +54,16 @@ fun GrowthMetricsScreen(
                     Icon(Icons.Filled.Notifications, null)
                 }
             })
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+            )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -93,8 +111,13 @@ fun GrowthMetricsScreen(
 
             if (growthRecords.isEmpty()) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("ยังไม่มีบันทึกการเจริญเติบโต", color = Outline)
+                        Button(onClick = { showAddDialog = true }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                            Icon(Icons.Filled.Add, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("เริ่มบันทึกข้อมูล", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             } else {
@@ -135,6 +158,56 @@ fun GrowthMetricsScreen(
 
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+
+    // showAddDialog existed as dead state (declared, never read) before this fix — the empty
+    // state's CTA had nowhere to route to, so this dialog is the actual missing add-record flow.
+    if (showAddDialog) {
+        var weightInput by remember { mutableStateOf("") }
+        var heightInput by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("บันทึกการเจริญเติบโต") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = weightInput, onValueChange = { weightInput = it },
+                        label = { Text("น้ำหนัก (kg)") }, singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                    )
+                    OutlinedTextField(
+                        value = heightInput, onValueChange = { heightInput = it },
+                        label = { Text("ส่วนสูง (cm)") }, singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                    )
+                }
+            },
+            confirmButton = {
+                val w = weightInput.toDoubleOrNull()
+                val h = heightInput.toDoubleOrNull()
+                TextButton(
+                    enabled = w != null || h != null,
+                    onClick = {
+                        childViewModel.addGrowthRecord(
+                            GrowthRecord(
+                                weightKg = w, heightCm = h,
+                                recordedAt = java.time.Instant.now().toString()
+                            )
+                        )
+                        showAddDialog = false
+                    }
+                ) { Text("บันทึก") }
+            },
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("ยกเลิก") } }
+        )
+    }
+
+    if (showMissingInfo) {
+        com.lullabyai.app.ui.components.MissingChildInfoPrompt(
+            missingFields = missingFields, isThai = s.isThai,
+            onFillIn = { showMissingInfo = false; showAddDialog = true },
+            onSkip = { showMissingInfo = false }
+        )
     }
 }
 

@@ -11,6 +11,9 @@ import androidx.work.WorkManager
 import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.work.VaccineReminderWorker
 import com.lullabyai.app.work.MedicineReminderWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 class NongRakApp : Application() {
@@ -29,6 +32,18 @@ class NongRakApp : Application() {
         com.lullabyai.app.util.SystemNotifier.ensureChannel(this)
         scheduleVaccineReminders()
         scheduleMedicineReminders()
+        rescheduleSleepReminders()
+    }
+
+    /** Re-arms sleep-schedule reminders for the last-selected child on cold start (fresh install,
+     *  reboot before any schedule was re-saved) — add/delete already keep these current at runtime. */
+    private fun rescheduleSleepReminders() {
+        CoroutineScope(Dispatchers.IO).launch {
+            com.lullabyai.app.data.settings.ChildSelection.awaitLoaded()
+            com.lullabyai.app.data.settings.ChildSelection.current()?.let {
+                com.lullabyai.app.util.SleepReminderScheduler.rescheduleAll(it)
+            }
+        }
     }
 
     /** Background reminders for due medicine doses (checks every 30 min + once now). */

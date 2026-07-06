@@ -17,9 +17,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.lullabyai.app.data.remote.ClaudeClient
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
+import kotlinx.coroutines.delay
 
 private val QUICK_MEDICINES = listOf("Paracetamol", "Ibuprofen", "Amoxicillin")
 private val DOSAGE_UNITS = listOf("mg", "ml", "drops", "pills")
@@ -27,6 +30,7 @@ private val DOSAGE_UNITS = listOf("mg", "ml", "drops", "pills")
 @Composable
 fun AddMedicineScheduleScreen(
     childViewModel: ChildViewModel,
+    navController: NavController,
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -41,6 +45,27 @@ fun AddMedicineScheduleScreen(
     var endDate by remember { mutableStateOf("") }
     var numDoses by remember { mutableStateOf("3") }
     var notes by remember { mutableStateOf("") }
+
+    // AI dose suggestion — mirrors the mockup's "AI Dose Recommendation" mini card. Debounced so
+    // it doesn't fire on every keystroke, and only once there's a real medicine name to reason about.
+    var doseAdvice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(medicineName.trim().lowercase(), state.child?.id) {
+        val name = medicineName.trim()
+        val child = state.child
+        if (name.length < 3 || child == null) { doseAdvice = null; return@LaunchedEffect }
+        doseAdvice = null
+        delay(700)
+        val prompt = if (s.isThai)
+            "เด็กชื่อ ${child.name} น้ำหนัก ${child.weightKg ?: "ไม่ทราบ"} กก. จะเริ่มทานยา \"$name\" " +
+                "ให้คำแนะนำขนาดยาโดยประมาณ 1 ประโยคสั้นๆ เป็นภาษาไทย ห้ามใช้ emoji หรือสัญลักษณ์พิเศษ " +
+                "ถ้าไม่แน่ใจให้แนะนำให้ปรึกษาเภสัชกรหรือแพทย์แทนการเดา"
+        else
+            "A child weighing ${child.weightKg ?: "unknown"} kg is starting \"$name\". " +
+                "Give one short sentence with an approximate standard dosage suggestion, no emoji or special symbols. " +
+                "If unsure, say to consult a pharmacist or doctor rather than guessing."
+        doseAdvice = runCatching { ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 300) }
+            .getOrNull()?.takeIf { it.isNotBlank() && !it.contains("ขออภัย") && !it.contains("unavailable") }
+    }
 
     val frequencies = listOf(
         "every_4h" to (if (s.isThai) "ทุก 4 ชั่วโมง" else "Every 4 hours"),
@@ -73,6 +98,16 @@ fun AddMedicineScheduleScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -158,6 +193,21 @@ fun AddMedicineScheduleScreen(
                     if (s.isThai) "ทานต่อเนื่องจนกว่ายาจะหมด — ระบบจะสร้างตารางล่วงหน้า 14 วัน" else "Continue until the medication is finished — a 14-day schedule will be generated ahead of time.",
                     style = MaterialTheme.typography.bodySmall, color = Outline
                 )
+            }
+
+            // AI Dose Recommendation (per mockup) — only shown once we have a real suggestion,
+            // never a placeholder/loading state, since a wrong or fabricated dosage tip is worse
+            // than no tip at all.
+            doseAdvice?.let { advice ->
+                Surface(shape = RoundedCornerShape(16.dp), color = Tertiary.copy(0.08f)) {
+                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Filled.AutoAwesome, null, tint = Tertiary, modifier = Modifier.size(20.dp))
+                        Column {
+                            Text(if (s.isThai) "คำแนะนำขนาดยาจาก AI" else "AI Dose Recommendation", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Tertiary)
+                            Text(advice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
 
             // Notes

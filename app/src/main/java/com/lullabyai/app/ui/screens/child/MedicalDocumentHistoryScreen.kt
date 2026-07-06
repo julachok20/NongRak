@@ -21,14 +21,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.lullabyai.app.data.model.MedicalDocument
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
 
 @Composable
 fun MedicalDocumentHistoryScreen(
     childViewModel: ChildViewModel,
+    navController: NavController,
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -70,6 +73,16 @@ fun MedicalDocumentHistoryScreen(
                 if (state.docUploading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Filled.Add, null)
             }
+        },
+        bottomBar = {
+            com.lullabyai.app.ui.components.AppBottomNav(
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
+                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
+                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+            )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
