@@ -20,3 +20,6 @@ app/build/
 # Misc
 *.log
 .DS_Store
+
+# Built release artifacts (AAB/APK) — copied here for record-keeping, not source
+/Releases/
