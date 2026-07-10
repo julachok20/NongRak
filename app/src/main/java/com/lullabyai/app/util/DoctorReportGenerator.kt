@@ -30,6 +30,7 @@ object DoctorReportGenerator {
         // §1 ข้อมูลเด็ก
         val childCode: String, val nickname: String, val birthdate: String,
         val age: String, val gender: String, val idNumber: String,
+        val nationality: String, val ethnicity: String, val religion: String,
         val unitClass: String, val recorder: String, val updatedDate: String,
         // §2 วัคซีนที่ได้รับ
         val vaccines: List<Vac>,
@@ -237,6 +238,7 @@ object DoctorReportGenerator {
         sectionBar("1. ข้อมูลเด็ก")
         fieldRow("รหัสเด็ก" to data.childCode, "ชื่อเล่น" to data.nickname, "วันเดือนปีเกิด" to data.birthdate)
         fieldRow("อายุ" to data.age, "เพศ" to data.gender, "เลขประจำตัว/เลขสูติบัตร" to data.idNumber)
+        fieldRow("สัญชาติ" to data.nationality, "เชื้อชาติ" to data.ethnicity, "ศาสนา" to data.religion)
         fieldRow("หน่วยงาน/ห้องเรียน" to data.unitClass, "ผู้บันทึก" to data.recorder, "วันที่ปรับปรุงข้อมูล" to data.updatedDate)
         blocks.add(Block(8f, 0f) { _, _ -> })
 

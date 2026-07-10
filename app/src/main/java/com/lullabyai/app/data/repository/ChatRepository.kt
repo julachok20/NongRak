@@ -421,6 +421,70 @@ class ChatRepository {
             .also { searchCache.save(cacheKey, it, "trend_insights") }
     }
 
+    /** [summary] is a caller-built plain-text summary of the last 7 days of food/milk logs. */
+    suspend fun generateNutritionInsight(child: Child, summary: String, forceRefresh: Boolean = false, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nข้อมูลการกินและนมช่วง 7 วันที่ผ่านมาของเด็กคนนี้:\n$summary" +
+            "\n\nวิเคราะห์แนวโน้มโภชนาการจากข้อมูลข้างต้นเท่านั้น 2-3 ประโยค แนะนำสิ่งที่ควรปรับ ห้ามสมมติตัวเลขที่ไม่ปรากฏในข้อมูลจริง " +
+            "หากข้อมูลไม่พอ ให้บอกตรงๆ ว่าควรบันทึกเพิ่มเติมเท่าไร"
+        val cacheKey = "nutrition_insight_${child.id}_${langTag(isThai)}"
+        val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
+        cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 1024, system = analysisSystemPrompt(isThai), jsonMode = false)
+            .also { searchCache.save(cacheKey, it, "nutrition_insight") }
+    }
+
+    /** [summary] is a caller-built plain-text summary of the last 7 days of sleep/exercise logs. */
+    suspend fun generateSleepActivityInsight(child: Child, summary: String, forceRefresh: Boolean = false, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nข้อมูลการนอนและกิจกรรมช่วง 7 วันที่ผ่านมาของเด็กคนนี้:\n$summary" +
+            "\n\nวิเคราะห์แนวโน้มการนอนและกิจกรรมจากข้อมูลข้างต้นเท่านั้น 2-3 ประโยค ห้ามสมมติตัวเลขที่ไม่ปรากฏในข้อมูลจริง " +
+            "หากข้อมูลไม่พอ ให้บอกตรงๆ ว่าควรบันทึกเพิ่มเติมเท่าไร"
+        val cacheKey = "sleep_activity_insight_${child.id}_${langTag(isThai)}"
+        val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
+        cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 1024, system = analysisSystemPrompt(isThai), jsonMode = false)
+            .also { searchCache.save(cacheKey, it, "sleep_activity_insight") }
+    }
+
+    /** [summary] is a caller-built plain-text summary of recent waste records + illness history. */
+    suspend fun generateEliminationInsight(child: Child, summary: String, forceRefresh: Boolean = false, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nข้อมูลการขับถ่ายและอาการป่วยช่วงที่ผ่านมาของเด็กคนนี้:\n$summary" +
+            "\n\nวิเคราะห์แนวโน้มการขับถ่ายจากข้อมูลข้างต้นเท่านั้น 2-3 ประโยค ห้ามสมมติตัวเลขที่ไม่ปรากฏในข้อมูลจริง " +
+            "หากข้อมูลไม่พอ ให้บอกตรงๆ ว่าควรบันทึกเพิ่มเติมเท่าไร"
+        val cacheKey = "elimination_insight_${child.id}_${langTag(isThai)}"
+        val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
+        cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 1024, system = analysisSystemPrompt(isThai), jsonMode = false)
+            .also { searchCache.save(cacheKey, it, "elimination_insight") }
+    }
+
+    /** Monthly Summary Report — [summary] is a caller-built plain-text summary of real 30-day
+     *  aggregates across sleep/nutrition/activity/development/elimination logs (unlike the weekly
+     *  report above, which only has profile fields to work with — this one has real log history to
+     *  cite, since it's generated after the Statistics rebuild that added range queries for all of
+     *  those). Must still refuse to invent numbers not present in [summary]. */
+    suspend fun generateMonthlyReport(child: Child, summary: String, forceRefresh: Boolean = false, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nสรุปข้อมูลจริงของเด็กคนนี้ในช่วง 30 วันที่ผ่านมา:\n$summary" +
+            "\n\nเขียนรายงานสรุปประจำเดือนสำหรับผู้ปกครอง โดยอ้างอิงจากข้อมูลข้างต้นเท่านั้น ห้ามสมมติตัวเลขหรือเหตุการณ์ที่ไม่ปรากฏในข้อมูลจริง " +
+            "ให้ครอบคลุมภาพรวมการนอน โภชนาการ กิจกรรม พัฒนาการ และสุขภาพ เขียนเป็นย่อหน้า 5-8 ประโยค " +
+            "ปิดท้ายด้วยข้อแนะนำที่นำไปปฏิบัติได้ 1-2 ข้อ หากบางด้านมีข้อมูลไม่พอ ให้ระบุตรงๆ ว่าควรบันทึกเพิ่มเติม"
+        val cacheKey = "monthly_report_${child.id}_${langTag(isThai)}"
+        val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
+        cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 2048, system = analysisSystemPrompt(isThai), jsonMode = false)
+            .also { searchCache.save(cacheKey, it, "monthly_report") }
+    }
+
+    /** One open-ended, specific question the AI wants answered to sharpen future analysis — topic is
+     *  not restricted to a fixed field list, just "useful and not already known". Rate-limited to
+     *  3/day by the caller (SettingsManager), surfaced as a Dashboard popup. No caching: each of the
+     *  3 daily slots should be a genuinely fresh question, not a reused one. */
+    suspend fun generateDailyQuestion(child: Child, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nจากข้อมูลเด็กคนนี้ข้างต้น ให้ตั้งคำถาม 1 ข้อ เรื่องอะไรก็ได้ที่ยังไม่มีคำตอบอยู่แล้วข้างต้น และเป็นประโยชน์ต่อการวิเคราะห์สุขภาพ พัฒนาการ หรือชีวิตประจำวันของเด็กคนนี้ " +
+            "ถามแบบเจาะจงและกระชับ ไม่เกิน 1 ประโยค ตอบเฉพาะตัวคำถามเท่านั้น ห้ามมีคำนำ คำอธิบาย หรือเครื่องหมายคำพูดครอบ"
+        ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 150, system = analysisSystemPrompt(isThai), jsonMode = false).trim()
+    }
+
     private fun langTag(isThai: Boolean) = if (isThai) "th" else "en"
 
     private fun calculateAge(birthdate: String): String {

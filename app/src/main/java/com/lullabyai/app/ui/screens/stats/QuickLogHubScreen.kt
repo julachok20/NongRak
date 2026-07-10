@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.DevelopmentMilestone
 import com.lullabyai.app.data.model.FoodLog
@@ -36,6 +37,13 @@ import java.time.Instant
 
 private data class ActivityItem(val icon: ImageVector, val title: String, val detail: String, val timestamp: Instant, val route: String)
 
+/** [keywords] lets the search bar match what a tile lets you DO (e.g. typing "milk" or "นม" should
+ *  surface the Feeding tile), not just its visible label. */
+private data class QuickAction(
+    val icon: ImageVector, val label: String, val color: Color, val actionLabel: String,
+    val keywords: List<String>, val onClick: () -> Unit
+)
+
 @Composable
 fun QuickLogHubScreen(
     childViewModel: ChildViewModel,
@@ -47,6 +55,7 @@ fun QuickLogHubScreen(
     val chatState by chatViewModel.uiState.collectAsState()
     val child = state.child
 
+    var searchQuery by remember { mutableStateOf("") }
     var todayFoodLogs by remember { mutableStateOf<List<FoodLog>>(emptyList()) }
     LaunchedEffect(child?.id) {
         child?.let {
@@ -97,6 +106,44 @@ fun QuickLogHubScreen(
         }
     }
 
+    val filteredActivity = remember(activity, searchQuery) {
+        if (searchQuery.isBlank()) activity
+        else activity.filter { it.title.contains(searchQuery, ignoreCase = true) || it.detail.contains(searchQuery, ignoreCase = true) }
+    }
+
+    val quickActions = remember(s.isThai, state.activeSleepSession) {
+        listOf(
+            QuickAction(
+                Icons.Filled.Restaurant, if (s.isThai) "การกิน" else "Feeding", Primary,
+                if (s.isThai) "บันทึกอาหาร" else "Log food",
+                listOf("การกิน", "อาหาร", "นม", "กิน", "feeding", "food", "milk", "eat", "calorie", "แคลอรี่")
+            ) { navController.navigate(Screen.CalorieCalculator.route) },
+            QuickAction(
+                if (state.activeSleepSession != null) Icons.Filled.Hotel else Icons.Filled.Bedtime,
+                if (s.isThai) "การนอน" else "Sleep", Color(0xFF4B5B86),
+                if (state.activeSleepSession != null) (if (s.isThai) "หยุดบันทึก" else "Stop") else (if (s.isThai) "เริ่มเวลานอน" else "Start sleep"),
+                listOf("การนอน", "นอน", "หลับ", "ตื่น", "sleep", "nap", "wake", "bedtime")
+            ) { childViewModel.toggleSleepSession() },
+            QuickAction(
+                Icons.Filled.Thermostat, if (s.isThai) "สุขภาพ" else "Health", Color(0xFFBA1A1A),
+                if (s.isThai) "บันทึกอาการ" else "Log symptom",
+                listOf("สุขภาพ", "อาการ", "ป่วย", "ไข้", "health", "symptom", "sick", "fever", "illness")
+            ) { navController.navigate(Screen.AddHealthRecord.route) },
+            QuickAction(
+                Icons.Filled.EmojiEvents, if (s.isThai) "พัฒนาการ" else "Development", Color(0xFF526069),
+                if (s.isThai) "ทักษะใหม่" else "New skill",
+                listOf("พัฒนาการ", "ทักษะ", "development", "skill", "milestone")
+            ) { navController.navigate(Screen.ChildDevelopment.route) }
+        )
+    }
+    val filteredActions = remember(quickActions, searchQuery) {
+        if (searchQuery.isBlank()) quickActions
+        else quickActions.filter { a ->
+            a.label.contains(searchQuery, ignoreCase = true) || a.actionLabel.contains(searchQuery, ignoreCase = true) ||
+                a.keywords.any { it.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -137,29 +184,36 @@ fun QuickLogHubScreen(
             }
 
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    QuickLogTile(
-                        Icons.Filled.Restaurant, if (s.isThai) "การกิน" else "Feeding", Color(0xFFEF6C00),
-                        if (s.isThai) "บันทึกอาหาร" else "Log food", Modifier.weight(1f)
-                    ) { navController.navigate(Screen.CalorieCalculator.route) }
-                    QuickLogTile(
-                        if (state.activeSleepSession != null) Icons.Filled.Hotel else Icons.Filled.Bedtime,
-                        if (s.isThai) "การนอน" else "Sleep", Color(0xFF3949AB),
-                        if (state.activeSleepSession != null) (if (s.isThai) "หยุดบันทึก" else "Stop") else (if (s.isThai) "เริ่มเวลานอน" else "Start sleep"),
-                        Modifier.weight(1f)
-                    ) { childViewModel.toggleSleepSession() }
-                }
+                OutlinedTextField(
+                    value = searchQuery, onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(if (s.isThai) "ค้นหาบันทึกด่วน..." else "Search quick logs...") },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    singleLine = true, shape = RoundedCornerShape(100.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color.Transparent, focusedBorderColor = Primary,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)
+                    )
+                )
             }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    QuickLogTile(
-                        Icons.Filled.Thermostat, if (s.isThai) "สุขภาพ" else "Health", Color(0xFFBA1A1A),
-                        if (s.isThai) "บันทึกอาการ" else "Log symptom", Modifier.weight(1f)
-                    ) { navController.navigate(Screen.AddHealthRecord.route) }
-                    QuickLogTile(
-                        Icons.Filled.EmojiEvents, if (s.isThai) "พัฒนาการ" else "Development", Color(0xFF546E7A),
-                        if (s.isThai) "ทักษะใหม่" else "New skill", Modifier.weight(1f)
-                    ) { navController.navigate(Screen.ChildDevelopment.route) }
+
+            if (filteredActions.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
+                        Text(if (s.isThai) "ไม่พบสิ่งที่บันทึกได้ตรงกับคำค้นหา" else "No matching action to log", color = Outline)
+                    }
+                }
+            } else {
+                filteredActions.chunked(2).forEach { rowActions ->
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            rowActions.forEach { a ->
+                                QuickLogTile(a.icon, a.label, a.color, a.actionLabel, Modifier.weight(1f), a.onClick)
+                            }
+                            if (rowActions.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
 
@@ -179,11 +233,26 @@ fun QuickLogHubScreen(
                 }
             }
 
-            item { Text(if (s.isThai) "บันทึกล่าสุด" else "Recent logs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
-            if (activity.isEmpty()) {
-                item { Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) { Text(if (s.isThai) "ยังไม่มีบันทึกวันนี้" else "No logs yet today", color = Outline) } }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(if (s.isThai) "บันทึกล่าสุด" else "Recent logs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { navController.navigate(Screen.SmartTrends.route) }) {
+                        Text(if (s.isThai) "ดูประวัติทั้งหมด" else "View all", style = MaterialTheme.typography.labelMedium, color = Primary)
+                    }
+                }
+            }
+            if (filteredActivity.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (activity.isEmpty()) (if (s.isThai) "ยังไม่มีบันทึกวันนี้" else "No logs yet today")
+                            else (if (s.isThai) "ไม่พบบันทึกที่ค้นหา" else "No matching logs"),
+                            color = Outline
+                        )
+                    }
+                }
             } else {
-                items(activity) { a -> ActivityRow(a) { navController.navigate(a.route) } }
+                items(filteredActivity) { a -> ActivityRow(a) { navController.navigate(a.route) } }
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
@@ -192,14 +261,25 @@ fun QuickLogHubScreen(
 
 @Composable
 private fun QuickLogTile(icon: ImageVector, label: String, color: Color, actionLabel: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val s = LocalStrings.current
     Card(modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.size(48.dp).clip(CircleShape).background(color.copy(0.12f)), contentAlignment = Alignment.Center) {
                 Icon(icon, null, tint = color, modifier = Modifier.size(24.dp))
             }
             Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = color), shape = RoundedCornerShape(100.dp), modifier = Modifier.fillMaxWidth()) {
-                Text(actionLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Button(
+                onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = color),
+                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (s.isThai) "แตะเพื่อบันทึก" else "ONE-TAP LOG",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = Color.White.copy(0.75f), fontWeight = FontWeight.Bold
+                    )
+                    Text(actionLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
         }
     }

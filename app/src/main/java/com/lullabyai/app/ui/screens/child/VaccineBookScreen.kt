@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -36,6 +37,7 @@ fun VaccineBookScreen(
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
+    val context = LocalContext.current
     val childState by childViewModel.uiState.collectAsState()
     val vaccines = childState.vaccines
 
@@ -177,6 +179,18 @@ fun VaccineBookScreen(
                     onConfirmSkip = { reason ->
                         childViewModel.skipVaccine(v, reason)
                         expandedSkipId = null
+                    },
+                    onAddToCalendar = {
+                        v.scheduledDate?.let { date ->
+                            val ok = com.lullabyai.app.util.CalendarHelper.addVaccineEvent(context, v.vaccineName, childState.child?.name ?: "", date, v.place)
+                            if (!ok) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (s.isThai) "ไม่พบแอปปฏิทินในเครื่อง" else "No calendar app found on this device",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
                     }
                 )
             }
@@ -337,7 +351,8 @@ private fun VaccineRow(
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     onOpenSkip: () -> Unit,
-    onConfirmSkip: (String) -> Unit
+    onConfirmSkip: (String) -> Unit,
+    onAddToCalendar: () -> Unit
 ) {
     val s = LocalStrings.current
     val (badgeColor, badgeText) = when (vaccine.status) {
@@ -376,6 +391,15 @@ private fun VaccineRow(
                 }
                 Surface(shape = RoundedCornerShape(100.dp), color = badgeColor.copy(0.12f)) {
                     Text(badgeText, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = badgeColor, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Separate, clearly-labeled row (not a bare icon) — only for doses that still have a
+            // date worth putting on a calendar.
+            if (!done && vaccine.status != "skipped" && !vaccine.scheduledDate.isNullOrBlank()) {
+                OutlinedButton(onClick = onAddToCalendar, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+                    Icon(Icons.Filled.EventAvailable, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                    Text(if (s.isThai) "เพิ่มลงปฏิทิน" else "Add to calendar", style = MaterialTheme.typography.labelMedium)
                 }
             }
 

@@ -45,6 +45,14 @@ fun DiseaseRiskScreen(
     val diseases = chatState.diseaseList
     val preventions = chatState.preventionList
 
+    // No permanent dismissal by design — reappears every time this screen loads until the fields
+    // are actually filled in, since this is the AI-analysis screen with the highest stakes for
+    // missing data (buildChildContext feeds weight/height/allergies into the risk assessment).
+    var showMissingInfo by remember { mutableStateOf(true) }
+    val missingFields = remember(child, childState.allergies) {
+        com.lullabyai.app.ui.components.missingChildInfo(child, childState.allergies.isNotEmpty(), s.isThai)
+    }
+
     ChildScreenScaffold(title = if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", currentTab = "risk", navController = navController, centerTitle = true) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
@@ -152,6 +160,14 @@ fun DiseaseRiskScreen(
 
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+
+    if (showMissingInfo) {
+        com.lullabyai.app.ui.components.MissingChildInfoPrompt(
+            missingFields = missingFields, isThai = s.isThai,
+            onFillIn = { showMissingInfo = false; navController.navigate(Screen.AllergyHistory.route) },
+            onSkip = { showMissingInfo = false }
+        )
     }
 }
 

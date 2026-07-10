@@ -21,9 +21,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.lullabyai.app.data.settings.AppLanguage
+import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
+import com.lullabyai.app.viewmodel.SettingsViewModel
 
 // Toggle this to true once Google OAuth is fully set up to show the Google button again.
 const val ENABLE_GOOGLE_SIGN_IN = false
@@ -31,6 +34,7 @@ const val ENABLE_GOOGLE_SIGN_IN = false
 @Composable
 fun LoginScreen(
     authViewModel: AuthViewModel,
+    settingsViewModel: SettingsViewModel,
     onLoginSuccess: () -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToForgotPassword: () -> Unit = {},
@@ -38,6 +42,7 @@ fun LoginScreen(
     onBack: () -> Unit = {}
 ) {
     val uiState by authViewModel.uiState.collectAsState()
+    val settings by settingsViewModel.settings.collectAsState()
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var email by remember { mutableStateOf("") }
@@ -55,6 +60,11 @@ fun LoginScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
+        LanguageToggleButton(
+            isThai = settings.language == AppLanguage.TH,
+            onToggle = { settingsViewModel.toggleLanguage() },
+            modifier = Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(20.dp)
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()

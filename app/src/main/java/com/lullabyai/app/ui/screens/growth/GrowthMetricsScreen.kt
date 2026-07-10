@@ -47,9 +47,16 @@ fun GrowthMetricsScreen(
         child?.let { chatViewModel.loadGrowthInsight(it, s.isThai) }
     }
 
+    val ageMonths = childViewModel.getAgeMonths()
+    val weightStatus = com.lullabyai.app.util.GrowthReference.weightStatus(child?.weightKg, ageMonths)
+    val heightStatus = com.lullabyai.app.util.GrowthReference.heightStatus(child?.heightCm, ageMonths)
+    // Real trend from the two most recent logs (growthRecords is newest-first) — was hardcoded "+0.4kg".
+    val weightTrend = growthRecords.getOrNull(0)?.weightKg?.let { latest -> growthRecords.getOrNull(1)?.weightKg?.let { prev -> latest - prev } }
+    val heightTrend = growthRecords.getOrNull(0)?.heightCm?.let { latest -> growthRecords.getOrNull(1)?.heightCm?.let { prev -> latest - prev } }
+
     Scaffold(
         topBar = {
-            LullabyTopBar(title = "Child Health", onBack = onBack, actions = {
+            LullabyTopBar(title = if (s.isThai) "สุขภาพลูกน้อย" else "Child Health", onBack = onBack, actions = {
                 IconButton(onClick = onNavigateToNotifications) {
                     Icon(Icons.Filled.Notifications, null)
                 }
@@ -75,13 +82,14 @@ fun GrowthMetricsScreen(
             // Weight card
             item {
                 GrowthCard(
-                    title = "WEIGHT",
+                    title = if (s.isThai) "น้ำหนัก" else "WEIGHT",
                     value = child?.weightKg?.toString() ?: "-",
                     unit = "kg",
-                    trend = "+0.4kg",
-                    trendPositive = true,
-                    barLabel = "Normal growth curve",
-                    statusLabel = "Healthy",
+                    trend = weightTrend?.let { (if (it >= 0) "+" else "") + "%.1f".format(it) + "kg" } ?: "",
+                    trendPositive = (weightTrend ?: 0.0) >= 0,
+                    barLabel = if (s.isThai) "กราฟการเจริญเติบโต" else "Growth curve",
+                    statusLabel = (if (s.isThai) weightStatus?.labelTh else weightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
+                    statusColor = weightStatus?.color ?: Outline,
                     records = growthRecords.take(6),
                     isWeight = true
                 )
@@ -90,13 +98,14 @@ fun GrowthMetricsScreen(
             // Height card
             item {
                 GrowthCard(
-                    title = "HEIGHT",
+                    title = if (s.isThai) "ส่วนสูง" else "HEIGHT",
                     value = child?.heightCm?.toString() ?: "-",
                     unit = "cm",
-                    trend = "",
-                    trendPositive = true,
-                    barLabel = "Normal growth curve",
-                    statusLabel = "Healthy",
+                    trend = heightTrend?.let { (if (it >= 0) "+" else "") + "%.1f".format(it) + "cm" } ?: "",
+                    trendPositive = (heightTrend ?: 0.0) >= 0,
+                    barLabel = if (s.isThai) "กราฟการเจริญเติบโต" else "Growth curve",
+                    statusLabel = (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
+                    statusColor = heightStatus?.color ?: Outline,
                     records = growthRecords.take(6),
                     isWeight = false
                 )
@@ -105,30 +114,30 @@ fun GrowthMetricsScreen(
             // Recent logs
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Recent Logs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(if (s.isThai) "บันทึกล่าสุด" else "Recent Logs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
             }
 
             if (growthRecords.isEmpty()) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("ยังไม่มีบันทึกการเจริญเติบโต", color = Outline)
+                        Text(if (s.isThai) "ยังไม่มีบันทึกการเจริญเติบโต" else "No growth records yet", color = Outline)
                         Button(onClick = { showAddDialog = true }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
                             Icon(Icons.Filled.Add, null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("เริ่มบันทึกข้อมูล", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(if (s.isThai) "เริ่มบันทึกข้อมูล" else "Start logging", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             } else {
                 items(growthRecords.take(5)) { record ->
-                    GrowthLogRow(record = record)
+                    GrowthLogRow(record = record, isThai = s.isThai)
                 }
             }
 
             item {
-                TextButton(onClick = {}, modifier = Modifier.fillMaxWidth()) {
-                    Text("View All History", color = Primary)
+                TextButton(onClick = { navController.navigate(Screen.GrowthHistory.route) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (s.isThai) "ดูประวัติทั้งหมด" else "View All History", color = Primary)
                 }
             }
 
@@ -142,15 +151,15 @@ fun GrowthMetricsScreen(
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(20.dp))
-                            Text("AI Growth Insight", style = MaterialTheme.typography.labelLarge, color = Primary, fontWeight = FontWeight.Bold)
+                            Text(if (s.isThai) "ข้อมูลเชิงลึกจาก AI" else "AI Growth Insight", style = MaterialTheme.typography.labelLarge, color = Primary, fontWeight = FontWeight.Bold)
                         }
                         if (chatState.growthInsight != null) {
                             Text(chatState.growthInsight!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                         } else {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
                         }
-                        OutlinedButton(onClick = {}, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)) {
-                            Text("See Nutrition Advice", style = MaterialTheme.typography.labelMedium)
+                        OutlinedButton(onClick = { navController.navigate(Screen.Nutrition.route) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)) {
+                            Text(if (s.isThai) "ดูคำแนะนำโภชนาการ" else "See Nutrition Advice", style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -167,17 +176,17 @@ fun GrowthMetricsScreen(
         var heightInput by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("บันทึกการเจริญเติบโต") },
+            title = { Text(if (s.isThai) "บันทึกการเจริญเติบโต" else "Log growth") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = weightInput, onValueChange = { weightInput = it },
-                        label = { Text("น้ำหนัก (kg)") }, singleLine = true,
+                        label = { Text(if (s.isThai) "น้ำหนัก (kg)" else "Weight (kg)") }, singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
                     )
                     OutlinedTextField(
                         value = heightInput, onValueChange = { heightInput = it },
-                        label = { Text("ส่วนสูง (cm)") }, singleLine = true,
+                        label = { Text(if (s.isThai) "ส่วนสูง (cm)" else "Height (cm)") }, singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
                     )
                 }
@@ -196,9 +205,9 @@ fun GrowthMetricsScreen(
                         )
                         showAddDialog = false
                     }
-                ) { Text("บันทึก") }
+                ) { Text(if (s.isThai) "บันทึก" else "Save") }
             },
-            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("ยกเลิก") } }
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
         )
     }
 
@@ -214,7 +223,8 @@ fun GrowthMetricsScreen(
 @Composable
 private fun GrowthCard(
     title: String, value: String, unit: String, trend: String, trendPositive: Boolean,
-    barLabel: String, statusLabel: String, records: List<GrowthRecord>, isWeight: Boolean
+    barLabel: String, statusLabel: String, records: List<GrowthRecord>, isWeight: Boolean,
+    statusColor: Color = Color(0xFF2E7D32)
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -258,8 +268,8 @@ private fun GrowthCard(
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(barLabel, style = MaterialTheme.typography.labelSmall, color = Outline)
-                Surface(shape = RoundedCornerShape(100.dp), color = Color(0xFF4CAF50).copy(0.1f)) {
-                    Text(statusLabel, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32))
+                Surface(shape = RoundedCornerShape(100.dp), color = statusColor.copy(0.1f)) {
+                    Text(statusLabel, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = statusColor)
                 }
             }
         }
@@ -267,7 +277,7 @@ private fun GrowthCard(
 }
 
 @Composable
-private fun GrowthLogRow(record: GrowthRecord) {
+private fun GrowthLogRow(record: GrowthRecord, isThai: Boolean) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(modifier = Modifier.width(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -275,12 +285,16 @@ private fun GrowthLogRow(record: GrowthRecord) {
                 val parts = date.split("-")
                 if (parts.size >= 2) {
                     Text(parts[2].take(2), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Primary)
-                    Text(when(parts[1]) { "01" -> "ม.ค." "02" -> "ก.พ." "03" -> "มี.ค." "04" -> "เม.ย." "05" -> "พ.ค." "06" -> "มิ.ย." "07" -> "ก.ค." "08" -> "ส.ค." "09" -> "ก.ย." "10" -> "ต.ค." "11" -> "พ.ย." else -> "ธ.ค." }, style = MaterialTheme.typography.labelSmall, color = Outline)
+                    val monthTh = listOf("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
+                    val monthEn = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+                    val monthIdx = (parts[1].toIntOrNull() ?: 1).coerceIn(1, 12) - 1
+                    Text(if (isThai) monthTh[monthIdx] else monthEn[monthIdx], style = MaterialTheme.typography.labelSmall, color = Outline)
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(record.recordType, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                Text("${record.weightKg ?: "-"} กก • ${record.heightCm ?: "-"} ซม.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val weightUnit = if (isThai) "กก" else "kg"; val heightUnit = if (isThai) "ซม." else "cm"
+                Text("${record.weightKg ?: "-"} $weightUnit • ${record.heightCm ?: "-"} $heightUnit", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.Filled.ChevronRight, null, tint = Outline)
         }

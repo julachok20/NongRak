@@ -18,6 +18,25 @@ class NutritionRepository {
 
     private fun today(): String = LocalDate.now().toString()
 
+    // ---------------- MILK ----------------
+
+    suspend fun getMilkLogs(childId: String): List<com.lullabyai.app.data.model.MilkLog> = runCatching {
+        supabase.from("milk_logs").select {
+            filter { eq("child_id", childId) }
+            order("logged_at", Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.MilkLog>()
+    }.getOrDefault(emptyList())
+
+    suspend fun addMilkLog(childId: String, milkType: String, volumeMl: Int, side: String?, notes: String?): Result<Unit> = runCatching {
+        supabase.from("milk_logs").insert(buildJsonObject {
+            put("child_id", JsonPrimitive(childId))
+            put("milk_type", JsonPrimitive(milkType))
+            put("volume_ml", JsonPrimitive(volumeMl))
+            put("side", side?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
+        })
+    }
+
     // ---------------- FOOD ----------------
 
     suspend fun getFoodLogs(childId: String, date: String = today()): List<FoodLog> = runCatching {

@@ -19,6 +19,9 @@ data class OnboardingUiState(
     val childName: String = "",
     val birthdate: String = "",
     val gender: String = "male",
+    val nationality: String = "",
+    val ethnicity: String = "",
+    val religion: String = "",
     val allergies: String = "",
     val notes: String = "",
     // Step 2
@@ -55,10 +58,14 @@ class OnboardingViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState
 
-    fun updateStep1(name: String, birthdate: String, gender: String, allergies: String, notes: String) {
+    fun updateStep1(
+        name: String, birthdate: String, gender: String, allergies: String, notes: String,
+        nationality: String = "", ethnicity: String = "", religion: String = ""
+    ) {
         _uiState.value = _uiState.value.copy(
             childName = name, birthdate = birthdate, gender = gender,
-            allergies = allergies, notes = notes
+            allergies = allergies, notes = notes,
+            nationality = nationality, ethnicity = ethnicity, religion = religion
         )
     }
 
@@ -127,7 +134,10 @@ class OnboardingViewModel : ViewModel() {
                     weightKg = state.weightKg.toDoubleOrNull(),
                     sleepHours = state.sleepHours.toDouble(),
                     activityLevel = state.activityLevel,
-                    bloodGroup = state.bloodGroup.ifBlank { null }
+                    bloodGroup = state.bloodGroup.ifBlank { null },
+                    nationality = state.nationality.ifBlank { null },
+                    ethnicity = state.ethnicity.ifBlank { null },
+                    religion = state.religion.ifBlank { null }
                 )
                 val savedChild = childRepo.createChild(child).getOrThrow()
                 // Make the newly-created child the active one (covers both first signup and "add child").

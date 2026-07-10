@@ -34,6 +34,75 @@ import kotlinx.coroutines.delay
 /** The tabs of the app-wide bottom navigation. CHATBOT is launched from the center floating button, not a bar item. */
 enum class BottomTab { HOME, CHATBOT, CHILD, STATS, SETTINGS }
 
+/** Small pill button showing the language you'd switch TO (e.g. shows "EN" while on Thai) — used
+ *  on the pre-login screens (Welcome/Login/SignUp) where there's no Settings screen to reach yet. */
+@Composable
+fun LanguageToggleButton(isThai: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(onClick = onToggle, shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = modifier) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(Icons.Filled.Language, null, tint = Primary, modifier = Modifier.size(16.dp))
+            Text(if (isThai) "EN" else "ไทย", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Primary)
+        }
+    }
+}
+
+/** Dismissible banner nudging the user to answer the AI's daily question — tapping it opens the
+ *  actual question dialog rather than popping the dialog up unprompted. Shared between Dashboard
+ *  and Child Info so the same question/state (ChildViewModel.uiState.dailyQuestion) surfaces on both. */
+@Composable
+fun DailyQuestionBanner(isThai: Boolean, onClick: () -> Unit, onDismiss: () -> Unit) {
+    Surface(
+        onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+        color = Primary.copy(0.08f)
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.HelpOutline, null, tint = Primary, modifier = Modifier.size(20.dp))
+            Text(
+                if (isThai) "ตอบคำถามเพื่อช่วยการวิเคราะห์" else "Answer a question to help analysis",
+                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Primary, modifier = Modifier.weight(1f)
+            )
+            androidx.compose.material3.IconButton(onClick = onDismiss, modifier = Modifier.size(22.dp)) {
+                Icon(Icons.Filled.Close, null, tint = Primary, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+/** The daily-question dialog itself — shared between Dashboard and Child Info so both trigger the
+ *  same answer/skip flow via [DailyQuestionBanner] instead of duplicating this markup. */
+@Composable
+fun DailyQuestionDialog(question: String, isThai: Boolean, onAnswer: (String) -> Unit, onSkip: () -> Unit, onDismiss: () -> Unit) {
+    var dailyAnswer by remember(question) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.HelpOutline, null, tint = Primary) },
+        title = { Text(question) },
+        text = {
+            Column {
+                Text(
+                    if (isThai) "คำถามจาก AI เพื่อช่วยวิเคราะห์ลูกของคุณได้แม่นยำขึ้น (สูงสุด 3 คำถาม/วัน)"
+                    else "A question from the AI to analyze your child more accurately (max 3/day)",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = dailyAnswer, onValueChange = { dailyAnswer = it },
+                    label = { Text(if (isThai) "คำตอบ" else "Answer") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAnswer(dailyAnswer) }, enabled = dailyAnswer.isNotBlank()) {
+                Text(if (isThai) "ส่ง" else "Submit", color = Primary, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onSkip) { Text(if (isThai) "ข้าม" else "Skip") }
+        }
+    )
+}
+
 /**
  * Shared app footer used on every primary screen (Dashboard, AI Chat, Child pages, Settings).
  *

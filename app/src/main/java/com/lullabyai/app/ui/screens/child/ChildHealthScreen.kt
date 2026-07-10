@@ -315,6 +315,22 @@ fun ChildHealthScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+
+                Card(
+                    onClick = { navController.navigate(Screen.WasteRecord.route) },
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Filled.WaterDrop, null, tint = Primary)
+                        Column(Modifier.weight(1f)) {
+                            Text(if (s.isThai) "บันทึกการขับถ่าย" else "Waste Record", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text(if (s.isThai) "ติดตามปัสสาวะและอุจจาระ" else "Track urine & stool", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Filled.ChevronRight, null, tint = Outline)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
         }
     }

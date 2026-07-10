@@ -6,6 +6,7 @@ import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.lullabyai.app.BuildConfig
+import com.lullabyai.app.data.model.MentalHealthAssessment
 import com.lullabyai.app.data.model.Profile
 import com.lullabyai.app.data.remote.StorageHelper
 import com.lullabyai.app.data.remote.supabase
@@ -18,6 +19,7 @@ import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -272,6 +274,42 @@ class AuthRepository {
         }
     }
 
+    /** Separate opt-in consent for using (de-identified) data to improve/train AI models — a
+     *  distinct PDPA purpose from the mandatory signup consent, so it gets its own timestamp
+     *  the same way [signUp]'s consent_given_at does. Off by default; can be withdrawn any time. */
+    /** Submits the monthly parent mental-health self-assessment (see MentalHealthCatalog for the
+     *  question set + scoring). Scoring is computed client-side from the already-known answers. */
+    suspend fun submitMentalHealthAssessment(answers: List<Int>): Result<MentalHealthAssessment> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        val totalScore = answers.sum()
+        val tier = com.lullabyai.app.data.MentalHealthCatalog.riskTier(totalScore)
+        val flaggedSelfHarm = answers.getOrNull(com.lullabyai.app.data.MentalHealthCatalog.SELF_HARM_INDEX)?.let { it > 0 } ?: false
+        supabase.from("parent_mental_health_assessments").insert(buildJsonObject {
+            put("user_id", JsonPrimitive(userId))
+            put("answers", JsonArray(answers.map { JsonPrimitive(it) }))
+            put("total_score", JsonPrimitive(totalScore))
+            put("risk_tier", JsonPrimitive(tier))
+            put("flagged_self_harm", JsonPrimitive(flaggedSelfHarm))
+        }) { select() }.decodeSingle<MentalHealthAssessment>()
+    }
+
+    /** Newest-first history, for the result screen's trend chart and the dashboard "done this month" check. */
+    suspend fun getMentalHealthHistory(): Result<List<MentalHealthAssessment>> = runCatching {
+        supabase.from("parent_mental_health_assessments").select {
+            order("created_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+        }.decodeList<MentalHealthAssessment>()
+    }
+
+    suspend fun setAiTrainingConsent(value: Boolean): Result<Unit> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        supabase.from("profiles").update(buildJsonObject {
+            put("ai_training_consent", JsonPrimitive(value))
+            put("ai_training_consent_at", if (value) JsonPrimitive(java.time.Instant.now().toString()) else JsonNull)
+        }) {
+            filter { eq("id", userId) }
+        }
+    }
+
     /**
      * Uploads a profile photo to the PRIVATE 'avatars' bucket, stores the bucket PATH on the
      * profile (never a public URL), and returns a short-lived signed URL for immediate display.
@@ -355,9 +393,9 @@ class AuthRepository {
 
     suspend fun hasCompletedOnboarding(): Boolean {
         return try {
-            val userId = supabase.auth.currentUserOrNull()?.id ?: return false
+            // No user_id filter — RLS already scopes to owned + synced (member) children; adding one
+            // here would hide synced children and wrongly report "not onboarded" for that account.
             val list = supabase.from("children").select {
-                filter { eq("user_id", userId) }
                 limit(1)
             }.decodeList<Map<String, String>>()
             list.isNotEmpty()

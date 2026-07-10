@@ -105,6 +105,32 @@ class HealthRepository {
         ) { filter { eq("id", id) } }
     }
 
+    // ---------------- WASTE / ELIMINATION RECORDS ----------------
+
+    suspend fun getWasteRecords(childId: String): Result<List<com.lullabyai.app.data.model.WasteRecord>> = runCatching {
+        supabase.from("waste_records").select {
+            filter { eq("child_id", childId) }
+            order("recorded_at", Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.WasteRecord>()
+    }
+
+    suspend fun addWasteRecord(childId: String, wasteType: String, consistency: String?, color: String?, amount: String, notes: String?): Result<Unit> = runCatching {
+        supabase.from("waste_records").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(childId))
+                put("waste_type", JsonPrimitive(wasteType))
+                put("consistency", consistency?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("color", color?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("amount", JsonPrimitive(amount))
+                put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
+            }
+        )
+    }
+
+    suspend fun deleteWasteRecord(id: String): Result<Unit> = runCatching {
+        supabase.from("waste_records").delete { filter { eq("id", id) } }
+    }
+
     // ---------------- ALLERGIES ----------------
 
     suspend fun getAllergies(childId: String): Result<List<Allergy>> = runCatching {

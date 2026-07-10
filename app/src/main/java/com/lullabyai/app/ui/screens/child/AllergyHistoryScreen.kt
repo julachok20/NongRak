@@ -2,6 +2,7 @@
 package com.lullabyai.app.ui.screens.child
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -184,7 +185,25 @@ fun AllergyHistoryScreen(
             }
 
             if (allergies.isEmpty()) {
-                item { Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) { Text(if (s.isThai) "ยังไม่มีประวัติการแพ้" else "No allergy records yet", color = Outline, style = MaterialTheme.typography.bodyMedium) } }
+                item {
+                    val noKnown = childState.child?.noKnownAllergies == true
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { childViewModel.setNoKnownAllergies(!noKnown) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = if (noKnown) Primary.copy(0.08f) else MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Checkbox(checked = noKnown, onCheckedChange = { childViewModel.setNoKnownAllergies(it) })
+                            Column(Modifier.weight(1f)) {
+                                Text(if (s.isThai) "ยืนยันว่าไม่มีประวัติการแพ้" else "Confirm: no known allergies", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (s.isThai) "ติ๊กถ้าลูกไม่มีประวัติแพ้อะไรเลย จะได้ไม่ต้องเตือนซ้ำ" else "Check this if your child has no known allergies, so we stop asking",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             } else {
                 items(allergies, key = { it.id }) { a ->
                     AllergyCard(a, onEdit = { loadIntoForm(a) }, onDelete = { allergyToDelete = a })

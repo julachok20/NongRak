@@ -27,4 +27,5 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setDailyReport(value: Boolean) = viewModelScope.launch { manager.setDailyReport(value) }
     fun setHealthAlert(value: Boolean) = viewModelScope.launch { manager.setHealthAlert(value) }
     fun setAiTips(value: Boolean) = viewModelScope.launch { manager.setAiTips(value) }
+    fun setHasSeenTour(value: Boolean) = viewModelScope.launch { manager.setHasSeenTour(value) }
 }

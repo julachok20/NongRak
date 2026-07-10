@@ -7,6 +7,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,21 +20,31 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lullabyai.app.R
+import com.lullabyai.app.data.settings.AppLanguage
+import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.viewmodel.SettingsViewModel
 
 @Composable
 fun WelcomeScreen(
     onSignUp: () -> Unit,
-    onLogin: () -> Unit
+    onLogin: () -> Unit,
+    settingsViewModel: SettingsViewModel
 ) {
     val s = LocalStrings.current
+    val settings by settingsViewModel.settings.collectAsState()
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
+        LanguageToggleButton(
+            isThai = settings.language == AppLanguage.TH,
+            onToggle = { settingsViewModel.toggleLanguage() },
+            modifier = Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(20.dp)
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()

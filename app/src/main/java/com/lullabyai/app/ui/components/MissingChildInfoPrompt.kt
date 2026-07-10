@@ -24,7 +24,9 @@ fun missingChildInfo(child: Child?, hasAllergyRecords: Boolean, isThai: Boolean)
     return buildList {
         if (child.weightKg == null) add(if (isThai) "น้ำหนัก" else "Weight")
         if (child.heightCm == null) add(if (isThai) "ส่วนสูง" else "Height")
-        if (!hasAllergyRecords) add(if (isThai) "ประวัติการแพ้" else "Allergy history")
+        // "No known allergies" is a valid, complete answer — only nag if neither a record NOR that
+        // confirmation exists yet.
+        if (!hasAllergyRecords && !child.noKnownAllergies) add(if (isThai) "ประวัติการแพ้" else "Allergy history")
     }
 }
 

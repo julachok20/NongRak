@@ -39,6 +39,7 @@ fun SettingsScreen(
 ) {
     val s = LocalStrings.current
     val settings by settingsViewModel.settings.collectAsState()
+    val authState by authViewModel.uiState.collectAsState()
     val context = LocalContext.current
     val isThai = settings.language == AppLanguage.TH
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -142,6 +143,20 @@ fun SettingsScreen(
                             }
                         }
                     )
+                    Divider52()
+                    ToggleRow(Icons.Filled.Psychology, s.aiTrainingConsent, authState.profile?.aiTrainingConsent ?: false) { authViewModel.setAiTrainingConsent(it) }
+                    Text(
+                        s.aiTrainingConsentDesc,
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 50.dp, end = 16.dp, bottom = 10.dp)
+                    )
+                    Divider52()
+                    SettingsRow(
+                        Icons.Filled.Storage,
+                        if (isThai) "ข้อมูลที่ AI เก็บไว้" else "Data the AI keeps",
+                        onClick = { navController.navigate(Screen.MedicalDataVault.route) }
+                    )
+                    Divider52()
                     SettingsRow(
                         Icons.Filled.DeleteForever,
                         if (isThai) "ลบบัญชีถาวร" else "Delete account",
@@ -189,6 +204,7 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     showLogoutDialog = false
                     settingsViewModel.setDarkMode(false)  // reset dark mode on sign out
+                    settingsViewModel.setLanguage(AppLanguage.TH)  // reset language to Thai on sign out
                     authViewModel.signOut(onLogout)
                 }) {
                     Text(s.logout, color = Error)
@@ -234,6 +250,7 @@ fun SettingsScreen(
                             deleting = false
                             if (ok) {
                                 settingsViewModel.setDarkMode(false)
+                                settingsViewModel.setLanguage(AppLanguage.TH)  // reset language to Thai on account deletion
                                 showDeleteDialog = false
                                 onLogout()
                             } else {

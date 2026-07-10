@@ -3,6 +3,7 @@ package com.lullabyai.app.data.settings
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +30,58 @@ class SettingsManager(private val context: Context) {
     private val HEALTH_ALERT = booleanPreferencesKey("health_alert")
     private val AI_TIPS = booleanPreferencesKey("ai_tips")
     private val SELECTED_CHILD = stringPreferencesKey("selected_child_id")
+    private val HAS_SEEN_TOUR = booleanPreferencesKey("has_seen_first_run_tour")
+    private val SLEEP_REC_RESPONSE_AT = stringPreferencesKey("sleep_rec_response_at")
+
+    /** When the parent last answered (yes or no+reason) the recommended-bedtime prompt — gates
+     *  how often SleepScheduleScreen/SleepRecommendationWorker re-ask (cooldown, not one-and-done). */
+    val sleepRecRespondedAt: Flow<String?> = context.dataStore.data.map { it[SLEEP_REC_RESPONSE_AT] }
+
+    suspend fun setSleepRecResponded() {
+        context.dataStore.edit { it[SLEEP_REC_RESPONSE_AT] = java.time.Instant.now().toString() }
+    }
+
+    /** Whether the parent has already seen (or skipped) the first-run feature tour. */
+    val hasSeenTour: Flow<Boolean> = context.dataStore.data.map { it[HAS_SEEN_TOUR] ?: false }
+
+    suspend fun setHasSeenTour(value: Boolean) {
+        context.dataStore.edit { it[HAS_SEEN_TOUR] = value }
+    }
+
+    private val AI_DAILY_Q_DATE = stringPreferencesKey("ai_daily_question_date")
+    private val AI_DAILY_Q_COUNT = intPreferencesKey("ai_daily_question_count")
+
+    /** How many AI "what do you want to know more" popups have been shown today — resets on a new
+     *  day. Caller (Dashboard) enforces the 3/day cap against this. */
+    suspend fun aiDailyQuestionCountToday(): Int {
+        val prefs = context.dataStore.data.first()
+        val today = java.time.LocalDate.now().toString()
+        return if (prefs[AI_DAILY_Q_DATE] == today) (prefs[AI_DAILY_Q_COUNT] ?: 0) else 0
+    }
+
+    /** Records one more AI daily-question shown (counts toward the cap whether answered or skipped). */
+    suspend fun recordAiDailyQuestionShown() {
+        val today = java.time.LocalDate.now().toString()
+        context.dataStore.edit { prefs ->
+            val current = if (prefs[AI_DAILY_Q_DATE] == today) (prefs[AI_DAILY_Q_COUNT] ?: 0) else 0
+            prefs[AI_DAILY_Q_DATE] = today
+            prefs[AI_DAILY_Q_COUNT] = current + 1
+        }
+    }
+
+    private val ADD_CHILD_PROMPT_AT = stringPreferencesKey("add_child_prompt_shown_at")
+
+    /** Whether the "add a child" nudge popup is allowed to show again — gated to once per 4 hours
+     *  (childless accounts only) instead of firing on every screen visit. */
+    suspend fun shouldShowAddChildPrompt(): Boolean {
+        val last = context.dataStore.data.first()[ADD_CHILD_PROMPT_AT]
+            ?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() } ?: return true
+        return java.time.Duration.between(last, java.time.Instant.now()).toHours() >= 4
+    }
+
+    suspend fun recordAddChildPromptShown() {
+        context.dataStore.edit { it[ADD_CHILD_PROMPT_AT] = java.time.Instant.now().toString() }
+    }
 
     private val RECENT_SERVICES = stringPreferencesKey("recent_services")
 

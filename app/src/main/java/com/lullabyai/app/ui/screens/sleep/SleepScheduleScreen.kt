@@ -17,12 +17,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.SleepSchedule
+import com.lullabyai.app.data.settings.SettingsManager
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
+import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
 
 private val DAY_KEYS = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 private fun dayLabel(key: String, isThai: Boolean) = if (isThai) {
@@ -57,6 +62,7 @@ fun SleepScheduleScreen(
     var toDelete by remember { mutableStateOf<SleepSchedule?>(null) }
     var recommendationDismissed by remember { mutableStateOf(false) }
     var prefillNap by remember { mutableStateOf(false) }
+    var prefillBedtime by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val targetHours = childViewModel.sleepTargetHours()
     val scheduledMinutes = schedules.sumOf { scheduleDurationMinutes(it.startTime, it.endTime) }
@@ -73,6 +79,23 @@ fun SleepScheduleScreen(
     }
     val showNapRecommendation = !recommendationDismissed && scheduledMinutes < targetHours * 60 &&
         schedules.none { it.sleepType == "nap" } && !recentNapLogged
+
+    // Recommended bedtime prompt — re-asks periodically (cooldown, not one-and-done) until a
+    // "main" sleep schedule exists, since the parent may keep saying "not yet" for good reasons.
+    val context = LocalContext.current
+    val settingsManager = remember { SettingsManager(context) }
+    val scope = rememberCoroutineScope()
+    val (recBedStart, recBedEnd) = childViewModel.recommendedBedtime()
+    var respondedAt by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { settingsManager.sleepRecRespondedAt.collect { respondedAt = it } }
+    val cooldownOver = respondedAt == null ||
+        runCatching { Duration.between(Instant.parse(respondedAt), Instant.now()) > Duration.ofDays(3) }.getOrDefault(true)
+    var showBedtimeReason by remember { mutableStateOf(false) }
+    val showBedtimePrompt = cooldownOver && schedules.none { it.sleepType == "main" }
+
+    fun recordBedtimeResponse() {
+        scope.launch { settingsManager.setSleepRecResponded() }
+    }
 
     Scaffold(
         topBar = {
@@ -99,6 +122,31 @@ fun SleepScheduleScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
+            if (showBedtimePrompt) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF3949AB).copy(0.08f))) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Filled.Bedtime, null, tint = Color(0xFF3949AB), modifier = Modifier.size(18.dp))
+                                Text(if (s.isThai) "คำแนะนำเวลานอน" else "Bedtime suggestion", style = MaterialTheme.typography.labelMedium, color = Color(0xFF3949AB), fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                if (s.isThai) "ลูกวัยนี้ควรเข้านอนประมาณ $recBedStart น. ถึง $recBedEnd น. เห็นด้วยไหมคะ?"
+                                else "For this age, bedtime around $recBedStart–$recBedEnd is recommended. Does this work?",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(onClick = {
+                                    recordBedtimeResponse()
+                                    prefillNap = false; prefillBedtime = recBedStart to recBedEnd; showAdd = true
+                                }, shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3949AB))) { Text(if (s.isThai) "ใช่" else "Yes") }
+                                OutlinedButton(onClick = { showBedtimeReason = true }, shape = RoundedCornerShape(100.dp)) { Text(if (s.isThai) "ไม่ใช่" else "No") }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (showNapRecommendation) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f))) {
@@ -113,7 +161,7 @@ fun SleepScheduleScreen(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Button(onClick = { prefillNap = true; showAdd = true }, shape = RoundedCornerShape(100.dp)) { Text(if (s.isThai) "เพิ่ม" else "Add") }
+                                Button(onClick = { prefillNap = true; prefillBedtime = null; showAdd = true }, shape = RoundedCornerShape(100.dp)) { Text(if (s.isThai) "เพิ่ม" else "Add") }
                                 OutlinedButton(onClick = { recommendationDismissed = true }, shape = RoundedCornerShape(100.dp)) { Text(if (s.isThai) "ข้าม" else "Skip") }
                             }
                         }
@@ -128,7 +176,7 @@ fun SleepScheduleScreen(
             }
 
             item {
-                OutlinedButton(onClick = { prefillNap = false; showAdd = true }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp)) {
+                OutlinedButton(onClick = { prefillNap = false; prefillBedtime = null; showAdd = true }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp)) {
                     Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                     Text(if (s.isThai) "เพิ่มช่วงเวลานอน" else "Add sleep period")
                 }
@@ -144,11 +192,21 @@ fun SleepScheduleScreen(
     if (showAdd) {
         AddScheduleDialog(
             initialType = if (prefillNap) "nap" else "main",
-            onDismiss = { showAdd = false },
+            initialStart = prefillBedtime?.first ?: "20:00",
+            initialEnd = prefillBedtime?.second ?: "06:00",
+            onDismiss = { showAdd = false; prefillBedtime = null },
             onAdd = { label, type, start, end, days ->
                 childViewModel.addSleepSchedule(label, type, start, end, days)
-                showAdd = false
+                showAdd = false; prefillBedtime = null
             }
+        )
+    }
+
+    if (showBedtimeReason) {
+        BedtimeReasonDialog(
+            isThai = s.isThai,
+            onReason = { recordBedtimeResponse(); showBedtimeReason = false },
+            onDismiss = { showBedtimeReason = false }
         )
     }
 
@@ -210,12 +268,18 @@ private fun ScheduleRow(sc: SleepSchedule, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun AddScheduleDialog(initialType: String = "main", onDismiss: () -> Unit, onAdd: (String, String, String, String, String) -> Unit) {
+private fun AddScheduleDialog(
+    initialType: String = "main",
+    initialStart: String = "20:00",
+    initialEnd: String = "06:00",
+    onDismiss: () -> Unit,
+    onAdd: (String, String, String, String, String) -> Unit
+) {
     val s = LocalStrings.current
     var label by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(initialType) }
-    var start by remember { mutableStateOf("20:00") }
-    var end by remember { mutableStateOf("06:00") }
+    var start by remember { mutableStateOf(initialStart) }
+    var end by remember { mutableStateOf(initialEnd) }
     var selectedDays by remember { mutableStateOf(DAY_KEYS.toSet()) }
 
     AlertDialog(
@@ -259,5 +323,29 @@ private fun AddScheduleDialog(initialType: String = "main", onDismiss: () -> Uni
             }) { Text(if (s.isThai) "บันทึกตาราง" else "Save", color = Primary, fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
+    )
+}
+
+private fun bedtimeReasons(isThai: Boolean) =
+    if (isThai) listOf("ลูกยังไม่ง่วงตอนนี้", "เวลานี้ไม่สะดวกสำหรับครอบครัว", "อื่นๆ")
+    else listOf("Not sleepy at this time yet", "Doesn't fit our family's schedule", "Other")
+
+/** "No, and here's why" — reuses the same preset-reason-chip pattern as the milestone/vaccine
+ *  skip flows elsewhere in the app, rather than inventing a free-text dialog. The reason itself
+ *  isn't persisted (nothing reads it yet); only the response timestamp gates the re-ask cooldown. */
+@Composable
+private fun BedtimeReasonDialog(isThai: Boolean, onReason: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isThai) "เวลานี้ไม่เหมาะเหรอคะ?" else "This time doesn't work?", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                bedtimeReasons(isThai).forEach { reason ->
+                    OutlinedButton(onClick = { onReason(reason) }, modifier = Modifier.fillMaxWidth()) { Text(reason) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(if (isThai) "ยกเลิก" else "Cancel") } }
     )
 }

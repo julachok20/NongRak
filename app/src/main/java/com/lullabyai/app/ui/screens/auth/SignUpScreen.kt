@@ -21,18 +21,23 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.lullabyai.app.data.settings.AppLanguage
+import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
+import com.lullabyai.app.viewmodel.SettingsViewModel
 
 @Composable
 fun SignUpScreen(
     authViewModel: AuthViewModel,
+    settingsViewModel: SettingsViewModel,
     onSignUpSuccess: () -> Unit,
     onNavigateToLogin: () -> Unit,
     onBack: () -> Unit = {}
 ) {
     val uiState by authViewModel.uiState.collectAsState()
+    val settings by settingsViewModel.settings.collectAsState()
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var fullName by remember { mutableStateOf("") }
@@ -50,6 +55,11 @@ fun SignUpScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
+        LanguageToggleButton(
+            isThai = settings.language == AppLanguage.TH,
+            onToggle = { settingsViewModel.toggleLanguage() },
+            modifier = Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(20.dp)
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()

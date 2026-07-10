@@ -11,6 +11,8 @@ import androidx.work.WorkManager
 import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.work.VaccineReminderWorker
 import com.lullabyai.app.work.MedicineReminderWorker
+import com.lullabyai.app.work.WeeklyHealthReportWorker
+import com.lullabyai.app.work.SleepBedtimeRecommendationWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -33,6 +35,30 @@ class NongRakApp : Application() {
         scheduleVaccineReminders()
         scheduleMedicineReminders()
         rescheduleSleepReminders()
+        scheduleWeeklyHealthReport()
+        scheduleSleepBedtimeRecommendation()
+    }
+
+    /** Proactive bedtime-recommendation nudge, gated by the same 3-day cooldown the in-app
+     *  SleepScheduleScreen prompt uses (checked inside the worker via SettingsManager). */
+    private fun scheduleSleepBedtimeRecommendation() {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "sleep_bedtime_recommendation",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<SleepBedtimeRecommendationWorker>(3, TimeUnit.DAYS).setConstraints(constraints).build()
+        )
+    }
+
+    /** Proactive weekly re-engagement: turns the on-demand Weekly Health Report into a push
+     *  notification, gated by the "dailyReport" settings toggle (checked inside the worker). */
+    private fun scheduleWeeklyHealthReport() {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "weekly_health_report",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<WeeklyHealthReportWorker>(7, TimeUnit.DAYS).setConstraints(constraints).build()
+        )
     }
 
     /** Re-arms sleep-schedule reminders for the last-selected child on cold start (fresh install,

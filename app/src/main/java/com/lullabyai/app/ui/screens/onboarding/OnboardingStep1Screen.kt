@@ -30,6 +30,9 @@ fun OnboardingStep1Screen(
     var childName by remember { mutableStateOf(state.childName) }
     var birthdate by remember { mutableStateOf(state.birthdate) }
     var gender by remember { mutableStateOf(state.gender) }
+    var nationality by remember { mutableStateOf(state.nationality) }
+    var ethnicity by remember { mutableStateOf(state.ethnicity) }
+    var religion by remember { mutableStateOf(state.religion) }
     // Allergies + notes are collected later (Step 3: list-based allergies & notes), not here.
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -87,12 +90,42 @@ fun OnboardingStep1Screen(
                     }
                 }
 
+                // Hospital-record demographics — optional, not required to proceed (matches
+                // allergies/notes below, which are also optional at this step).
+                LabelField("สัญชาติ") {
+                    OutlinedTextField(
+                        value = nationality, onValueChange = { nationality = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("เช่น ไทย", color = Outline) },
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors()
+                    )
+                }
+                LabelField("เชื้อชาติ") {
+                    OutlinedTextField(
+                        value = ethnicity, onValueChange = { ethnicity = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("เช่น ไทย", color = Outline) },
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors()
+                    )
+                }
+                LabelField("ศาสนา") {
+                    OutlinedTextField(
+                        value = religion, onValueChange = { religion = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("เช่น พุทธ", color = Outline) },
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors()
+                    )
+                }
+
                 Spacer(Modifier.height(8.dp))
 
                 PrimaryButton(
                     text = "Next >",
                     onClick = {
-                        onboardingViewModel.updateStep1(childName, birthdate, gender, "", "")
+                        onboardingViewModel.updateStep1(childName, birthdate, gender, "", "", nationality, ethnicity, religion)
                         onNext()
                     },
                     enabled = childName.isNotBlank() && birthdate.isNotBlank()

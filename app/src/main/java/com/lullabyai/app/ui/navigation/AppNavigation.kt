@@ -10,6 +10,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -34,6 +38,8 @@ import com.lullabyai.app.ui.screens.common.MaintenanceScreen
 import com.lullabyai.app.ui.screens.dashboard.DashboardScreen
 import com.lullabyai.app.ui.screens.growth.GrowthMetricsScreen
 import com.lullabyai.app.ui.screens.help.HelpFaqScreen
+import com.lullabyai.app.ui.screens.onboarding.AddChildChoiceScreen
+import com.lullabyai.app.ui.screens.onboarding.SyncChildScreen
 import com.lullabyai.app.ui.screens.onboarding.LastSetupScreen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep1Screen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep2Screen
@@ -76,6 +82,18 @@ fun AppNavigation(
     val onboardingState by onboardingViewModel.uiState.collectAsState()
     // Onboarding theme: forced light during signup; the user's chosen theme when adding a child.
     val onboardingDark = onboardingState.addMode && appSettings.darkMode
+
+    // Guided tour overlay state (see TourOverlay.kt) — drawn on top of the NavHost below, rather than
+    // being its own destination screen, so it can walk through the real Dashboard/ChildInfo/Chat/
+    // FAQ/Settings pages instead of static slides.
+    var tourActive by remember { mutableStateOf(false) }
+    var tourStep by remember { mutableIntStateOf(0) }
+    val finishTour = {
+        tourActive = false
+        settingsViewModel.setHasSeenTour(true)
+        navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -95,7 +113,8 @@ fun AppNavigation(
             NongRakTheme(darkTheme = false) {
                 WelcomeScreen(
                     onSignUp = { navController.navigate(Screen.SignUp.route) },
-                    onLogin = { navController.navigate(Screen.Login.route) }
+                    onLogin = { navController.navigate(Screen.Login.route) },
+                    settingsViewModel = settingsViewModel
                 )
             }
         }
@@ -103,6 +122,7 @@ fun AppNavigation(
             NongRakTheme(darkTheme = false) {
                 LoginScreen(
                     authViewModel = authViewModel,
+                    settingsViewModel = settingsViewModel,
                     onLoginSuccess = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
                     onNavigateToSignUp = { navController.navigate(Screen.SignUp.route) },
                     onNavigateToForgotPassword = { navController.navigate(Screen.ForgotPassword.route) },
@@ -131,7 +151,10 @@ fun AppNavigation(
             NongRakTheme(darkTheme = false) {
                 SignUpScreen(
                     authViewModel = authViewModel,
-                    onSignUpSuccess = { onboardingViewModel.reset(); navController.navigate(Screen.MedicalDisclaimer.route) },
+                    settingsViewModel = settingsViewModel,
+                    // A child is no longer required at signup — land in the app; Dashboard nudges
+                    // the (still childless) account to add one via Screen.AddChildChoice.
+                    onSignUpSuccess = { onboardingViewModel.reset(); navController.navigate(Screen.FirstRunTour.route) { popUpTo(0) } },
                     onNavigateToLogin = { navController.navigate(Screen.Login.route) },
                     onBack = { navController.navigate(Screen.Welcome.route) { popUpTo(0) } }
                 )
@@ -141,6 +164,35 @@ fun AppNavigation(
             NongRakTheme(darkTheme = false) {
                 com.lullabyai.app.ui.screens.onboarding.MedicalDisclaimerScreen(
                     onAccept = { navController.navigate(Screen.OnboardingStep1.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.AddChildChoice.route) {
+            val authState by authViewModel.uiState.collectAsState()
+            NongRakTheme(darkTheme = false) {
+                AddChildChoiceScreen(
+                    onAddNew = {
+                        // First-ever child (relationship not set yet) still needs the medical
+                        // disclaimer + Last Setup; a subsequent child (addMode) skips both.
+                        if (authState.profile?.relationship.isNullOrBlank()) {
+                            onboardingViewModel.reset()
+                            navController.navigate(Screen.MedicalDisclaimer.route)
+                        } else {
+                            onboardingViewModel.startAddChild()
+                            navController.navigate(Screen.OnboardingStep1.route)
+                        }
+                    },
+                    onSync = { navController.navigate(Screen.SyncChild.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.SyncChild.route) {
+            NongRakTheme(darkTheme = false) {
+                SyncChildScreen(
+                    childViewModel = childViewModel,
+                    onDone = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -202,9 +254,21 @@ fun AppNavigation(
                 LastSetupScreen(
                     onboardingViewModel = onboardingViewModel,
                     authViewModel = authViewModel,
-                    onComplete = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
+                    onComplete = { navController.navigate(Screen.FirstRunTour.route) { popUpTo(0) } },
                     onBack = { navController.popBackStack() }
                 )
+            }
+        }
+        composable(Screen.FirstRunTour.route) {
+            // Not its own screen anymore — bounces straight to Dashboard and activates the
+            // TourOverlay (drawn below, on top of the NavHost), which walks the real app instead
+            // of a separate static-slide destination.
+            NongRakTheme(darkTheme = false) {
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    tourStep = 0
+                    tourActive = true
+                    navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
+                }
             }
         }
         composable(Screen.Dashboard.route) {
@@ -223,7 +287,11 @@ fun AppNavigation(
                 onNavigateToHelp = { navController.navigate(Screen.HelpFaq.route) },
                 onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                 onNavigateToStats = { navController.navigate(Screen.StatisticsInsights.route) },
-                onNavigateToSleep = { navController.navigate(Screen.SleepTracker.route) }
+                onNavigateToSleep = { navController.navigate(Screen.SleepTracker.route) },
+                onNavigateToAddChild = { navController.navigate(Screen.AddChildChoice.route) },
+                onNavigateToMentalHealth = { navController.navigate(Screen.MentalHealthAssessment.route) },
+                onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
+                isTourActive = tourActive
             )
         }
         composable(Screen.AiChat.route) {
@@ -240,6 +308,12 @@ fun AppNavigation(
         }
         composable(Screen.ChildSummary.route) {
             ChildSummaryScreen(childViewModel, chatViewModel, navController, onboardingViewModel) { navController.popBackStack() }
+        }
+        composable(Screen.ChildAiSummary.route) {
+            com.lullabyai.app.ui.screens.child.ChildAiSummaryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.WasteRecord.route) {
+            com.lullabyai.app.ui.screens.child.WasteRecordScreen(childViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.ProfileHistory.route) {
             com.lullabyai.app.ui.screens.child.ProfileHistoryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
@@ -316,6 +390,39 @@ fun AppNavigation(
                 onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
             )
         }
+        composable(Screen.GrowthHistory.route) {
+            com.lullabyai.app.ui.screens.growth.GrowthHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.WhoWeightForAgeDetail.route) {
+            com.lullabyai.app.ui.screens.growth.WhoWeightForAgeDetailScreen(childViewModel, navController)
+        }
+        composable(Screen.WhoHeightForAgeDetail.route) {
+            com.lullabyai.app.ui.screens.growth.WhoHeightForAgeDetailScreen(childViewModel, navController)
+        }
+        composable(Screen.NutritionInsights.route) {
+            com.lullabyai.app.ui.screens.stats.NutritionInsightsScreen(childViewModel, chatViewModel, navController)
+        }
+        composable(Screen.SleepActivityInsights.route) {
+            com.lullabyai.app.ui.screens.stats.SleepActivityInsightsScreen(childViewModel, chatViewModel, navController)
+        }
+        composable(Screen.HealthEliminationInsights.route) {
+            com.lullabyai.app.ui.screens.stats.HealthEliminationInsightsScreen(childViewModel, chatViewModel, navController)
+        }
+        composable(Screen.MonthlyReport.route) {
+            com.lullabyai.app.ui.screens.stats.MonthlyReportScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.MentalHealthAssessment.route) {
+            com.lullabyai.app.ui.screens.mentalhealth.MentalHealthAssessmentScreen(
+                authViewModel,
+                onDone = { navController.navigate(Screen.MentalHealthResult.route) { popUpTo(Screen.Dashboard.route) } },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.MentalHealthResult.route) {
+            com.lullabyai.app.ui.screens.mentalhealth.MentalHealthResultScreen(authViewModel, navController) {
+                navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
+            }
+        }
         composable(Screen.Settings.route) {
             SettingsScreen(
                 authViewModel = authViewModel,
@@ -331,6 +438,12 @@ fun AppNavigation(
         composable(Screen.EditProfile.route) {
             EditProfileScreen(authViewModel = authViewModel, navController = navController, onBack = { navController.popBackStack() })
         }
+        composable(Screen.MedicalDataVault.route) {
+            com.lullabyai.app.ui.screens.settings.MedicalDataVaultScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.MilkRecord.route) {
+            com.lullabyai.app.ui.screens.nutrition.MilkRecordScreen(childViewModel, navController) { navController.popBackStack() }
+        }
         composable(Screen.HelpFaq.route) {
             HelpFaqScreen(navController = navController, onBack = { navController.popBackStack() })
         }
@@ -338,7 +451,7 @@ fun AppNavigation(
             ChangePasswordScreen(authViewModel = authViewModel, navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.Notifications.route) {
-            NotificationsScreen(navController = navController, onBack = { navController.popBackStack() })
+            NotificationsScreen(navController = navController, childViewModel = childViewModel, onBack = { navController.popBackStack() })
         }
         composable(Screen.AboutUs.route) {
             AboutUsScreen(navController = navController, onBack = { navController.popBackStack() })
@@ -413,11 +526,22 @@ fun AppNavigation(
             ExerciseScreen(nutritionViewModel, lang, navController)
         }
         composable(Screen.ExerciseInstruction.route) {
-            MaintenanceScreen(navController = navController, onBack = { navController.popBackStack() })
+            com.lullabyai.app.ui.screens.exercise.ExerciseInstructionScreen(nutritionViewModel, lang) { navController.popBackStack() }
         }
         composable(Screen.RecipeDetail.route) {
-            MaintenanceScreen(navController = navController, onBack = { navController.popBackStack() })
+            com.lullabyai.app.ui.screens.nutrition.RecipeDetailScreen(nutritionViewModel, lang) { navController.popBackStack() }
         }
+    }
+    if (tourActive) {
+        com.lullabyai.app.ui.screens.onboarding.TourOverlay(
+            step = tourStep,
+            navController = navController,
+            isThai = lang == "th",
+            onNext = { tourStep++ },
+            onBack = { if (tourStep > 0) tourStep-- },
+            onSkip = { finishTour() },
+            onFinish = { finishTour() }
+        )
     }
     }
 }

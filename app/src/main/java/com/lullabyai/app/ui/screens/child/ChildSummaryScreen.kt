@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.lullabyai.app.ui.components.NoChildDataCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChatViewModel
@@ -71,6 +72,30 @@ fun ChildSummaryScreen(
         child?.let { chatViewModel.loadChildInfoSummary(it, s.isThai) }
     }
 
+    // This screen never triggered its own load before (it relied on Dashboard having already
+    // populated the shared ChildViewModel) — fine when Dashboard is always visited first, but leaves
+    // isLoading stuck at its true default forever if this screen is ever reached directly. Guarded
+    // so it doesn't re-fetch on every tab switch once data is already loaded.
+    LaunchedEffect(Unit) {
+        if (childState.children.isEmpty() && childState.child == null) childViewModel.loadChild()
+    }
+
+    // AI daily question — same banner/dialog as Dashboard (ChildViewModel.uiState.dailyQuestion is
+    // shared, loadDailyQuestion is idempotent) so it also surfaces here on Child Info.
+    val context = LocalContext.current
+    LaunchedEffect(child?.id) { child?.let { childViewModel.loadDailyQuestion(context, s.isThai) } }
+    var showDailyQuestionDialog by remember { mutableStateOf(false) }
+    if (showDailyQuestionDialog) {
+        childState.dailyQuestion?.let { question ->
+            com.lullabyai.app.ui.components.DailyQuestionDialog(
+                question = question, isThai = s.isThai,
+                onAnswer = { answer -> childViewModel.answerDailyQuestion(answer); showDailyQuestionDialog = false },
+                onSkip = { childViewModel.dismissDailyQuestion(); showDailyQuestionDialog = false },
+                onDismiss = { showDailyQuestionDialog = false }
+            )
+        }
+    }
+
     // If the active child changed elsewhere (added a child, or switched on another screen), reload.
     val selectedId by com.lullabyai.app.data.settings.ChildSelection.id.collectAsState()
     LaunchedEffect(selectedId) {
@@ -81,15 +106,37 @@ fun ChildSummaryScreen(
     }
 
     ChildScreenScaffold(title = if (s.isThai) "ข้อมูลของเด็ก" else "Child Info", currentTab = "overview", navController = navController) { padding ->
+        if (childState.isLoading && childState.children.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Primary)
+        }
+        } else if (childState.children.isEmpty() && !childState.isLoading && childState.error != null) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            com.lullabyai.app.ui.components.ChildLoadErrorCard(s.isThai) { childViewModel.loadChild() }
+        }
+        } else if (childState.children.isEmpty() && !childState.isLoading) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            NoChildDataCard(s.isThai) { navController.navigate(Screen.AddChildChoice.route) }
+        }
+        } else {
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(Modifier.height(4.dp))
 
+            childState.dailyQuestion?.let {
+                com.lullabyai.app.ui.components.DailyQuestionBanner(
+                    isThai = s.isThai,
+                    onClick = { showDailyQuestionDialog = true },
+                    onDismiss = { childViewModel.dismissDailyQuestion() }
+                )
+            }
+
             // Profile card (row)
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-                Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+              Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.size(64.dp).clip(CircleShape).background(SecondaryContainer), contentAlignment = Alignment.Center) {
                         val avatar = childState.childAvatarSignedUrl
                         if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -130,11 +177,62 @@ fun ChildSummaryScreen(
                                     text = { Text(if (s.isThai) "เพิ่มเด็ก" else "Add child", color = Primary, fontWeight = FontWeight.Bold) },
                                     onClick = {
                                         switchOpen = false
-                                        onboardingViewModel.startAddChild()
-                                        navController.navigate(Screen.OnboardingStep1.route)
+                                        navController.navigate(Screen.AddChildChoice.route)
                                     }
                                 )
+                                child?.let { c ->
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Filled.SyncAlt, null, tint = Primary) },
+                                        text = { Text(if (s.isThai) "เชิญผู้ปกครองอีกท่าน (สำหรับ ${c.name})" else "Invite another parent (for ${c.name})", color = Primary) },
+                                        onClick = {
+                                            switchOpen = false
+                                            childViewModel.generateInviteCode(c.id)
+                                        }
+                                    )
+                                }
                             }
+                        }
+
+                        childState.inviteCode?.let { code ->
+                            val context = LocalContext.current
+                            val forChildName = childState.inviteCodeChildName
+                            AlertDialog(
+                                onDismissRequest = { childViewModel.clearSyncState() },
+                                title = {
+                                    Text(
+                                        if (forChildName != null) (if (s.isThai) "รหัสเชิญสำหรับ $forChildName" else "Invite code for $forChildName")
+                                        else (if (s.isThai) "รหัสเชิญ" else "Invite code")
+                                    )
+                                },
+                                text = {
+                                    Column {
+                                        Text(
+                                            if (forChildName != null) {
+                                                if (s.isThai) "รหัสนี้ใช้เชื่อมข้อมูลของ \"$forChildName\" เท่านั้น เด็กแต่ละคนมีรหัสของตัวเอง — ส่งให้ผู้ปกครองอีกท่านเพื่อเชื่อมข้อมูลลูกคนนี้ (ใช้ได้ 7 วัน)"
+                                                else "This code syncs \"$forChildName\" only — each child has its own code. Share it with the other parent to sync this child (valid 7 days)"
+                                            } else {
+                                                if (s.isThai) "ส่งรหัสนี้ให้ผู้ปกครองอีกท่านเพื่อเชื่อมข้อมูลลูก (ใช้ได้ 7 วัน)"
+                                                else "Share this code with the other parent to sync this child (valid 7 days)"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(code, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Primary)
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        val send = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, code)
+                                        }
+                                        context.startActivity(Intent.createChooser(send, null))
+                                    }) { Text(if (s.isThai) "แชร์" else "Share") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { childViewModel.clearSyncState() }) { Text(if (s.isThai) "ปิด" else "Close") }
+                                }
+                            )
                         }
                         Text((if (s.isThai) "อายุ " else "Age ") + "${childViewModel.calculateAge(s.isThai)} (" + genderLabel(child?.gender, s.isThai) + ")", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text((if (s.isThai) "วันเกิด " else "Born ") + formatDate(child?.birthdate, s.isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
@@ -143,6 +241,19 @@ fun ChildSummaryScreen(
                         Icon(Icons.Filled.Edit, null, tint = Primary, modifier = Modifier.size(20.dp))
                     }
                 }
+                // "Check health data" CTA -> new AI-aggregated summary screen. Merged into the same
+                // card as the avatar/name/age (mockup keeps these in one continuous card boundary),
+                // not a separate sibling button below it.
+                Button(
+                    onClick = { navController.navigate(Screen.ChildAiSummary.route) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) {
+                    Icon(Icons.Filled.Insights, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (s.isThai) "ตรวจสอบข้อมูลสุขภาพ" else "Check health data", fontWeight = FontWeight.Bold)
+                }
+              }
             }
 
             // AI insight card
@@ -242,10 +353,48 @@ fun ChildSummaryScreen(
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GrowthStatCard(if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"), if (s.isThai) "อยู่ในเกณฑ์ปกติ" else "Normal range", Modifier.weight(1f)) { navController.navigate(Screen.GrowthMetrics.route) }
-                GrowthStatCard(if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"), if (s.isThai) "อยู่ในเกณฑ์ปกติ" else "Normal range", Modifier.weight(1f)) { navController.navigate(Screen.GrowthMetrics.route) }
+                val ageMonths = childViewModel.getAgeMonths()
+                val weightStatus = com.lullabyai.app.util.GrowthReference.weightStatus(child?.weightKg, ageMonths)
+                val heightStatus = com.lullabyai.app.util.GrowthReference.heightStatus(child?.heightCm, ageMonths)
+                GrowthStatCard(
+                    if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"),
+                    (if (s.isThai) weightStatus?.labelTh else weightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
+                    Modifier.weight(1f), statusColor = weightStatus?.color ?: Outline
+                ) { navController.navigate(Screen.GrowthMetrics.route) }
+                GrowthStatCard(
+                    if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"),
+                    (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
+                    Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline
+                ) { navController.navigate(Screen.GrowthMetrics.route) }
             }
-            InfoRow(Icons.Filled.Warning, if (s.isThai) "การแพ้" else "Allergies", if (childState.allergies.isNotEmpty()) ("${childState.allergies.size} " + (if (s.isThai) "รายการ" else "items")) else (if (s.isThai) "ไม่มีประวัติแพ้" else "None"), null) { navController.navigate(Screen.AllergyHistory.route) }
+            if (childState.allergies.isNotEmpty()) {
+                // Extra-large radius (mockup gives this card a bigger radius than the rest of the
+                // page's cards) and outlined chips instead of solid-filled pills.
+                Card(
+                    Modifier.fillMaxWidth().clickable { navController.navigate(Screen.AllergyHistory.route) },
+                    shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Error.copy(0.08f))
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.Warning, null, tint = Error, modifier = Modifier.size(18.dp))
+                            Text(if (s.isThai) "ประวัติการแพ้" else "Allergies", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Error)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            childState.allergies.take(4).forEach { a ->
+                                Surface(
+                                    shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Error.copy(0.4f))
+                                ) {
+                                    Text(a.name, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Error)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                InfoRow(Icons.Filled.Warning, if (s.isThai) "การแพ้" else "Allergies", if (s.isThai) "ไม่มีประวัติแพ้" else "None", null) { navController.navigate(Screen.AllergyHistory.route) }
+            }
 
             // Main-service quick links (same services as the home dashboard) — #5
             Text(if (s.isThai) "บริการหลัก" else "Main services", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -255,8 +404,13 @@ fun ChildSummaryScreen(
                 ChildQuickLink(if (s.isThai) "สุขภาพ" else "Health", Icons.Filled.HealthAndSafety, Modifier.weight(1f)) { navController.navigate(Screen.ChildHealth.route) }
                 ChildQuickLink(if (s.isThai) "โภชนาการ" else "Nutrition", Icons.Filled.Restaurant, Modifier.weight(1f)) { navController.navigate(Screen.Nutrition.route) }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ChildQuickLink(if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", Icons.Filled.MonitorHeart, Modifier.weight(1f)) { navController.navigate(Screen.DiseaseRisk.route) }
+                ChildQuickLink(if (s.isThai) "ออกกำลังกาย" else "Exercise", Icons.Filled.DirectionsRun, Modifier.weight(1f)) { navController.navigate(Screen.Exercise.route) }
+            }
 
             Spacer(Modifier.height(8.dp))
+        }
         }
     }
 
@@ -345,7 +499,7 @@ private fun InfoRow(icon: ImageVector, label: String, value: String, status: Str
 }
 
 @Composable
-internal fun GrowthStatCard(label: String, value: String, status: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun GrowthStatCard(label: String, value: String, status: String, modifier: Modifier = Modifier, statusColor: Color = Color(0xFF2E7D32), onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = modifier,
@@ -356,7 +510,7 @@ internal fun GrowthStatCard(label: String, value: String, status: String, modifi
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Primary)
-            Text(status, style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32))
+            Text(status, style = MaterialTheme.typography.labelSmall, color = statusColor)
         }
     }
 }

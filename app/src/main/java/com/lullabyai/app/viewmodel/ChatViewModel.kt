@@ -31,6 +31,10 @@ data class ChatUiState(
     val sleepInsight: String? = null,
     val quickTip: String? = null,
     val trendInsights: String? = null,
+    val nutritionInsight: String? = null,
+    val sleepActivityInsight: String? = null,
+    val eliminationInsight: String? = null,
+    val monthlyReport: String? = null,
     val diseaseList: List<RiskDisease> = emptyList(),
     val preventionList: List<PreventionTip> = emptyList(),
     val isRefreshing: Boolean = false,
@@ -321,7 +325,7 @@ class ChatViewModel : ViewModel() {
                 analysisChildId = childId,
                 dashboardSummary = null, childInfoSummary = null, healthAnalysis = null,
                 diseaseRiskAnalysis = null, growthInsight = null, weeklyHealthReport = null, sleepInsight = null,
-                quickTip = null, trendInsights = null,
+                quickTip = null, trendInsights = null, nutritionInsight = null, sleepActivityInsight = null, eliminationInsight = null, monthlyReport = null,
                 diseaseList = emptyList(), preventionList = emptyList()
             )
         }
@@ -453,6 +457,51 @@ class ChatViewModel : ViewModel() {
                 repo.generateTrendInsights(child, trendSummary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(trendInsights = text)
+        }
+    }
+
+    /** [summary] is a caller-built plain-text summary of the last 7 days of food/milk logs. */
+    fun loadNutritionInsight(child: Child, summary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "nutrition_insight_${langTag(isThai)}") {
+                repo.generateNutritionInsight(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(nutritionInsight = text)
+        }
+    }
+
+    /** [summary] is a caller-built plain-text summary of the last 7 days of sleep/exercise logs. */
+    fun loadSleepActivityInsight(child: Child, summary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "sleep_activity_insight_${langTag(isThai)}") {
+                repo.generateSleepActivityInsight(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(sleepActivityInsight = text)
+        }
+    }
+
+    /** [summary] is a caller-built plain-text summary of recent waste records + illness history. */
+    fun loadEliminationInsight(child: Child, summary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "elimination_insight_${langTag(isThai)}") {
+                repo.generateEliminationInsight(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(eliminationInsight = text)
+        }
+    }
+
+    /** [summary] is a caller-built plain-text summary of real 30-day aggregates across sleep,
+     *  nutrition, activity, development, and elimination logs. */
+    fun loadMonthlyReport(child: Child, summary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "monthly_report_${langTag(isThai)}") {
+                repo.generateMonthlyReport(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(monthlyReport = text)
         }
     }
 

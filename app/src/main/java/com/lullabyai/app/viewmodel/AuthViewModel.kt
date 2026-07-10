@@ -14,7 +14,11 @@ data class AuthUiState(
     val isSuccess: Boolean = false,
     val profile: Profile? = null,
     /** Short-lived signed URL for the profile photo (private bucket). Use this to display the avatar. */
-    val avatarSignedUrl: String? = null
+    val avatarSignedUrl: String? = null,
+    // --- Mental health self-assessment (parent-level, monthly) ---
+    val mentalHealthHistory: List<com.lullabyai.app.data.model.MentalHealthAssessment> = emptyList(),
+    val mentalHealthSubmitting: Boolean = false,
+    val lastMentalHealthResult: com.lullabyai.app.data.model.MentalHealthAssessment? = null
 )
 
 class AuthViewModel : ViewModel() {
@@ -154,6 +158,35 @@ class AuthViewModel : ViewModel() {
             repo.updateProfile(username, fullName, avatarUrl)
                 .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false); onSuccess() }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+        }
+    }
+
+    /** Toggle the separate AI-training-data opt-in, then refresh the profile so the Settings
+     *  toggle reflects the confirmed server state (not an optimistic local flip). */
+    fun setAiTrainingConsent(value: Boolean) {
+        viewModelScope.launch {
+            repo.setAiTrainingConsent(value).onSuccess { loadProfile() }
+        }
+    }
+
+    fun loadMentalHealthHistory() {
+        viewModelScope.launch {
+            repo.getMentalHealthHistory().onSuccess { _uiState.value = _uiState.value.copy(mentalHealthHistory = it) }
+        }
+    }
+
+    fun submitMentalHealthAssessment(answers: List<Int>, onDone: () -> Unit) {
+        _uiState.value = _uiState.value.copy(mentalHealthSubmitting = true)
+        viewModelScope.launch {
+            repo.submitMentalHealthAssessment(answers)
+                .onSuccess { result ->
+                    _uiState.value = _uiState.value.copy(
+                        mentalHealthSubmitting = false, lastMentalHealthResult = result,
+                        mentalHealthHistory = listOf(result) + _uiState.value.mentalHealthHistory
+                    )
+                    onDone()
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(mentalHealthSubmitting = false) }
         }
     }
 

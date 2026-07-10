@@ -19,7 +19,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 
 data class ChildUiState(
-    val isLoading: Boolean = false,
+    // Starts true (not false) so the empty-state "please add a child" gate on Dashboard/Child Info/
+    // Statistics doesn't flash for a frame before loadChild() has even had a chance to run — that
+    // was showing the wrong prompt to users who already have a child, right as each screen opened.
+    val isLoading: Boolean = true,
     val children: List<Child> = emptyList(),   // all children on this account (for the switcher)
     val child: Child? = null,
     val vaccines: List<VaccineRecord> = emptyList(),
@@ -49,6 +52,17 @@ data class ChildUiState(
     val healthPhotoSignedUrl: String? = null,       // signed URL for the open record's photo
     val healthPhotoUploading: Boolean = false,
     val healthDetailSaving: Boolean = false,
+    val wasteRecords: List<com.lullabyai.app.data.model.WasteRecord> = emptyList(),
+    // --- Sync child (multi-parent access) ---
+    val syncSearching: Boolean = false,
+    val syncSearchResults: List<com.lullabyai.app.data.model.ChildSyncMatch> = emptyList(),
+    val syncRequestSent: Boolean = false,
+    val syncError: String? = null,
+    val inviteCode: String? = null,
+    val inviteCodeChildName: String? = null,   // which child the shown code belongs to — each child gets its own code
+    val pendingSyncRequests: List<com.lullabyai.app.data.model.ChildSyncRequest> = emptyList(),
+    // --- AI daily question (Dashboard popup, capped 3/day via SettingsManager) ---
+    val dailyQuestion: String? = null,
     val error: String? = null
 )
 
@@ -69,15 +83,119 @@ class ChildViewModel : ViewModel() {
     fun loadChild() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val children = childRepo.getChildren().getOrDefault(emptyList())
+            val childrenResult = childRepo.getChildren()
+            // A fetch failure (network blip, transient RLS/auth hiccup) must NOT be treated as "this
+            // account has zero children" — that was collapsing into the same empty state as a
+            // genuinely childless account, so the "please add a child" prompt kept firing for users
+            // who already had one, on every screen re-visit. Keep whatever children list we already
+            // had and surface the real error instead of wiping it to empty.
+            if (childrenResult.isFailure) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = childrenResult.exceptionOrNull()?.message)
+                return@launch
+            }
+            val children = childrenResult.getOrDefault(emptyList())
             childRepo.getSelectedChild()
                 .onSuccess { child ->
                     val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(child?.avatarUrl)
-                    _uiState.value = _uiState.value.copy(children = children, child = child, childAvatarSignedUrl = signed, isLoading = false)
+                    _uiState.value = _uiState.value.copy(children = children, child = child, childAvatarSignedUrl = signed, isLoading = false, error = null)
                     child?.let { loadAllData(it.id) }
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
         }
+    }
+
+    // --- Sync child (multi-parent access) ---------------------------------------------------
+
+    fun searchChildForSync(name: String, birthdate: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(syncSearching = true, syncError = null, syncSearchResults = emptyList())
+            childRepo.searchChildForSync(name, birthdate)
+                .onSuccess { _uiState.value = _uiState.value.copy(syncSearching = false, syncSearchResults = it) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncSearching = false, syncError = it.message) }
+        }
+    }
+
+    fun requestSyncBySearch(childId: String) {
+        viewModelScope.launch {
+            childRepo.requestSyncBySearch(childId)
+                .onSuccess { _uiState.value = _uiState.value.copy(syncRequestSent = true, syncError = null) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
+        }
+    }
+
+    fun requestSyncByCode(code: String) {
+        viewModelScope.launch {
+            childRepo.requestSyncByCode(code)
+                .onSuccess { _uiState.value = _uiState.value.copy(syncRequestSent = true, syncError = null) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
+        }
+    }
+
+    fun generateInviteCode(childId: String) {
+        val childName = _uiState.value.children.find { it.id == childId }?.name
+            ?: _uiState.value.child?.name
+        viewModelScope.launch {
+            childRepo.generateInviteCode(childId)
+                .onSuccess { _uiState.value = _uiState.value.copy(inviteCode = it, inviteCodeChildName = childName) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
+        }
+    }
+
+    fun clearSyncState() {
+        _uiState.value = _uiState.value.copy(
+            syncSearching = false, syncSearchResults = emptyList(), syncRequestSent = false,
+            syncError = null, inviteCode = null, inviteCodeChildName = null
+        )
+    }
+
+    fun loadPendingSyncRequests() {
+        viewModelScope.launch {
+            childRepo.getPendingSyncRequests()
+                .onSuccess { _uiState.value = _uiState.value.copy(pendingSyncRequests = it) }
+        }
+    }
+
+    fun confirmSyncRequest(requestId: String, approve: Boolean) {
+        viewModelScope.launch {
+            childRepo.confirmSyncRequest(requestId, approve).onSuccess { loadPendingSyncRequests() }
+        }
+    }
+
+    // --- AI daily question ---------------------------------------------------------------------
+
+    /** Generates one AI question for the Dashboard popup, if today's 3-question cap isn't hit yet. */
+    fun loadDailyQuestion(context: android.content.Context, isThai: Boolean) {
+        val child = _uiState.value.child ?: return
+        if (_uiState.value.dailyQuestion != null) return // one already showing
+        viewModelScope.launch {
+            val settingsManager = com.lullabyai.app.data.settings.SettingsManager(context)
+            if (settingsManager.aiDailyQuestionCountToday() >= 3) return@launch
+            chatRepo.generateDailyQuestion(child, isThai).onSuccess { q ->
+                if (q.isNotBlank()) {
+                    settingsManager.recordAiDailyQuestionShown()
+                    _uiState.value = _uiState.value.copy(dailyQuestion = q)
+                }
+            }
+        }
+    }
+
+    /** Saves the answer onto the child's notes (already part of the AI's context on every future
+     *  chat turn — see ChatRepository.buildChildContext) so it actually feeds future analysis. */
+    fun answerDailyQuestion(answer: String) {
+        val child = _uiState.value.child ?: return
+        val question = _uiState.value.dailyQuestion ?: return
+        if (answer.isBlank()) return
+        val entry = "[${java.time.LocalDate.now()}] Q: $question A: $answer"
+        val newNotes = (child.notes?.takeIf { it.isNotBlank() }?.plus("\n") ?: "") + entry
+        viewModelScope.launch {
+            childRepo.updateChildNotes(child.id, newNotes).onSuccess {
+                _uiState.value = _uiState.value.copy(child = child.copy(notes = newNotes), dailyQuestion = null)
+            }
+        }
+    }
+
+    fun dismissDailyQuestion() {
+        _uiState.value = _uiState.value.copy(dailyQuestion = null)
     }
 
     /**
@@ -222,7 +340,9 @@ class ChildViewModel : ViewModel() {
                     // §1
                     childCode = child.id.replace("-", "").take(8).uppercase(),
                     nickname = child.name, birthdate = child.birthdate, age = calculateAge(true),
-                    gender = genderTh, idNumber = "", unitClass = "",
+                    gender = genderTh, idNumber = "",
+                    nationality = child.nationality ?: "", ethnicity = child.ethnicity ?: "", religion = child.religion ?: "",
+                    unitClass = "",
                     recorder = "ผู้ปกครอง", updatedDate = d10(child.updatedAt).ifBlank { today.toString() },
                     // §2
                     vaccines = vacRows,
@@ -323,10 +443,41 @@ class ChildViewModel : ViewModel() {
         }
     }
 
+    // Loaded on-demand (not part of the eager child-load cascade) — avoids an extra network call
+    // for accounts that never open the waste-record screen.
+    fun loadWasteRecords() {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            healthRepo.getWasteRecords(childId).onSuccess { _uiState.value = _uiState.value.copy(wasteRecords = it) }
+        }
+    }
+
+    fun addWasteRecord(wasteType: String, consistency: String?, color: String?, amount: String, notes: String?) {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            healthRepo.addWasteRecord(childId, wasteType, consistency, color, amount, notes).onSuccess { loadWasteRecords() }
+        }
+    }
+
     fun addAllergy(name: String, type: String, severity: String, symptoms: String?) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
-            healthRepo.addAllergy(childId, name, type, severity, symptoms).onSuccess { reloadAllergies() }
+            healthRepo.addAllergy(childId, name, type, severity, symptoms).onSuccess {
+                reloadAllergies()
+                // Adding a real allergy after previously confirming "none" — clear that flag.
+                if (_uiState.value.child?.noKnownAllergies == true) setNoKnownAllergies(false)
+            }
+        }
+    }
+
+    /** Confirms (or un-confirms) "no known allergies" for the active child — distinct from simply
+     *  having zero allergy rows, so the missing-info nudge stops re-asking once this is set true. */
+    fun setNoKnownAllergies(value: Boolean) {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            childRepo.setNoKnownAllergies(childId, value).onSuccess {
+                _uiState.value = _uiState.value.copy(child = _uiState.value.child?.copy(noKnownAllergies = value))
+            }
         }
     }
 
@@ -611,6 +762,23 @@ class ChildViewModel : ViewModel() {
         in 4..11 -> 14
         in 12..23 -> 13
         else -> 11
+    }
+
+    /** Rough age-based recommended bedtime clock time ("HH:mm" start, end), paired with
+     *  [sleepTargetHours] — younger children get an earlier bedtime, per standard pediatric
+     *  guidance. Feeds the "does this time work?" recommendation prompt on SleepScheduleScreen. */
+    fun recommendedBedtime(): Pair<String, String> {
+        val ageMonths = com.lullabyai.app.data.VaccineSetupCatalog.ageMonthsFromBirthdate(_uiState.value.child?.birthdate ?: "")
+        val start = when (ageMonths) {
+            in 0..3 -> "19:00"
+            in 4..11 -> "19:00"
+            in 12..23 -> "19:30"
+            else -> "20:00"
+        }
+        val startMin = start.split(":").let { it[0].toInt() * 60 + it[1].toInt() }
+        val endMin = (startMin + sleepTargetHours() * 60) % (24 * 60)
+        val end = "%02d:%02d".format(endMin / 60, endMin % 60)
+        return start to end
     }
 
     /** Post-hoc mood tag (mockup's mood grid isn't gated behind ending a session) — applies to

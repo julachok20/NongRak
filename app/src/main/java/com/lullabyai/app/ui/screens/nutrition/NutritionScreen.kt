@@ -28,6 +28,18 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
     LaunchedEffect(lang) { vm.load(lang) }
     LaunchedEffect(ui.child?.id, lang) { vm.ensureMenuRecommendations(lang) }
 
+    var todayMilkMl by remember { mutableStateOf(0) }
+    LaunchedEffect(ui.child?.id) {
+        val cid = ui.child?.id ?: return@LaunchedEffect
+        val today = java.time.LocalDate.now().toString()
+        todayMilkMl = runCatching {
+            com.lullabyai.app.data.repository.NutritionRepository().getMilkLogs(cid)
+                .filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == today }
+                .sumOf { it.volumeMl }
+        }.getOrDefault(0)
+    }
+    val milkTargetMl = 850 // rough reference; no per-child feeding target field exists yet
+
     ChildScreenScaffold(title = if (isThai) "โภชนาการ" else "Nutrition", currentTab = "nutrition", navController = navController) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
@@ -83,6 +95,43 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                             (if (isThai) "${pctText}% ของเป้าหมาย • สุทธิ $net (ได้รับ $intake − เผาผลาญ $burned)" else "${pctText}% of target • net $net (intake $intake − burned $burned)") + " kcal",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+
+            // Milk feeding summary entry — centered hero layout + AI-analysis blurb box, matching
+            // the mockup's treatment (was a left-aligned nav-row style before, no AI blurb).
+            item {
+                Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.BabyChangingStation, null, tint = Primary)
+                            Text(if (isThai) "การดื่มนมวันนี้" else "Today's milk", fontWeight = FontWeight.Bold)
+                        }
+                        Column(Modifier.widthIn(max = 240.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            val pct = (todayMilkMl.toFloat() / milkTargetMl).coerceIn(0f, 1f)
+                            Text("$todayMilkMl / $milkTargetMl ml", style = MaterialTheme.typography.headlineSmall, color = Primary, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { pct },
+                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(100.dp)),
+                                color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        }
+                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f))) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(14.dp))
+                                Text(
+                                    (if (isThai) "วิเคราะห์โดย AI: " else "AI analysis: ") +
+                                        (if (isThai) "ปริมาณการดื่มนมวันนี้อยู่ในเกณฑ์ปกติ" else "Today's milk intake is within the normal range"),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { navController.navigate(Screen.MilkRecord.route) },
+                            modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                        ) { Text(if (isThai) "บันทึกการดื่มนม" else "Log a feeding", fontWeight = FontWeight.Bold) }
                     }
                 }
             }

@@ -23,6 +23,7 @@ import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.NongRakTheme
 import com.lullabyai.app.viewmodel.SettingsViewModel
 import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.flow.first
 
 class MainActivity : ComponentActivity() {
 
@@ -66,11 +67,12 @@ class MainActivity : ComponentActivity() {
                             supabase.auth.awaitInitialization()
                             val session = supabase.auth.currentSessionOrNull()
                             startDestination = if (session != null) {
-                                // Incomplete signup (no child created = setup never finished) can't use the
-                                // app — force them back into onboarding until setup is complete.
-                                val hasChild = com.lullabyai.app.data.repository.ChildRepository()
-                                    .getFirstChild().getOrNull() != null
-                                if (hasChild) Screen.Dashboard.route else Screen.MedicalDisclaimer.route
+                                // A child is no longer required to enter the app — Dashboard now nudges
+                                // childless accounts to add/sync one instead of gating startup on it.
+                                // Covers accounts that already had a child before this tour existed —
+                                // new signups already go through it via LastSetup's onComplete.
+                                val seenTour = com.lullabyai.app.data.settings.SettingsManager(applicationContext).hasSeenTour.first()
+                                if (seenTour) Screen.Dashboard.route else Screen.FirstRunTour.route
                             } else Screen.Welcome.route
                         } catch (e: Exception) {
                             startDestination = Screen.Welcome.route

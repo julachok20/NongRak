@@ -25,7 +25,13 @@ enum class NoiseTrack(val labelTh: String, val labelEn: String, val streamUrl: S
     RAIN("เสียงฝน", "Rain", "https://assets.mixkit.co/active_storage/sfx/1225/1225-preview.mp3"), // "Forest rain loop"
     WOMB("ในครรภ์", "In Womb", "https://assets.mixkit.co/active_storage/sfx/496/496-preview.mp3"), // "Inside a beating heart"
     DEEP_SLEEP("หลับสนิท", "Deep Sleep", "https://assets.mixkit.co/active_storage/sfx/3126/3126-preview.mp3"), // "Water flowing ambience loop"
-    RELAX("ผ่อนคลาย", "Relax", "https://assets.mixkit.co/active_storage/sfx/1196/1196-preview.mp3") // "Sea waves loop"
+    RELAX("ผ่อนคลาย", "Relax", "https://assets.mixkit.co/active_storage/sfx/1196/1196-preview.mp3"), // "Sea waves loop"
+    // Deliberately no streamUrl: a real Mixkit lullaby track exists ("Baby toy music box lullaby")
+    // but its direct asset URL isn't recoverable without a browser (the download link isn't in the
+    // static page), and guessing a numeric sfx ID is exactly the mistake the note above already
+    // warns about. Synthesized instead — see LULLABY branch in startProceduralFallback() — so this
+    // track is always a real melody (a public-domain nursery tune), never a network guess.
+    LULLABY("เพลงกล่อมเด็ก", "Lullaby", "")
 }
 
 /**
@@ -68,6 +74,7 @@ class WhiteNoisePlayer {
         running = true
         usingFallback = false
         startTicker()
+        if (_selectedTrack.value.streamUrl.isBlank()) { startProceduralFallback(); return }
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
@@ -121,6 +128,16 @@ class WhiteNoisePlayer {
             var highPassPrevIn = 0f
             var highPassPrevOut = 0f
             var phase = 0.0
+            // "Ah! vous dirai-je, Maman" (Twinkle Twinkle Little Star) opening phrase — 18th-century
+            // French folk melody, public domain. Rests (0f) are silent beats between phrases.
+            val melody = floatArrayOf(
+                261.63f, 261.63f, 392.00f, 392.00f, 440.00f, 440.00f, 392.00f, 0f,
+                349.23f, 349.23f, 329.63f, 329.63f, 293.66f, 293.66f, 261.63f, 0f
+            )
+            val noteSamples = (sampleRate * 0.55).toInt()
+            var melodyIndex = 0
+            var melodySamplePos = 0
+            var melodyPhase = 0.0
             val chunk = ShortArray(bufSize / 2)
             while (running && usingFallback) {
                 val current = _selectedTrack.value
@@ -146,6 +163,24 @@ class WhiteNoisePlayer {
                         NoiseTrack.RELAX -> {
                             lowPassState += 0.08f * (white - lowPassState)
                             lowPassState * 0.5f
+                        }
+                        NoiseTrack.LULLABY -> {
+                            val freq = melody[melodyIndex]
+                            val note = if (freq <= 0f) 0f else {
+                                val raw = sin(melodyPhase).toFloat()
+                                // Soft attack/release envelope per note so notes don't click.
+                                val t = melodySamplePos.toFloat() / noteSamples
+                                val env = when { t < 0.1f -> t / 0.1f; t > 0.8f -> ((1f - t) / 0.2f).coerceAtLeast(0f); else -> 1f }
+                                raw * env * 0.35f
+                            }
+                            melodyPhase += 2 * Math.PI * freq / sampleRate
+                            if (melodyPhase > 2 * Math.PI) melodyPhase -= 2 * Math.PI
+                            melodySamplePos++
+                            if (melodySamplePos >= noteSamples) {
+                                melodySamplePos = 0
+                                melodyIndex = (melodyIndex + 1) % melody.size
+                            }
+                            note
                         }
                     }
                     chunk[i] = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE * 0.3f).toInt().toShort()

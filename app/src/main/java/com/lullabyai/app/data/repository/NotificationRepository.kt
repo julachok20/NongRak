@@ -13,6 +13,7 @@ object NotifCategory {
     const val SCHEDULE = "schedule"
     const val WARNING = "warning"
     const val NORMAL = "normal"
+    const val SYNC_REQUEST = "sync_request"
 }
 
 class NotificationRepository {

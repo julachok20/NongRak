@@ -17,10 +17,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.lullabyai.app.data.repository.NutritionRepository
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.RelationshipLabels
+import com.lullabyai.app.util.TimeUtils
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import java.time.LocalDate
@@ -42,19 +45,134 @@ fun DashboardScreen(
     onNavigateToHelp: () -> Unit,
     onNavigateToNotifications: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
-    onNavigateToSleep: () -> Unit = {}
+    onNavigateToSleep: () -> Unit = {},
+    onNavigateToAddChild: () -> Unit = {},
+    onNavigateToMentalHealth: () -> Unit = {},
+    onNavigateToQuickLog: () -> Unit = {},
+    isTourActive: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val isThai = s.isThai
     val childState by childViewModel.uiState.collectAsState()
     val authState by authViewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Childless accounts are no longer blocked at startup — nudge them here instead, but rate-limited
+    // to once per 4 hours (persisted) rather than every screen visit, which was too naggy.
+    // error != null means the children fetch actually failed (network/auth blip) rather than the
+    // account genuinely having zero children — don't nag to "add a child" they may already have.
+    var showAddChildPopup by remember { mutableStateOf(false) }
+    LaunchedEffect(childState.isLoading, childState.children.size, childState.error, isTourActive) {
+        // Suppressed during the guided tour — its own overlay already covers the childless case,
+        // and this AlertDialog would otherwise compete with the tour card for attention.
+        if (!isTourActive && !childState.isLoading && childState.children.isEmpty() && childState.error == null) {
+            val sm = com.lullabyai.app.data.settings.SettingsManager(context)
+            if (sm.shouldShowAddChildPrompt()) {
+                sm.recordAddChildPromptShown()
+                showAddChildPopup = true
+            }
+        }
+    }
+    if (showAddChildPopup) {
+        AlertDialog(
+            onDismissRequest = { showAddChildPopup = false },
+            icon = { Icon(Icons.Filled.ChildCare, null, tint = Primary) },
+            title = { Text(if (isThai) "เพิ่มข้อมูลลูกของคุณ" else "Add your child") },
+            text = {
+                Text(
+                    if (isThai) "เพิ่มลูกเพื่อเริ่มใช้ฟีเจอร์ติดตามสุขภาพและพัฒนาการ (หรือเชื่อมข้อมูลจากผู้ปกครองอีกท่าน)"
+                    else "Add a child to start tracking health and development (or sync one from another parent)"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddChildPopup = false; onNavigateToAddChild() }) {
+                    Text(if (isThai) "เพิ่มลูก" else "Add child")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddChildPopup = false }) { Text(if (isThai) "ภายหลัง" else "Later") }
+            }
+        )
+    }
+
+    var showDailyQuestionDialog by remember { mutableStateOf(false) }
+    if (showDailyQuestionDialog) {
+        childState.dailyQuestion?.let { question ->
+            com.lullabyai.app.ui.components.DailyQuestionDialog(
+                question = question, isThai = isThai,
+                onAnswer = { answer -> childViewModel.answerDailyQuestion(answer); showDailyQuestionDialog = false },
+                onSkip = { childViewModel.dismissDailyQuestion(); showDailyQuestionDialog = false },
+                onDismiss = { showDailyQuestionDialog = false }
+            )
+        }
+    }
 
     val child = childState.child
     val username = authState.profile?.username?.takeIf { it.isNotBlank() }
         ?: authState.profile?.fullName?.takeIf { it.isNotBlank() }
     val relationship = authState.profile?.relationship
 
-    LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile() }
+    LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile(); childViewModel.loadPendingSyncRequests(); authViewModel.loadMentalHealthHistory() }
+
+    // Monthly parent mental-health check-in nudge — only shows if nothing was submitted this
+    // calendar month yet (per-parent, not per-child; see MentalHealthCatalog).
+    val needsMentalHealthCheckin = remember(authState.mentalHealthHistory) {
+        val latest = authState.mentalHealthHistory.firstOrNull()?.createdAt
+        latest == null || !latest.take(7).equals(LocalDate.now().toString().take(7))
+    }
+
+    // AI "what do you want to know more" popup — open-ended question, capped 3/day (see
+    // SettingsManager.aiDailyQuestionCountToday), shown here rather than only inside the chat.
+    LaunchedEffect(child?.id) { child?.let { childViewModel.loadDailyQuestion(context, isThai) } }
+
+    // Daily-logging streak: consecutive days (up to today) with at least one sleep/food/exercise/
+    // health log. Derived entirely from data already tracked — no new table. Food/exercise need an
+    // explicit range fetch (same direct-repo-call pattern QuickLogHub/SmartTrends already use);
+    // sleep + health records are already in childState via the child-load cascade.
+    var rangeLogDates by remember { mutableStateOf<Set<LocalDate>>(emptySet()) }
+    LaunchedEffect(child?.id) {
+        val c = child ?: return@LaunchedEffect
+        childViewModel.loadSleep()
+        val nutritionRepo = NutritionRepository()
+        val from = LocalDate.now().minusDays(30).toString()
+        val foodDates = nutritionRepo.getFoodLogsRange(c.id, from).mapNotNull { runCatching { LocalDate.parse(it.logDate) }.getOrNull() }
+        val exerciseDates = nutritionRepo.getExerciseLogsRange(c.id, from).mapNotNull { runCatching { LocalDate.parse(it.logDate) }.getOrNull() }
+        rangeLogDates = (foodDates + exerciseDates).toSet()
+    }
+    val streak = remember(rangeLogDates, childState.sleepLogs, childState.healthRecords) {
+        val sleepDates = childState.sleepLogs.mapNotNull { TimeUtils.localDate(it.startTime)?.let { d -> runCatching { LocalDate.parse(d) }.getOrNull() } }
+        val healthDates = childState.healthRecords.mapNotNull { TimeUtils.localDate(it.recordedAt)?.let { d -> runCatching { LocalDate.parse(d) }.getOrNull() } }
+        val allDates = rangeLogDates + sleepDates + healthDates
+        val today = LocalDate.now()
+        var count = 0
+        var day = if (today in allDates) today else today.minusDays(1)
+        while (day in allDates) { count++; day = day.minusDays(1) }
+        count
+    }
+
+    // Milestone-completion celebration: reuses ChildDevelopmentScreen's "all age-appropriate skills
+    // done" logic so the moment is visible on the Dashboard, not just buried in the พัฒนาการ tab.
+    val ageMonths = childViewModel.getAgeMonths()
+    val allMilestonesDone = remember(childState.milestones, ageMonths) {
+        val hasAgeAppropriate = childState.milestones.any { (it.ageMonthsExpected ?: 0) <= ageMonths }
+        val pendingPool = childState.milestones.any { !it.isAchieved && it.skipReason == null && (it.ageMonthsExpected ?: 0) <= ageMonths }
+        hasAgeAppropriate && !pendingPool
+    }
+
+    // Same gap-check every AI-analysis screen already uses (ChildHealth/DiseaseRisk/GrowthMetrics)
+    // — surfaced here too as plain cards (not a modal, unlike those screens) since the Dashboard is
+    // visited far more often and a popup on every open would be more naggy than helpful.
+    // Checked per-child (not just whichever one is currently selected) and each card names its
+    // child explicitly — with 2+ children, a single unlabeled card was ambiguous about who it meant.
+    var missingByChild by remember { mutableStateOf<List<Pair<com.lullabyai.app.data.model.Child, List<String>>>>(emptyList()) }
+    LaunchedEffect(childState.children) {
+        val healthRepo = com.lullabyai.app.data.repository.HealthRepository()
+        missingByChild = childState.children.mapNotNull { c ->
+            val hasAllergies = healthRepo.getAllergies(c.id).getOrDefault(emptyList()).isNotEmpty()
+            val missing = com.lullabyai.app.ui.components.missingChildInfo(c, hasAllergies, s.isThai)
+            if (missing.isNotEmpty()) c to missing else null
+        }
+    }
 
     // Nearest upcoming (not-completed) vaccine, for the alert card.
     val nextVaccine = remember(childState.vaccines) {
@@ -96,6 +214,15 @@ fun DashboardScreen(
                 selected = com.lullabyai.app.ui.components.BottomTab.HOME,
                 onHome = {}, onChatbot = onNavigateToChat, onChild = onNavigateToChild, onStats = onNavigateToStats, onSettings = onNavigateToSettings
             )
+        },
+        // Quick Action FAB — the Quick Log Hub already exists (search this file for onNavigateToStats
+        // -> StatisticsInsightsScreen -> Screen.QuickLogHub) but had no entry point from the mother
+        // dashboard itself; this is that missing shortcut, "synced" with the same hub every other
+        // quick-log entry point already leads to.
+        floatingActionButton = {
+            FloatingActionButton(onClick = onNavigateToQuickLog, containerColor = Primary, contentColor = Color.White) {
+                Icon(Icons.Filled.Bolt, contentDescription = if (isThai) "บันทึกด่วน" else "Quick log")
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -142,6 +269,132 @@ fun DashboardScreen(
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+
+                // Daily-logging streak — only shown once there's something to celebrate.
+                if (streak > 0) {
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFEF6C00).copy(0.15f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.LocalFireDepartment, null, tint = Color(0xFFEF6C00))
+                            }
+                            Column {
+                                Text(
+                                    if (isThai) "บันทึกต่อเนื่อง $streak วันแล้ว!" else "$streak-day logging streak!",
+                                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFFEF6C00)
+                                )
+                                Text(
+                                    if (isThai) "บันทึกวันนี้เพื่อรักษาสถิติต่อไป" else "Log something today to keep it going",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Milestone-completion celebration.
+                if (allMilestonesDone) {
+                    Card(Modifier.fillMaxWidth().clickableCard(onNavigateToDevelopment), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF4CAF50).copy(0.10f))) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF4CAF50).copy(0.18f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.EmojiEvents, null, tint = Color(0xFF2E7D32))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (isThai) "เก่งมาก! ${child?.name.orEmpty()} ทำครบทุกทักษะตามวัยแล้ว" else "Great job! ${child?.name.orEmpty()} completed every age-appropriate skill",
+                                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32)
+                                )
+                                Text(if (isThai) "แตะเพื่อดูพัฒนาการ" else "Tap to view development", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(Icons.Filled.ChevronRight, null, tint = Color(0xFF2E7D32))
+                        }
+                    }
+                }
+
+                // Pending "sync child" requests — surfaced here too, not just in Notifications, so an
+                // owner sees and can confirm/reject them wherever they happen to be.
+                childState.pendingSyncRequests.forEach { req ->
+                    val childName = childState.children.find { it.id == req.childId }?.name ?: "-"
+                    com.lullabyai.app.ui.components.SyncRequestCard(
+                        childName = childName,
+                        onApprove = { childViewModel.confirmSyncRequest(req.id, true) },
+                        onReject = { childViewModel.confirmSyncRequest(req.id, false) }
+                    )
+                }
+
+                // Missing-info nudge — same gaps ChildHealth/DiseaseRisk/GrowthMetrics already flag,
+                // surfaced here as plain cards+button rather than their auto-popup modal. One card
+                // per child that has gaps, each naming the child, so it's never ambiguous which
+                // child's data is missing when there's more than one.
+                missingByChild.forEach { (c, missing) ->
+                    Card(
+                        Modifier.fillMaxWidth().clickableCard {
+                            com.lullabyai.app.data.settings.ChildSelection.set(c.id)
+                            childViewModel.selectChild(c.id)
+                            onNavigateToChild()
+                        },
+                        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))
+                    ) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.12f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.Info, null, tint = Primary)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    (if (isThai) "ข้อมูลของ ${c.name} ยังไม่ครบ" else "${c.name}'s info is incomplete"),
+                                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    (if (isThai) "กรอกข้อมูลเพิ่มเติม: " else "Fill in: ") + missing.joinToString(", "),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(Icons.Filled.ChevronRight, null, tint = Primary)
+                        }
+                    }
+                }
+
+                // Monthly parent mental-health check-in banner — uses the app's own Primary (the
+                // mockup's own accent for this card is the same color), not a one-off indigo.
+                if (needsMentalHealthCheckin) {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(0.2f))
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Box(Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(0.15f)), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Filled.Psychology, null, tint = Primary)
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        if (isThai) "ประเมินความเสี่ยงสุขภาพจิตสำหรับพ่อแม่" else "Parental mental health check-in",
+                                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        if (isThai) "แบบประเมินสั้นๆ รายเดือน" else "A short monthly check-in",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = onNavigateToMentalHealth, modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                            ) { Text(if (isThai) "เริ่มทำแบบประเมิน" else "Start check-in", fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+
+                // AI daily question — banner nudge, tapping it opens the actual question dialog
+                // (declared near the top of this composable) rather than popping up unprompted.
+                childState.dailyQuestion?.let {
+                    com.lullabyai.app.ui.components.DailyQuestionBanner(
+                        isThai = isThai,
+                        onClick = { showDailyQuestionDialog = true },
+                        onDismiss = { childViewModel.dismissDailyQuestion() }
+                    )
                 }
 
                 // Chat with AI (big primary card)

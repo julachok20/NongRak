@@ -17,6 +17,13 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- Make calendar apps visible (Android 11+) for the "add vaccine to calendar" button —
+             without this, ACTION_INSERT on the calendar Events URI can fail to resolve even when
+             a calendar app is installed. -->
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
+        </intent>
     </queries>
 
     <application

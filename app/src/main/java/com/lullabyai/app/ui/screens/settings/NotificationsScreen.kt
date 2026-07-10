@@ -22,20 +22,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.AppNotification
 import com.lullabyai.app.data.repository.NotifCategory
+import com.lullabyai.app.ui.components.SyncRequestCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.viewmodel.ChildViewModel
 import com.lullabyai.app.viewmodel.NotificationViewModel
 
 @Composable
-fun NotificationsScreen(navController: NavController, onBack: () -> Unit) {
+fun NotificationsScreen(navController: NavController, childViewModel: ChildViewModel, onBack: () -> Unit) {
     val vm: NotificationViewModel = viewModel()
     val state by vm.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.load() }
+    val childState by childViewModel.uiState.collectAsState()
+    LaunchedEffect(Unit) { vm.load(); childViewModel.loadPendingSyncRequests() }
 
     val tabs = listOf(
         Triple("schedule", "กำหนดการ", NotifCategory.SCHEDULE),
         Triple("warning", "คำเตือน", NotifCategory.WARNING),
-        Triple("normal", "ทั่วไป", NotifCategory.NORMAL)
+        Triple("normal", "ทั่วไป", NotifCategory.NORMAL),
+        Triple("sync_request", "คำขอเชื่อมข้อมูล", NotifCategory.SYNC_REQUEST)
     )
     var selectedTab by remember { mutableStateOf(0) }
     val currentCategory = tabs[selectedTab].third
@@ -68,8 +72,9 @@ fun NotificationsScreen(navController: NavController, onBack: () -> Unit) {
                 containerColor = MaterialTheme.colorScheme.background,
                 contentColor = Primary
             ) {
-                tabs.forEachIndexed { i, (key, label, _) ->
-                    val count = state.all.count { it.category == tabs[i].third }
+                tabs.forEachIndexed { i, (key, label, cat) ->
+                    val count = if (cat == NotifCategory.SYNC_REQUEST) childState.pendingSyncRequests.size
+                                 else state.all.count { it.category == cat }
                     Tab(
                         selected = selectedTab == i,
                         onClick = { selectedTab = i },
@@ -78,7 +83,32 @@ fun NotificationsScreen(navController: NavController, onBack: () -> Unit) {
                 }
             }
 
-            if (state.isLoading) {
+            if (currentCategory == NotifCategory.SYNC_REQUEST) {
+                if (childState.pendingSyncRequests.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Filled.NotificationsNone, null, tint = Outline, modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("ยังไม่มีคำขอเชื่อมข้อมูล", color = Outline, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        items(childState.pendingSyncRequests) { req ->
+                            val childName = childState.children.find { it.id == req.childId }?.name ?: "-"
+                            SyncRequestCard(
+                                childName = childName,
+                                onApprove = { childViewModel.confirmSyncRequest(req.id, true) },
+                                onReject = { childViewModel.confirmSyncRequest(req.id, false) }
+                            )
+                        }
+                    }
+                }
+            } else if (state.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Primary) }
             } else if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

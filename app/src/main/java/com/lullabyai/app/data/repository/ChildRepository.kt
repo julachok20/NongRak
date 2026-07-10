@@ -1,12 +1,15 @@
 package com.lullabyai.app.data.repository
 
 import com.lullabyai.app.data.model.Child
+import com.lullabyai.app.data.model.ChildSyncMatch
+import com.lullabyai.app.data.model.ChildSyncRequest
 import com.lullabyai.app.data.model.DevelopmentMilestone
 import com.lullabyai.app.data.model.MedicalHistory
 import com.lullabyai.app.data.remote.StorageHelper
 import com.lullabyai.app.data.remote.supabase
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.JsonNull
@@ -21,17 +24,23 @@ class ChildRepository {
         }.decodeSingle<Child>()
     }
 
-    suspend fun getChildren(): Result<List<Child>> = runCatching {
-        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
-        supabase.from("children").select {
-            filter { eq("user_id", userId) }
-        }.decodeList<Child>()
+    /** All children this account can see — own + synced. Scoping is left entirely to RLS
+     *  (`user_id = auth.uid() OR is_child_member(id)`) rather than an extra client-side owner-only
+     *  filter, which would silently hide children the user only has synced member access to.
+     *
+     *  Retries once after a short delay on failure: a cold-start call can race the auth session
+     *  finishing its token restore, which makes this query transient-fail (empty/unauthorized)
+     *  right after login even though the user genuinely has children — this was surfacing as a
+     *  false "please add a child" prompt that reappeared on every screen visit. */
+    suspend fun getChildren(): Result<List<Child>> {
+        val first = runCatching { supabase.from("children").select().decodeList<Child>() }
+        if (first.isSuccess) return first
+        kotlinx.coroutines.delay(600)
+        return runCatching { supabase.from("children").select().decodeList<Child>() }
     }
 
     suspend fun getFirstChild(): Result<Child?> = runCatching {
-        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
         val list = supabase.from("children").select {
-            filter { eq("user_id", userId) }
             limit(1)
         }.decodeList<Child>()
         list.firstOrNull()
@@ -54,9 +63,89 @@ class ChildRepository {
         chosen
     }
 
+    // ---- Sync child (multi-parent access) ----------------------------------------------------
+
+    /** Finds another parent's child by exact name + birthdate match (deliberately narrow — see migration). */
+    suspend fun searchChildForSync(name: String, birthdate: String): Result<List<ChildSyncMatch>> = runCatching {
+        supabase.postgrest.rpc(
+            "search_child_for_sync",
+            buildJsonObject {
+                put("p_name", JsonPrimitive(name))
+                put("p_birthdate", JsonPrimitive(birthdate))
+            }
+        ).decodeList<ChildSyncMatch>()
+    }
+
+    /** Owner-only: generates a short-lived invite code for another parent to redeem. */
+    suspend fun generateInviteCode(childId: String): Result<String> = runCatching {
+        val raw = supabase.postgrest.rpc(
+            "generate_child_invite_code",
+            buildJsonObject { put("p_child_id", JsonPrimitive(childId)) }
+        ).data
+        raw.trim().trim('"')
+    }
+
+    /** Requests sync access to a child found via search — creates a pending request, notifies the owner. */
+    suspend fun requestSyncBySearch(childId: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "request_child_sync",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_method", JsonPrimitive("search"))
+            }
+        )
+        Unit
+    }
+
+    /** Requests sync access by redeeming an invite code — creates a pending request, notifies the owner. */
+    suspend fun requestSyncByCode(code: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "request_child_sync",
+            buildJsonObject {
+                put("p_child_id", JsonNull)
+                put("p_method", JsonPrimitive("code"))
+                put("p_code", JsonPrimitive(code.trim().uppercase()))
+            }
+        )
+        Unit
+    }
+
+    /** Pending sync requests waiting on the current user's (owner) confirmation. */
+    suspend fun getPendingSyncRequests(): Result<List<ChildSyncRequest>> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        supabase.from("child_sync_requests").select {
+            filter { eq("owner_user_id", userId); eq("status", "pending") }
+            order("created_at", Order.DESCENDING)
+        }.decodeList<ChildSyncRequest>()
+    }
+
+    /** Owner confirms or rejects a pending sync request. Approving grants the requester member access. */
+    suspend fun confirmSyncRequest(requestId: String, approve: Boolean): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "confirm_child_sync_request",
+            buildJsonObject {
+                put("p_request_id", JsonPrimitive(requestId))
+                put("p_approve", JsonPrimitive(approve))
+            }
+        )
+        Unit
+    }
+
     suspend fun updateChild(child: Child): Result<Unit> = runCatching {
         supabase.from("children").update(child) {
             filter { eq("id", child.id) }
+        }
+    }
+
+    suspend fun updateChildNotes(childId: String, notes: String): Result<Unit> = runCatching {
+        supabase.from("children").update(buildJsonObject { put("notes", JsonPrimitive(notes)) }) {
+            filter { eq("id", childId) }
+        }
+    }
+
+    suspend fun setNoKnownAllergies(childId: String, value: Boolean): Result<Unit> = runCatching {
+        supabase.from("children").update(buildJsonObject { put("no_known_allergies", JsonPrimitive(value)) }) {
+            filter { eq("id", childId) }
         }
     }
 

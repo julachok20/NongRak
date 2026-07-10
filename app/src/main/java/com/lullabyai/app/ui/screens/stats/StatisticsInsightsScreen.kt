@@ -29,6 +29,7 @@ import androidx.navigation.NavController
 import com.lullabyai.app.data.model.DevelopmentMilestone
 import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.repository.NutritionRepository
+import com.lullabyai.app.ui.components.NoChildDataCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.TimeUtils
@@ -59,6 +60,13 @@ fun StatisticsInsightsScreen(
 
     var period by remember { mutableStateOf(StatsPeriod.WEEK) }
     var childToDelete by remember { mutableStateOf<com.lullabyai.app.data.model.Child?>(null) }
+
+    // This screen never triggered its own load before (relied on Dashboard having already populated
+    // the shared ChildViewModel) — fine when Dashboard is always visited first, but leaves isLoading
+    // stuck at its true default forever if this screen is ever reached directly.
+    LaunchedEffect(Unit) {
+        if (state.children.isEmpty() && state.child == null) childViewModel.loadChild()
+    }
 
     // Feeding consistency needs a per-day fetch (NutritionRepository has no bulk range query),
     // so it's only computed for Day/Week to avoid issuing 30-365 network calls for Month/Year.
@@ -165,6 +173,19 @@ fun StatisticsInsightsScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
+        if (state.isLoading && state.children.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Primary)
+        }
+        } else if (state.children.isEmpty() && !state.isLoading && state.error != null) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            com.lullabyai.app.ui.components.ChildLoadErrorCard(s.isThai) { childViewModel.loadChild() }
+        }
+        } else if (state.children.isEmpty() && !state.isLoading) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            NoChildDataCard(s.isThai) { navController.navigate(Screen.AddChildChoice.route) }
+        }
+        } else {
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -188,7 +209,7 @@ fun StatisticsInsightsScreen(
                     }
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.clickable { onboardingViewModel.startAddChild(); navController.navigate(Screen.OnboardingStep1.route) }) {
+                    modifier = Modifier.clickable { navController.navigate(Screen.AddChildChoice.route) }) {
                     Box(
                         Modifier.size(52.dp).clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -236,6 +257,66 @@ fun StatisticsInsightsScreen(
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+                }
+            }
+
+            // Bento nav grid — hub-style entry points into dedicated Statistics detail screens
+            // (each with its own real charts), matching the 20.Statics mockup's 5 entry points:
+            // weight / height / nutrition / sleep&activity as quarter-tiles, elimination as a wide card.
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                StatsBentoCard(Icons.Filled.MonitorWeight, if (s.isThai) "สถิติน้ำหนัก" else "Weight stats", if (s.isThai) "ติดตามการเติบโต" else "Track growth", Primary, Modifier.weight(1f)) {
+                    navController.navigate(Screen.WhoWeightForAgeDetail.route)
+                }
+                StatsBentoCard(Icons.Filled.Straighten, if (s.isThai) "สถิติส่วนสูง" else "Height stats", if (s.isThai) "พัฒนาทางร่างกาย" else "Physical development", Primary, Modifier.weight(1f)) {
+                    navController.navigate(Screen.WhoHeightForAgeDetail.route)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                StatsBentoCard(Icons.Filled.Restaurant, if (s.isThai) "สถิติโภชนาการ" else "Nutrition stats", if (s.isThai) "อาหารและนม" else "Food & milk", Tertiary, Modifier.weight(1f)) {
+                    navController.navigate(Screen.NutritionInsights.route)
+                }
+                StatsBentoCard(Icons.Filled.Bedtime, if (s.isThai) "การนอนและกิจกรรม" else "Sleep & Activity", if (s.isThai) "รูปแบบการนอน" else "Sleep patterns", Tertiary, Modifier.weight(1f)) {
+                    navController.navigate(Screen.SleepActivityInsights.route)
+                }
+            }
+            // Wide alert-style card — elimination tracking reads as a health-monitoring item in the
+            // mockup (error/red tint + notification dot), not just another quarter-tile.
+            Card(
+                onClick = { navController.navigate(Screen.HealthEliminationInsights.route) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(Error.copy(0.12f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.WaterDrop, null, tint = Error, modifier = Modifier.size(20.dp))
+                        }
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(Error))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(if (s.isThai) "สุขภาพและการขับถ่าย" else "Health & Elimination", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text(if (s.isThai) "ติดตามการขับถ่าย" else "Track elimination", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Filled.ChevronRight, null, tint = Outline)
+                }
+            }
+
+            // Monthly Summary Report -> a real 30-day-aggregate AI report (added per user request,
+            // not part of the 24.Statics2 mockup itself).
+            Card(
+                onClick = { navController.navigate(Screen.MonthlyReport.route) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)
+            ) {
+                Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Summarize, null, tint = Primary)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(if (s.isThai) "สรุปรายงานประจำเดือน" else "Monthly Summary Report", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Text(if (s.isThai) "ภาพรวมการนอน โภชนาการ และพัฒนาการ 30 วัน" else "30-day sleep, nutrition & development overview", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Filled.ChevronRight, null, tint = Outline)
                 }
             }
 
@@ -345,6 +426,7 @@ fun StatisticsInsightsScreen(
 
             Spacer(Modifier.height(16.dp))
         }
+        }
     }
 
     childToDelete?.let { target ->
@@ -371,6 +453,24 @@ private fun DevelopmentTrendChart(achieved: List<DevelopmentMilestone>) {
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         drawPath(path, color = Primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+    }
+}
+
+@Composable
+private fun StatsBentoCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, caption: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(tint.copy(0.12f)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp))
+            }
+            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

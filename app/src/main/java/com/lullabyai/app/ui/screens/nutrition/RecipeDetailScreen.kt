@@ -39,13 +39,45 @@ fun RecipeDetailScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit)
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(Outline.copy(0.12f)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Restaurant, null, tint = Outline, modifier = Modifier.size(36.dp))
+        when {
+            ui.recipeLoading -> {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Primary)
                 }
-                Text(if (isThai) "เร็วๆ นี้" else "Coming Soon", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Text(if (isThai) "ฟีเจอร์สูตรอาหารกำลังพัฒนา\nติดตามอัปเดตเร็วๆ นี้" else "Recipe feature is coming soon.\nStay tuned for updates!", style = MaterialTheme.typography.bodyMedium, color = Outline, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+            r == null -> {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text(if (isThai) "ไม่พบข้อมูลสูตรอาหาร" else "Recipe not found", color = Outline)
+                }
+            }
+            else -> {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    RecipeImage(r.title)
+                    Text(r.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        InfoChip(Icons.Filled.Schedule, r.timeMinutes)
+                        InfoChip(Icons.Filled.ChildCare, r.ageRange)
+                        InfoChip(Icons.Filled.Groups, r.servings)
+                    }
+                    if (r.nutritionNote.isNotBlank()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SectionTitle(if (isThai) "คุณค่าทางโภชนาการ" else "Nutrition note")
+                            Text(r.nutritionNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SectionTitle(if (isThai) "ส่วนผสม" else "Ingredients")
+                        r.ingredients.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SectionTitle(if (isThai) "วิธีทำ" else "Steps")
+                        r.steps.forEachIndexed { i, step -> StepRow(i + 1, step) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
             }
         }
     }

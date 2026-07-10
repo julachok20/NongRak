@@ -357,20 +357,24 @@ private fun NoisePlayerCard(player: WhiteNoisePlayer) {
                     Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.inverseSurface, modifier = Modifier.size(28.dp))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NoiseTrack.entries.forEach { t ->
-                    val selected = t == track
-                    Surface(
-                        onClick = { player.selectTrack(t) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp),
-                        color = if (selected) Color.White else Color.White.copy(0.12f)
-                    ) {
-                        Text(
-                            if (s.isThai) t.labelTh else t.labelEn,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                            color = if (selected) MaterialTheme.colorScheme.inverseSurface else Color.White
-                        )
+            // 5 tracks now (added LULLABY) — split 3+2 so Thai labels like "เพลงกล่อมเด็ก" don't
+            // get cramped into a single 5-wide row.
+            NoiseTrack.entries.toList().chunked(3).forEach { rowTracks ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    rowTracks.forEach { t ->
+                        val selected = t == track
+                        Surface(
+                            onClick = { player.selectTrack(t) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp),
+                            color = if (selected) Color.White else Color.White.copy(0.12f)
+                        ) {
+                            Text(
+                                if (s.isThai) t.labelTh else t.labelEn,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                                color = if (selected) MaterialTheme.colorScheme.inverseSurface else Color.White
+                            )
+                        }
                     }
                 }
             }

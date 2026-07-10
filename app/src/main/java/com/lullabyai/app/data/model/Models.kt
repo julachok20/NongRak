@@ -3,6 +3,19 @@ package com.lullabyai.app.data.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** Monthly parent (not child) mental-health self-assessment — modeled on the DMH-endorsed EPDS
+ *  (Edinburgh Postnatal Depression Scale) framework: 10 items, each 0-3, total 0-30. */
+@Serializable
+data class MentalHealthAssessment(
+    val id: String = "",
+    @SerialName("user_id") val userId: String = "",
+    val answers: List<Int> = emptyList(),
+    @SerialName("total_score") val totalScore: Int = 0,
+    @SerialName("risk_tier") val riskTier: String = "low", // low | moderate | high
+    @SerialName("flagged_self_harm") val flaggedSelfHarm: Boolean = false,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
 @Serializable
 data class MedicalDocument(
     val id: String = "",
@@ -74,7 +87,12 @@ data class Profile(
     @SerialName("full_name") val fullName: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    // Separate, opt-in consent for using (de-identified) data to improve/train AI models —
+    // deliberately distinct from the mandatory signup consent, since it's a different purpose
+    // under PDPA and must be freely given, not bundled. Off by default.
+    @SerialName("ai_training_consent") val aiTrainingConsent: Boolean = false,
+    @SerialName("ai_training_consent_at") val aiTrainingConsentAt: String? = null
 )
 
 @Serializable
@@ -92,8 +110,35 @@ data class Child(
     @SerialName("activity_level") val activityLevel: String = "moderate",
     @SerialName("blood_group") val bloodGroup: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    // Explicit "confirmed no allergies" — distinct from simply having zero rows in the allergies
+    // table, so the missing-info nudge can tell "not yet answered" apart from "answered: none".
+    @SerialName("no_known_allergies") val noKnownAllergies: Boolean = false,
+    // Hospital-record demographic fields (สัญชาติ/เชื้อชาติ/ศาสนา) — collected on the first onboarding
+    // page and printed on the doctor-export PDF, all optional.
+    val nationality: String? = null,
+    val ethnicity: String? = null,
+    val religion: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
+)
+
+/** A candidate match returned by the search_child_for_sync RPC (name + birthdate, no other data). */
+@Serializable
+data class ChildSyncMatch(
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("child_name") val childName: String = ""
+)
+
+/** A pending/resolved request to sync (co-parent) access to someone else's child. */
+@Serializable
+data class ChildSyncRequest(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("requester_user_id") val requesterUserId: String = "",
+    @SerialName("owner_user_id") val ownerUserId: String = "",
+    val method: String = "search",
+    val status: String = "pending",
+    @SerialName("created_at") val createdAt: String? = null
 )
 
 @Serializable
@@ -125,6 +170,29 @@ data class VaccineRecord(
     @SerialName("age_order") val ageOrder: Int? = 0,
     val description: String? = null,
     @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class MilkLog(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("milk_type") val milkType: String = "formula", // breast | formula
+    @SerialName("volume_ml") val volumeMl: Int = 0,
+    val side: String? = null, // left | right | both (breast only)
+    @SerialName("logged_at") val loggedAt: String? = null,
+    val notes: String? = null
+)
+
+@Serializable
+data class WasteRecord(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("waste_type") val wasteType: String = "stool", // urine | stool
+    val consistency: String? = null, // stool only: soft_normal | hard_constipated | loose_diarrhea | mucus_blood
+    val color: String? = null,       // yellow | brown | green | red_orange | grey_white
+    val amount: String = "medium",   // low | medium | high
+    @SerialName("recorded_at") val recordedAt: String? = null,
+    val notes: String? = null
 )
 
 @Serializable

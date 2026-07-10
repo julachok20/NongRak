@@ -23,11 +23,19 @@ import coil.compose.AsyncImage
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
 
+/** First number found in a free-text duration like "10-15 นาที" — used to log a concrete
+ *  duration_min when the parent marks the exercise done, since ExerciseContent.duration is a
+ *  descriptive range, not a stored value. Falls back to 10 when nothing parses. */
+private fun parseDurationMinutes(duration: String): Int = Regex("\\d+").find(duration)?.value?.toIntOrNull() ?: 10
+
 @Composable
 fun ExerciseInstructionScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
     val isThai = lang.startsWith("th")
     val e = ui.exercise
+    // Same "done today" check ExerciseScreen already uses for its badge — kept in sync via
+    // currentExerciseName (the requested name, not the AI-generated title, per the existing convention).
+    val doneToday = ui.currentExerciseName != null && ui.exerciseLogs.any { it.activityName == ui.currentExerciseName }
 
     Scaffold(
         topBar = {
@@ -39,13 +47,56 @@ fun ExerciseInstructionScreen(vm: NutritionViewModel, lang: String, onBack: () -
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(Outline.copy(0.12f)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.FitnessCenter, null, tint = Outline, modifier = Modifier.size(36.dp))
+        when {
+            ui.exerciseLoading -> {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Primary)
                 }
-                Text(if (isThai) "เร็วๆ นี้" else "Coming Soon", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Text(if (isThai) "คู่มือการออกกำลังกายกำลังพัฒนา\nติดตามอัปเดตเร็วๆ นี้" else "Exercise guide is coming soon.\nStay tuned for updates!", style = MaterialTheme.typography.bodyMedium, color = Outline, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+            e == null -> {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text(if (isThai) "ไม่พบข้อมูลกิจกรรม" else "Exercise not found", color = Outline)
+                }
+            }
+            else -> {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    ExerciseImage(e.title)
+                    Text(e.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip(Icons.Filled.Timer, if (isThai) "เตรียมตัว" else "Prep", e.prepTime)
+                        Chip(Icons.Filled.HourglassBottom, if (isThai) "ระยะเวลา" else "Duration", e.duration)
+                        Chip(Icons.Filled.ChildCare, if (isThai) "วัย" else "Age", e.ageRange)
+                        Chip(Icons.Filled.TrendingUp, if (isThai) "ระดับ" else "Level", e.difficulty)
+                    }
+                    if (e.benefit.isNotBlank()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            com.lullabyai.app.ui.screens.nutrition.SectionTitle(if (isThai) "ประโยชน์" else "Benefit")
+                            Text(e.benefit, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (e.equipment.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            com.lullabyai.app.ui.screens.nutrition.SectionTitle(if (isThai) "อุปกรณ์" else "Equipment")
+                            e.equipment.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        com.lullabyai.app.ui.screens.nutrition.SectionTitle(if (isThai) "ขั้นตอน" else "Steps")
+                        e.steps.forEachIndexed { i, step -> com.lullabyai.app.ui.screens.nutrition.StepRow(i + 1, step) }
+                    }
+                    Button(
+                        onClick = { vm.logExercise(ui.currentExerciseName ?: e.title, parseDurationMinutes(e.duration), lang) },
+                        enabled = !doneToday,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (doneToday) Color(0xFF4CAF50) else Primary, disabledContainerColor = Color(0xFF4CAF50))
+                    ) {
+                        Text(if (doneToday) (if (isThai) "ทำสำเร็จแล้ววันนี้" else "Done for today") else (if (isThai) "เสร็จสิ้น" else "Mark done"), fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
             }
         }
     }
