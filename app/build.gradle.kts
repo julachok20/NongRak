@@ -91,6 +91,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.glance.appwidget)
 
     // Supabase
     implementation(libs.supabase.postgrest)
