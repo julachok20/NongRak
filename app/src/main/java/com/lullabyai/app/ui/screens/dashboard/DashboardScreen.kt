@@ -26,6 +26,8 @@ import com.lullabyai.app.util.RelationshipLabels
 import com.lullabyai.app.util.TimeUtils
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -49,6 +51,7 @@ fun DashboardScreen(
     onNavigateToAddChild: () -> Unit = {},
     onNavigateToMentalHealth: () -> Unit = {},
     onNavigateToQuickLog: () -> Unit = {},
+    onNavigateToWidgets: () -> Unit = {},
     isTourActive: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
@@ -91,6 +94,47 @@ fun DashboardScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAddChildPopup = false }) { Text(if (isThai) "ภายหลัง" else "Later") }
+            }
+        )
+    }
+
+    // One-time nudge toward the home-screen widgets feature — only for accounts that already have
+    // a child (nothing useful to show on a widget otherwise), and only after the add-child popup
+    // has had its turn so the two don't compete for attention on the same visit.
+    var showWidgetPromo by remember { mutableStateOf(false) }
+    val widgetPromoScope = rememberCoroutineScope()
+    LaunchedEffect(childState.isLoading, childState.children.size, isTourActive, showAddChildPopup) {
+        if (!isTourActive && !showAddChildPopup && !childState.isLoading && childState.children.isNotEmpty()) {
+            val sm = com.lullabyai.app.data.settings.SettingsManager(context)
+            if (!sm.hasSeenWidgetPromo.first()) {
+                showWidgetPromo = true
+            }
+        }
+    }
+    fun dismissWidgetPromo() {
+        showWidgetPromo = false
+        widgetPromoScope.launch {
+            com.lullabyai.app.data.settings.SettingsManager(context).setHasSeenWidgetPromo(true)
+        }
+    }
+    if (showWidgetPromo) {
+        AlertDialog(
+            onDismissRequest = { dismissWidgetPromo() },
+            icon = { Icon(Icons.Filled.Widgets, null, tint = Primary) },
+            title = { Text(if (isThai) "ลองใช้วิดเจ็ตหน้าจอหลัก" else "Try home-screen widgets") },
+            text = {
+                Text(
+                    if (isThai) "ดูข้อมูลลูกน้อย เช่น การนอน วัคซีน และการเจริญเติบโต ได้ทันทีจากหน้าจอหลักของโทรศัพท์ โดยไม่ต้องเปิดแอป"
+                    else "See your child's sleep, vaccines, and growth right from your phone's home screen — no need to open the app."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { dismissWidgetPromo(); onNavigateToWidgets() }) {
+                    Text(if (isThai) "ดูวิดเจ็ต" else "View widgets")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { dismissWidgetPromo() }) { Text(if (isThai) "ไว้คราวหน้า" else "Maybe later") }
             }
         )
     }

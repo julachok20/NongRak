@@ -9,6 +9,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -127,4 +129,47 @@ fun TermsOfUseScreen(navController: NavController, onBack: () -> Unit) = InfoSca
     Para("ห้ามใช้แอปพลิเคชันในทางที่ผิดกฎหมายหรือก่อให้เกิดความเสียหายต่อระบบและผู้ใช้อื่น")
     Heading("5. การติดต่อ")
     Para("หากมีคำถามเกี่ยวกับข้อกำหนดการใช้งาน กรุณาติดต่อ julachok2@gmail.com")
+}
+
+private data class WidgetIntroItem(val icon: String, val title: String, val description: String, val receiver: Class<*>)
+
+private val widgetIntroItems = listOf(
+    WidgetIntroItem("🍼", "ภาพรวมวันนี้", "เวลาให้นมและนอนล่าสุดของลูก", com.lullabyai.app.widget.DailyOverviewWidgetReceiver::class.java),
+    WidgetIntroItem("⚖️", "การเจริญเติบโต", "น้ำหนักและส่วนสูงล่าสุดพร้อมแนวโน้ม", com.lullabyai.app.widget.GrowthTrackerWidgetReceiver::class.java),
+    WidgetIntroItem("💉", "วัคซีนที่ใกล้ถึง", "วัคซีนนัดถัดไปและจำนวนวันที่เหลือ", com.lullabyai.app.widget.VaccineReminderWidgetReceiver::class.java),
+    WidgetIntroItem("🎯", "พัฒนาการ", "เปอร์เซ็นต์พัฒนาการที่สำเร็จแล้ว", com.lullabyai.app.widget.MilestoneWidgetReceiver::class.java),
+    WidgetIntroItem("😴", "การนอน", "ระยะเวลาการนอนล่าสุดของลูก", com.lullabyai.app.widget.SleepAnalyticsWidgetReceiver::class.java),
+    WidgetIntroItem("💊", "ยาที่ต้องทาน", "รายการยาวันนี้ พร้อมทำเครื่องหมายว่าทานแล้ว", com.lullabyai.app.widget.MedicineDoseWidgetReceiver::class.java),
+    WidgetIntroItem("⚡", "บันทึกด่วน", "ทางลัดเปิดแอปเพื่อบันทึกนม อาหาร และยา", com.lullabyai.app.widget.QuickActionHubWidgetReceiver::class.java)
+)
+
+@Composable
+fun WidgetsIntroScreen(navController: NavController, onBack: () -> Unit) = InfoScaffold("วิดเจ็ตหน้าจอหลัก", navController, onBack) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appWidgetManager = remember { android.appwidget.AppWidgetManager.getInstance(context) }
+
+    Para("เพิ่มวิดเจ็ตไปยังหน้าจอหลักของโทรศัพท์ เพื่อดูข้อมูลลูกน้อยได้อย่างรวดเร็วโดยไม่ต้องเปิดแอป")
+
+    widgetIntroItems.forEach { item ->
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(item.icon, style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.title, fontWeight = FontWeight.Bold)
+                    Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    val provider = android.content.ComponentName(context, item.receiver)
+                    if (appWidgetManager.isRequestPinAppWidgetSupported) {
+                        appWidgetManager.requestPinAppWidget(provider, null, null)
+                    }
+                }) { Text("เพิ่ม") }
+            }
+        }
+    }
 }

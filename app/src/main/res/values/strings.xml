@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NongRak</string>
-    <string name="quick_info_widget_label">NongRak Quick Info</string>
-    <string name="quick_info_widget_description">แสดงเวลาให้นมและนอนล่าสุดของลูก แตะเพื่อเปิดแอป</string>
+    <string name="daily_overview_widget_label">NongRak ภาพรวมวันนี้</string>
+    <string name="daily_overview_widget_description">แสดงเวลาให้นมและนอนล่าสุดของลูก แตะเพื่อเปิดแอป</string>
+    <string name="growth_tracker_widget_label">NongRak การเจริญเติบโต</string>
+    <string name="growth_tracker_widget_description">แสดงน้ำหนักและส่วนสูงล่าสุดพร้อมแนวโน้ม แตะเพื่อเปิดแอป</string>
+    <string name="vaccine_reminder_widget_label">NongRak วัคซีนที่ใกล้ถึง</string>
+    <string name="vaccine_reminder_widget_description">แสดงวัคซีนที่ใกล้ถึงกำหนดนัดถัดไป แตะเพื่อเปิดแอป</string>
+    <string name="milestone_widget_label">NongRak พัฒนาการ</string>
+    <string name="milestone_widget_description">แสดงเปอร์เซ็นต์พัฒนาการที่สำเร็จและขั้นต่อไป แตะเพื่อเปิดแอป</string>
+    <string name="sleep_analytics_widget_label">NongRak การนอน</string>
+    <string name="sleep_analytics_widget_description">แสดงระยะเวลาการนอนล่าสุด แตะเพื่อเปิดแอป</string>
+    <string name="medicine_dose_widget_label">NongRak ยาที่ต้องทาน</string>
+    <string name="medicine_dose_widget_description">แสดงยาที่ต้องทานวันนี้ พร้อมปุ่มทำเครื่องหมายว่าทานแล้ว</string>
+    <string name="quick_action_hub_widget_label">NongRak บันทึกด่วน</string>
+    <string name="quick_action_hub_widget_description">ทางลัดสำหรับบันทึกนม อาหาร และยา แตะเพื่อเปิดแอป</string>
 </resources>

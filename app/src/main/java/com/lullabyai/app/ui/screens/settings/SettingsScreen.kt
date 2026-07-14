@@ -112,6 +112,12 @@ fun SettingsScreen(
             item { SectionLabel(s.appInfoSection) }
             item {
                 SettingsGroup {
+                    SettingsRow(
+                        Icons.Filled.Widgets,
+                        if (isThai) "วิดเจ็ตหน้าจอหลัก" else "Home screen widgets",
+                        onClick = { navController.navigate(Screen.WidgetsIntro.route) }
+                    )
+                    Divider52()
                     SettingsRow(Icons.Filled.Info, s.aboutUs, onClick = { navController.navigate(Screen.AboutUs.route) })
                     Divider52()
                     SettingsRow(Icons.Filled.Security, s.privacyPolicy, onClick = { navController.navigate(Screen.PrivacyPolicy.route) })

@@ -291,6 +291,7 @@ fun AppNavigation(
                 onNavigateToAddChild = { navController.navigate(Screen.AddChildChoice.route) },
                 onNavigateToMentalHealth = { navController.navigate(Screen.MentalHealthAssessment.route) },
                 onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
+                onNavigateToWidgets = { navController.navigate(Screen.WidgetsIntro.route) },
                 isTourActive = tourActive
             )
         }
@@ -455,6 +456,9 @@ fun AppNavigation(
         }
         composable(Screen.AboutUs.route) {
             AboutUsScreen(navController = navController, onBack = { navController.popBackStack() })
+        }
+        composable(Screen.WidgetsIntro.route) {
+            com.lullabyai.app.ui.screens.settings.WidgetsIntroScreen(navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.PrivacyPolicy.route) {
             PrivacyPolicyScreen(navController = navController, onBack = { navController.popBackStack() })

@@ -1,5 +1,6 @@
 package com.lullabyai.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,12 +28,25 @@ import kotlinx.coroutines.flow.first
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        /** Intent extra key widgets use to request a specific screen instead of the default Dashboard. */
+        const val WIDGET_TARGET_ROUTE_EXTRA = "widget_target_route"
+    }
+
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private var pendingDeepLink by mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDeepLink = intent.getStringExtra(WIDGET_TARGET_ROUTE_EXTRA)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        pendingDeepLink = intent?.getStringExtra(WIDGET_TARGET_ROUTE_EXTRA)
 
         // Load persisted state into process-wide holders (multi-child selection + recent services).
         val settingsManager = com.lullabyai.app.data.settings.SettingsManager(applicationContext)
@@ -86,6 +100,12 @@ class MainActivity : ComponentActivity() {
                             startDestination = startDestination,
                             settingsViewModel = settingsViewModel
                         )
+                        LaunchedEffect(pendingDeepLink) {
+                            pendingDeepLink?.let { route ->
+                                navController.navigate(route)
+                                pendingDeepLink = null
+                            }
+                        }
                     }
                 }
             }

@@ -51,6 +51,13 @@ class WhiteNoisePlayer {
     private val handler = Handler(Looper.getMainLooper())
     private var tickRunnable: Runnable? = null
 
+    /** Bumped on every play() so a stale async callback from a superseded MediaPlayer (e.g. an
+     *  error that fires after the user already switched tracks) can't hijack the current track
+     *  into the fallback synth — confirmed live on-device: switching tracks could trigger the old
+     *  player's error listener, which reads the (already-updated) selected track and starts the
+     *  procedural fallback for it, silently replacing the real stream that would have worked. */
+    @Volatile private var generation = 0
+
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying
     private val _elapsedSeconds = MutableStateFlow(0)
@@ -73,8 +80,10 @@ class WhiteNoisePlayer {
         if (running) return
         running = true
         usingFallback = false
+        _elapsedSeconds.value = 0
+        val myGen = ++generation
         startTicker()
-        if (_selectedTrack.value.streamUrl.isBlank()) { startProceduralFallback(); return }
+        if (_selectedTrack.value.streamUrl.isBlank()) { startProceduralFallback(myGen); return }
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
@@ -83,18 +92,23 @@ class WhiteNoisePlayer {
                     .build()
             )
             isLooping = true
-            setOnPreparedListener { it.start(); _isPlaying.value = true }
-            setOnErrorListener { _, _, _ -> startProceduralFallback(); true }
+            setOnPreparedListener {
+                if (myGen == generation && running) { it.start(); _isPlaying.value = true }
+            }
+            setOnErrorListener { _, _, _ -> if (myGen == generation && running) startProceduralFallback(myGen); true }
         }
         mediaPlayer = player
         runCatching {
             player.setDataSource(_selectedTrack.value.streamUrl)
             player.prepareAsync()
-        }.onFailure { startProceduralFallback() }
+        }.onFailure { if (myGen == generation && running) startProceduralFallback(myGen) }
     }
 
-    /** Real internet track unreachable — synthesize the same track live instead of failing silently. */
-    private fun startProceduralFallback() {
+    /** Real internet track unreachable — synthesize the same track live instead of failing silently.
+     *  [gen] must still match the current generation (see [generation]'s doc) or this is a stale
+     *  callback from a track the user already switched away from, and is ignored. */
+    private fun startProceduralFallback(gen: Int) {
+        if (gen != generation || !running) return
         if (usingFallback) return
         usingFallback = true
         runCatching { mediaPlayer?.release() }
@@ -139,7 +153,7 @@ class WhiteNoisePlayer {
             var melodySamplePos = 0
             var melodyPhase = 0.0
             val chunk = ShortArray(bufSize / 2)
-            while (running && usingFallback) {
+            while (running && usingFallback && gen == generation) {
                 val current = _selectedTrack.value
                 for (i in chunk.indices) {
                     val white = Random.nextFloat() * 2f - 1f
@@ -219,7 +233,10 @@ class WhiteNoisePlayer {
         running = false
         usingFallback = false
         stopTicker()
-        runCatching { mediaPlayer?.stop(); mediaPlayer?.release() }
+        // release() alone is safe from any MediaPlayer state per the Android docs — stop() is not
+        // (e.g. calling it before a still-preparing player has started throws natively), and that
+        // throw used to skip the release() right after it, leaking the player.
+        runCatching { mediaPlayer?.release() }
         mediaPlayer = null
         genThread?.join(200)
         genThread = null

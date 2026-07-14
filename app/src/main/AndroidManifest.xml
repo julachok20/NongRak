@@ -63,15 +63,93 @@
 
         <!-- Home-screen widget: last feeding/sleep at a glance, tap to open the app -->
         <receiver
-            android:name=".widget.QuickInfoWidgetReceiver"
+            android:name=".widget.DailyOverviewWidgetReceiver"
             android:exported="false"
-            android:label="@string/quick_info_widget_label">
+            android:label="@string/daily_overview_widget_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/quick_info_widget_info" />
+                android:resource="@xml/daily_overview_widget_info" />
+        </receiver>
+
+        <!-- Home-screen widget: latest weight/height with trend, tap to open the app -->
+        <receiver
+            android:name=".widget.GrowthTrackerWidgetReceiver"
+            android:exported="false"
+            android:label="@string/growth_tracker_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/growth_tracker_widget_info" />
+        </receiver>
+
+        <!-- Home-screen widget: nearest upcoming vaccine, tap to open the app -->
+        <receiver
+            android:name=".widget.VaccineReminderWidgetReceiver"
+            android:exported="false"
+            android:label="@string/vaccine_reminder_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/vaccine_reminder_widget_info" />
+        </receiver>
+
+        <!-- Home-screen widget: development milestone progress, tap to open the app -->
+        <receiver
+            android:name=".widget.MilestoneWidgetReceiver"
+            android:exported="false"
+            android:label="@string/milestone_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/milestone_widget_info" />
+        </receiver>
+
+        <!-- Home-screen widget: latest sleep session duration, tap to open the app -->
+        <receiver
+            android:name=".widget.SleepAnalyticsWidgetReceiver"
+            android:exported="false"
+            android:label="@string/sleep_analytics_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sleep_analytics_widget_info" />
+        </receiver>
+
+        <!-- Home-screen widget: today's medicine doses with a one-tap "taken" action -->
+        <receiver
+            android:name=".widget.MedicineDoseWidgetReceiver"
+            android:exported="false"
+            android:label="@string/medicine_dose_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/medicine_dose_widget_info" />
+        </receiver>
+
+        <!-- Home-screen widget: quick-log shortcut row, tap to open the app -->
+        <receiver
+            android:name=".widget.QuickActionHubWidgetReceiver"
+            android:exported="false"
+            android:label="@string/quick_action_hub_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_action_hub_widget_info" />
         </receiver>
 
         <!-- Shares generated PDF reports (doctor export) via a content:// URI -->

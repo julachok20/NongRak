@@ -48,6 +48,15 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { it[HAS_SEEN_TOUR] = value }
     }
 
+    private val HAS_SEEN_WIDGET_PROMO = booleanPreferencesKey("has_seen_widget_promo")
+
+    /** Whether the parent has already seen (or dismissed) the home-screen-widgets promo popup. */
+    val hasSeenWidgetPromo: Flow<Boolean> = context.dataStore.data.map { it[HAS_SEEN_WIDGET_PROMO] ?: false }
+
+    suspend fun setHasSeenWidgetPromo(value: Boolean) {
+        context.dataStore.edit { it[HAS_SEEN_WIDGET_PROMO] = value }
+    }
+
     private val AI_DAILY_Q_DATE = stringPreferencesKey("ai_daily_question_date")
     private val AI_DAILY_Q_COUNT = intPreferencesKey("ai_daily_question_count")
 
