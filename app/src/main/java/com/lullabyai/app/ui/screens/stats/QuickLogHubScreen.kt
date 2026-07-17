@@ -2,6 +2,8 @@
 package com.lullabyai.app.ui.screens.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,11 +39,10 @@ import java.time.Instant
 
 private data class ActivityItem(val icon: ImageVector, val title: String, val detail: String, val timestamp: Instant, val route: String)
 
-/** [keywords] lets the search bar match what a tile lets you DO (e.g. typing "milk" or "นม" should
- *  surface the Feeding tile), not just its visible label. */
-private data class QuickAction(
+/** One-tap log tiles on this hub (feeding / sleep / health / development). */
+private data class LogTileAction(
     val icon: ImageVector, val label: String, val color: Color, val actionLabel: String,
-    val keywords: List<String>, val onClick: () -> Unit
+    val onClick: () -> Unit
 )
 
 @Composable
@@ -55,7 +56,6 @@ fun QuickLogHubScreen(
     val chatState by chatViewModel.uiState.collectAsState()
     val child = state.child
 
-    var searchQuery by remember { mutableStateOf("") }
     var todayFoodLogs by remember { mutableStateOf<List<FoodLog>>(emptyList()) }
     LaunchedEffect(child?.id) {
         child?.let {
@@ -106,42 +106,26 @@ fun QuickLogHubScreen(
         }
     }
 
-    val filteredActivity = remember(activity, searchQuery) {
-        if (searchQuery.isBlank()) activity
-        else activity.filter { it.title.contains(searchQuery, ignoreCase = true) || it.detail.contains(searchQuery, ignoreCase = true) }
-    }
-
-    val quickActions = remember(s.isThai, state.activeSleepSession) {
+    val logTiles = remember(s.isThai, state.activeSleepSession) {
         listOf(
-            QuickAction(
+            LogTileAction(
                 Icons.Filled.Restaurant, if (s.isThai) "การกิน" else "Feeding", Primary,
-                if (s.isThai) "บันทึกอาหาร" else "Log food",
-                listOf("การกิน", "อาหาร", "นม", "กิน", "feeding", "food", "milk", "eat", "calorie", "แคลอรี่")
+                if (s.isThai) "บันทึกอาหาร" else "Log food"
             ) { navController.navigate(Screen.CalorieCalculator.route) },
-            QuickAction(
+            LogTileAction(
                 if (state.activeSleepSession != null) Icons.Filled.Hotel else Icons.Filled.Bedtime,
                 if (s.isThai) "การนอน" else "Sleep", Color(0xFF4B5B86),
-                if (state.activeSleepSession != null) (if (s.isThai) "หยุดบันทึก" else "Stop") else (if (s.isThai) "เริ่มเวลานอน" else "Start sleep"),
-                listOf("การนอน", "นอน", "หลับ", "ตื่น", "sleep", "nap", "wake", "bedtime")
+                if (state.activeSleepSession != null) (if (s.isThai) "หยุดบันทึก" else "Stop") else (if (s.isThai) "เริ่มเวลานอน" else "Start sleep")
             ) { childViewModel.toggleSleepSession() },
-            QuickAction(
+            LogTileAction(
                 Icons.Filled.Thermostat, if (s.isThai) "สุขภาพ" else "Health", Color(0xFFBA1A1A),
-                if (s.isThai) "บันทึกอาการ" else "Log symptom",
-                listOf("สุขภาพ", "อาการ", "ป่วย", "ไข้", "health", "symptom", "sick", "fever", "illness")
+                if (s.isThai) "บันทึกอาการ" else "Log symptom"
             ) { navController.navigate(Screen.AddHealthRecord.route) },
-            QuickAction(
+            LogTileAction(
                 Icons.Filled.EmojiEvents, if (s.isThai) "พัฒนาการ" else "Development", Color(0xFF526069),
-                if (s.isThai) "ทักษะใหม่" else "New skill",
-                listOf("พัฒนาการ", "ทักษะ", "development", "skill", "milestone")
+                if (s.isThai) "ทักษะใหม่" else "New skill"
             ) { navController.navigate(Screen.ChildDevelopment.route) }
         )
-    }
-    val filteredActions = remember(quickActions, searchQuery) {
-        if (searchQuery.isBlank()) quickActions
-        else quickActions.filter { a ->
-            a.label.contains(searchQuery, ignoreCase = true) || a.actionLabel.contains(searchQuery, ignoreCase = true) ||
-                a.keywords.any { it.contains(searchQuery, ignoreCase = true) }
-        }
     }
 
     Scaffold(
@@ -184,35 +168,47 @@ fun QuickLogHubScreen(
             }
 
             item {
-                OutlinedTextField(
-                    value = searchQuery, onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(if (s.isThai) "ค้นหาบันทึกด่วน..." else "Search quick logs...") },
-                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    singleLine = true, shape = RoundedCornerShape(100.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = Color.Transparent, focusedBorderColor = Primary,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f),
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)
+                // Opens the real Quick Action Search screen (inline focus mode was flickering shut).
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = "",
+                        onValueChange = {},
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = false,
+                        placeholder = {
+                            Text(
+                                if (s.isThai) "ค้นหาเพื่อดูสิ่งที่ทำได้เพิ่มเติม" else "Search to see more you can do",
+                                color = Outline
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Filled.Search, null, tint = Primary) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(100.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledBorderColor = Color.Transparent,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f),
+                            disabledPlaceholderColor = Outline,
+                            disabledLeadingIconColor = Primary
+                        )
                     )
-                )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { navController.navigate(Screen.QuickActionSearch.route) }
+                    )
+                }
             }
 
-            if (filteredActions.isEmpty()) {
+            logTiles.chunked(2).forEach { rowActions ->
                 item {
-                    Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
-                        Text(if (s.isThai) "ไม่พบสิ่งที่บันทึกได้ตรงกับคำค้นหา" else "No matching action to log", color = Outline)
-                    }
-                }
-            } else {
-                filteredActions.chunked(2).forEach { rowActions ->
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            rowActions.forEach { a ->
-                                QuickLogTile(a.icon, a.label, a.color, a.actionLabel, Modifier.weight(1f), a.onClick)
-                            }
-                            if (rowActions.size == 1) Spacer(Modifier.weight(1f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rowActions.forEach { a ->
+                            QuickLogTile(a.icon, a.label, a.color, a.actionLabel, Modifier.weight(1f), a.onClick)
                         }
+                        if (rowActions.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             }
@@ -234,25 +230,21 @@ fun QuickLogHubScreen(
             }
 
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(if (s.isThai) "บันทึกล่าสุด" else "Recent logs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     TextButton(onClick = { navController.navigate(Screen.SmartTrends.route) }) {
                         Text(if (s.isThai) "ดูประวัติทั้งหมด" else "View all", style = MaterialTheme.typography.labelMedium, color = Primary)
                     }
                 }
             }
-            if (filteredActivity.isEmpty()) {
+            if (activity.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            if (activity.isEmpty()) (if (s.isThai) "ยังไม่มีบันทึกวันนี้" else "No logs yet today")
-                            else (if (s.isThai) "ไม่พบบันทึกที่ค้นหา" else "No matching logs"),
-                            color = Outline
-                        )
+                        Text(if (s.isThai) "ยังไม่มีบันทึกวันนี้" else "No logs yet today", color = Outline)
                     }
                 }
             } else {
-                items(filteredActivity) { a -> ActivityRow(a) { navController.navigate(a.route) } }
+                items(activity) { a -> ActivityRow(a) { navController.navigate(a.route) } }
             }
             item { Spacer(Modifier.height(8.dp)) }
         }

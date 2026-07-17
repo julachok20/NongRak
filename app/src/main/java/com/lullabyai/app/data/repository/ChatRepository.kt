@@ -29,13 +29,29 @@ private fun analysisSystemPrompt(isThai: Boolean): String = if (isThai)
         "ตอบเป็นภาษาไทยเสมอ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
         "ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น และเข้าใจง่าย นี่คือข้อความสรุป/วิเคราะห์ ไม่ใช่บทสนทนา " +
         "ห้ามขึ้นต้นด้วยคำทักทายหรือคำนำใดๆ (เช่น สวัสดี, สวัสดีค่ะ, สวัสดีพ่อแม่น้อง) และห้ามเอ่ยชื่อเด็กเป็นประโยคแรก " +
-        "ให้เริ่มประโยคแรกด้วยเนื้อหาสาระโดยตรงทันที"
+        "ให้เริ่มประโยคแรกด้วยเนื้อหาสาระโดยตรงทันที " +
+        SAFETY_CLAUSE_TH
 else
     "You are \"NongRak\", an AI assistant for parents raising a child aged 0-3. " +
         "Always respond in English, even though the reference data below is in Thai. Never use special symbols or markdown, never use emoji. " +
         "Use natural, warm, easy-to-understand language. This is a summary/analysis, not a conversation. " +
         "Never open with a greeting or preamble (e.g. \"Hello\", \"Hi there\") and never start the first sentence with the child's name. " +
-        "Start the first sentence directly with the substance of the analysis."
+        "Start the first sentence directly with the substance of the analysis. " +
+        SAFETY_CLAUSE_EN
+
+/** Shared across every AI system prompt (chat + all one-off analyses) so a single edit here covers
+ *  every AI surface in the app. Not left to individual prompts to each remember to include. */
+private const val SAFETY_CLAUSE_TH =
+    "คำเตือนด้านความปลอดภัยที่สำคัญที่สุด: หากข้อมูลของเด็กที่ได้รับบ่งชี้ถึงอาการผิดปกติรุนแรงหรือภาวะวิกฤต " +
+        "(เช่น ไข้สูงมากไม่ลด ชัก หายใจลำบากหรือหายใจเร็วผิดปกติ ซึมมากไม่ตอบสนอง อาเจียนหรือถ่ายเหลวรุนแรงจนขาดน้ำ ผิวซีดหรือเขียวคล้ำ) " +
+        "ให้แนะนำผู้ปกครองอย่างชัดเจนว่าควรพาเด็กไปพบแพทย์ทันที และหากเป็นเหตุฉุกเฉินที่อาจเป็นอันตรายถึงชีวิต " +
+        "ให้แนะนำให้โทรแจ้งหน่วยกู้ชีพฉุกเฉิน 1669 ทันที คำแนะนำด้านความปลอดภัยนี้ต้องมาก่อนเสมอ ไม่ว่าคำถามหลักจะเป็นเรื่องอะไรก็ตาม"
+private const val SAFETY_CLAUSE_EN =
+    "Most important safety instruction: if the child's data indicates severe abnormal symptoms or a crisis state " +
+        "(e.g. very high fever that won't come down, seizures, difficulty or abnormally fast breathing, extreme lethargy or unresponsiveness, " +
+        "severe vomiting or diarrhea causing dehydration, pale or bluish skin), clearly advise the parent to take the child to a doctor immediately. " +
+        "If it is a life-threatening emergency, advise them to call the Thai emergency medical service 1669 right away. " +
+        "This safety guidance always takes priority, regardless of what the main question was about."
 
 class ChatRepository {
 
@@ -294,6 +310,19 @@ class ChatRepository {
         val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
         cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 2048, system = analysisSystemPrompt(isThai), jsonMode = false)
             .also { searchCache.save(cacheKey, it, "child_summary") }
+    }
+
+    /** Short AI card on ข้อมูลลูก ภาพรวม (Child Info overview) — 1-2 sentences only. Distinct cache
+     *  key from [generateChildSummary] so the fuller text on the health-check and monthly-summary
+     *  pages isn't shortened along with it. */
+    suspend fun generateChildInfoCardSummary(child: Child, forceRefresh: Boolean = false, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nจากข้อมูลข้างต้น สรุปภาพรวมเด็กคนนี้สั้นๆ ไม่เกิน 2 ประโยค เขียนในลักษณะข้อมูลเชิงข้อเท็จจริง " +
+            "ห้ามใช้ emoji และห้ามใช้สัญลักษณ์พิเศษใดๆ ตอบเนื้อหาโดยตรงทันที ห้ามขึ้นต้นด้วยคำทักทายหรือคำนำใดๆ เช่น \"สวัสดี\" หรือชื่อเด็ก"
+        val cacheKey = "child_summary_card_${child.id}_${langTag(isThai)}"
+        val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
+        cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 512, system = analysisSystemPrompt(isThai), jsonMode = false)
+            .also { searchCache.save(cacheKey, it, "child_summary_card") }
     }
 
     /** Child Health page (ข้อมูลลูก สุขภาพ) — health check, under 5 sentences. */

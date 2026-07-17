@@ -34,16 +34,18 @@ class AuthRepository {
 
     val currentUser get() = supabase.auth.currentUserOrNull()
 
-    suspend fun signUp(email: String, password: String, fullName: String): Result<Unit> = runCatching {
+    suspend fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null): Result<Unit> = runCatching {
         supabase.auth.signUpWith(Email) {
             this.email = email
             this.password = password
+            this.captchaToken = captchaToken
             data = buildJsonObject {
                 put("full_name", JsonPrimitive(fullName))
             }
         }
         // Auto sign-in after sign up to guarantee a session exists
-        // (needed when Supabase email confirmation is enabled)
+        // (needed when Supabase email confirmation is enabled). Not passing captchaToken here —
+        // the token is single-use and already spent on signUpWith above.
         if (supabase.auth.currentUserOrNull() == null) {
             supabase.auth.signInWith(Email) {
                 this.email = email
@@ -53,10 +55,11 @@ class AuthRepository {
         ensureProfile(fullName)
     }
 
-    suspend fun signIn(email: String, password: String): Result<Unit> = runCatching {
+    suspend fun signIn(email: String, password: String, captchaToken: String? = null): Result<Unit> = runCatching {
         supabase.auth.signInWith(Email) {
             this.email = email
             this.password = password
+            this.captchaToken = captchaToken
         }
         ensureProfile(null)
     }

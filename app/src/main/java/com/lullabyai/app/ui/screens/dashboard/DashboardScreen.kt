@@ -46,6 +46,7 @@ fun DashboardScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToNotifications: () -> Unit = {},
+    onNavigateToQuickActionSearch: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
     onNavigateToSleep: () -> Unit = {},
     onNavigateToAddChild: () -> Unit = {},
@@ -296,6 +297,7 @@ fun DashboardScreen(
                         )
                     }
                 }
+                IconButton(onClick = onNavigateToQuickActionSearch) { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurface) }
                 Box {
                     IconButton(onClick = onNavigateToNotifications) { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.onSurface) }
                     Box(Modifier.size(8.dp).clip(CircleShape).background(Error).align(Alignment.TopEnd).offset((-4).dp, 4.dp))
@@ -328,7 +330,7 @@ fun DashboardScreen(
                                     style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFFEF6C00)
                                 )
                                 Text(
-                                    if (isThai) "บันทึกวันนี้เพื่อรักษาสถิติต่อไป" else "Log something today to keep it going",
+                                    streakMotivation(streak, isThai),
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -539,6 +541,17 @@ private fun RecentTile(title: String, icon: ImageVector, modifier: Modifier = Mo
             Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         }
     }
+}
+
+/** Tier-based encouragement for the logging-streak card. Deliberately avoids fabricated stats like
+ *  a "top X%" ranking — the app has no cross-user data to back that kind of claim — and instead
+ *  praises the milestone itself. */
+private fun streakMotivation(streak: Int, isThai: Boolean): String = when {
+    streak >= 30 -> if (isThai) "หนึ่งเดือนเต็มแล้ว! ความสม่ำเสมอระดับนี้ยอดเยี่ยมมาก" else "A full month! This kind of consistency is amazing"
+    streak >= 14 -> if (isThai) "สองสัปดาห์แล้ว เก่งมากที่ทำต่อเนื่อง" else "Two weeks strong — great consistency"
+    streak >= 7 -> if (isThai) "หนึ่งสัปดาห์เต็มแล้ว! บันทึกต่อเนื่องช่วยให้เห็นพัฒนาการลูกชัดเจนขึ้น" else "A full week! Keeping this up makes your child's patterns easier to see"
+    streak >= 3 -> if (isThai) "กำลังไปได้ดี บันทึกวันนี้เพื่อรักษาสถิติต่อไป" else "You're on a roll — log something today to keep it going"
+    else -> if (isThai) "เริ่มต้นได้ดี! บันทึกต่อเนื่องเพื่อสร้างนิสัยที่ดี" else "Great start! Keep logging to build the habit"
 }
 
 @Composable

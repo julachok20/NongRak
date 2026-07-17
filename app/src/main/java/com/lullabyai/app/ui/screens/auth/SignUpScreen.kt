@@ -49,6 +49,7 @@ fun SignUpScreen(
     var agreedToTerms by remember { mutableStateOf(false) }
     var passwordMismatch by remember { mutableStateOf(false) }
     var formError by remember { mutableStateOf<String?>(null) }
+    var captchaToken by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = Modifier
@@ -133,7 +134,11 @@ fun SignUpScreen(
                             singleLine = true, shape = RoundedCornerShape(12.dp),
                             colors = fieldColors()
                         )
+                        if (password.isNotEmpty()) {
+                            PasswordStrengthBar(password, settings.language == AppLanguage.TH)
+                        }
                     }
+
                     LabeledField(s.confirmPassword) {
                         OutlinedTextField(
                             value = confirmPassword, onValueChange = { confirmPassword = it; passwordMismatch = false },
@@ -153,6 +158,11 @@ fun SignUpScreen(
                         )
                         if (passwordMismatch) Text(s.passwordMismatch, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
+
+                    // hCaptcha temporarily disabled — the WebView-based widget renders blank on the
+                    // emulator (GPU compositing bug, GFXSTREAM/Mesa errors in Logcat), blocking
+                    // signup entirely. Re-enable HCaptchaWidget below once verified working on a
+                    // real device. See MEMORY_GRAPH.md for the fix attempts already tried.
 
                     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Checkbox(
@@ -186,7 +196,7 @@ fun SignUpScreen(
                                 !agreedToTerms ->
                                     formError = "กรุณายอมรับข้อตกลงและเงื่อนไขการใช้งานก่อนสมัคร"
                                 else ->
-                                    authViewModel.signUp(email, password, fullName, onSignUpSuccess)
+                                    authViewModel.signUp(email, password, fullName, captchaToken, onSignUpSuccess)
                             }
                         },
                         isLoading = uiState.isLoading,
@@ -248,3 +258,28 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = Primary,
     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
 )
+
+/** Live strength meter below the password field — advisory only, doesn't block submission
+ *  (the 8-char minimum is still enforced separately on submit). */
+@Composable
+internal fun PasswordStrengthBar(password: String, isThai: Boolean) {
+    val result = com.lullabyai.app.util.PasswordStrength.check(password)
+    val (barColor, fraction) = when (result.level) {
+        com.lullabyai.app.util.PasswordStrength.Level.WEAK -> Error to 0.25f
+        com.lullabyai.app.util.PasswordStrength.Level.FAIR -> Color(0xFFEF6C00) to 0.5f
+        com.lullabyai.app.util.PasswordStrength.Level.GOOD -> Color(0xFFFFC107) to 0.75f
+        com.lullabyai.app.util.PasswordStrength.Level.STRONG -> Color(0xFF2E7D32) to 1f
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(100.dp)),
+            color = barColor, trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+        Text(
+            com.lullabyai.app.util.PasswordStrength.label(result.level, isThai) +
+                (if (isThai) " • ใช้ตัวพิมพ์ใหญ่-เล็ก ตัวเลข และสัญลักษณ์เพื่อความปลอดภัยมากขึ้น" else " • Mix upper/lowercase, numbers, and symbols for a stronger password"),
+            style = MaterialTheme.typography.labelSmall, color = barColor
+        )
+    }
+}

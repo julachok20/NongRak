@@ -127,19 +127,30 @@ class NutritionRepository {
     // ---------------- SUMMARY (computed, not stored) ----------------
 
     data class DailySummary(
-        val intakeKcal: Int,
+        val intakeKcal: Int,   // food + milk combined
+        val milkKcal: Int,     // milk's share of intakeKcal, broken out for display
         val burnedKcal: Int,
         val perMeal: Map<String, Int>,   // meal_type -> kcal
         val exerciseMinutes: Int
     )
 
+    /** Breast milk / formula energy density: ~20 kcal per fl oz, the figure commonly cited by the
+     *  AAP / La Leche League — used uniformly regardless of milk_type since we don't distinguish
+     *  brand/composition. A rough estimate, same caveat as the other nutrient targets in this app. */
+    private val MILK_KCAL_PER_ML = 0.676f
+
     suspend fun getDailySummary(childId: String, date: String = today()): DailySummary {
         val foods = getFoodLogs(childId, date)
         val ex = getExerciseLogs(childId, date)
+        val milkMl = getMilkLogs(childId)
+            .filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
+            .sumOf { it.volumeMl }
+        val milkKcal = (milkMl * MILK_KCAL_PER_ML).toInt()
         val perMeal = foods.groupBy { it.mealType }
             .mapValues { (_, items) -> items.sumOf { it.calories ?: 0 } }
         return DailySummary(
-            intakeKcal = foods.sumOf { it.calories ?: 0 },
+            intakeKcal = foods.sumOf { it.calories ?: 0 } + milkKcal,
+            milkKcal = milkKcal,
             burnedKcal = ex.sumOf { it.caloriesBurned ?: 0 },
             perMeal = perMeal,
             exerciseMinutes = ex.sumOf { it.durationMin ?: 0 }

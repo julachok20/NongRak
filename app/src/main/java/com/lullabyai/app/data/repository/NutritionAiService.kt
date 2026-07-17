@@ -30,8 +30,14 @@ object NutritionAiService {
         return if (start in 0 until end) s.substring(start, end + 1) else s
     }
 
-    private suspend fun ask(prompt: String, lang: String, maxTokens: Int = 1024, useSearch: Boolean = false): JsonElement? {
-        val raw = ClaudeClient.generateContent(prompt, useSearch = useSearch, maxTokens = maxTokens, system = sys(lang))
+    private suspend fun ask(
+        prompt: String, lang: String, maxTokens: Int = 1024, useSearch: Boolean = false,
+        imageBase64: String? = null, imageMimeType: String? = null
+    ): JsonElement? {
+        val raw = ClaudeClient.generateContent(
+            prompt, useSearch = useSearch, maxTokens = maxTokens, system = sys(lang),
+            imageBase64 = imageBase64, imageMimeType = imageMimeType
+        )
         return runCatching { json.parseToJsonElement(extractJson(raw)) }.getOrNull()
     }
 
@@ -54,10 +60,16 @@ object NutritionAiService {
      * Estimate kcal AND assign a meal_type for a single typed food, using the time of day.
      * Returns (kcal, mealType in breakfast|lunch|dinner|snack|other). Null on failure.
      */
-    suspend fun estimateFood(item: String, ageMonths: Int, hour: Int, lang: String): Pair<Int, String>? {
-        val prompt = "Estimate calories (kcal) of \"$item\" for the SMALL CHILD-SIZED serving that a " +
-            "$ageMonths-month-old actually eats — a toddler portion is a fraction of an adult portion, " +
-            "so the number should be small (a 0-3 year old's whole day is only ~550-1200 kcal). " +
+    suspend fun estimateFood(item: String, ageMonths: Int, hour: Int, lang: String, portion: String? = null): Pair<Int, String>? {
+        val portionClause = if (!portion.isNullOrBlank()) {
+            "The parent reports the ACTUAL portion eaten as: \"$portion\" — base the kcal estimate on THIS portion size " +
+                "(not a generic default), scaled for a $ageMonths-month-old's typical calorie density for this food. "
+        } else {
+            "No portion was specified, so estimate the SMALL CHILD-SIZED serving that a $ageMonths-month-old " +
+                "actually eats — a toddler portion is a fraction of an adult portion, so the number should be small " +
+                "(a 0-3 year old's whole day is only ~550-1200 kcal). "
+        }
+        val prompt = "Estimate calories (kcal) of \"$item\". $portionClause" +
             "Also assign a meal type given the current hour is $hour (0-23). " +
             "meal must be exactly one of: breakfast, lunch, dinner, snack, other. " +
             "Return JSON exactly: {\"kcal\":int, \"meal\":\"...\"}"
@@ -67,6 +79,33 @@ object NutritionAiService {
             it in setOf("breakfast", "lunch", "dinner", "snack", "other")
         } ?: "other"
         return kcal to meal
+    }
+
+    /** Identifies the food in a photo and estimates its kcal + meal type — same "actual portion vs
+     *  default toddler serving" logic as [estimateFood], but the AI reads the portion from the image
+     *  itself when no [portion] override is given. Null on failure (unreadable image, no food visible). */
+    data class FoodPhotoEstimate(val itemName: String, val kcal: Int, val meal: String)
+
+    suspend fun estimateFoodFromPhoto(imageBase64: String, imageMimeType: String, ageMonths: Int, hour: Int, lang: String, portion: String? = null): FoodPhotoEstimate? {
+        val portionClause = if (!portion.isNullOrBlank()) {
+            "The parent reports the ACTUAL portion eaten as: \"$portion\" — use that portion size, not what the photo alone suggests. "
+        } else {
+            "Estimate the portion size directly from what's visible in the photo (the actual amount on the plate/bowl, " +
+                "not a generic default), scaled for a $ageMonths-month-old's typical calorie density for this food. "
+        }
+        val prompt = "This photo shows a food or meal a young child (0-3 years old) is eating. Identify the dish and " +
+            "estimate its calories (kcal). $portionClause" +
+            "Also assign a meal type given the current hour is $hour (0-23). " +
+            "meal must be exactly one of: breakfast, lunch, dinner, snack, other. " +
+            "If no food is clearly visible, return {\"itemName\":null}. " +
+            "Return JSON exactly: {\"itemName\":\"...\", \"kcal\":int, \"meal\":\"...\"}"
+        val o = ask(prompt, lang, imageBase64 = imageBase64, imageMimeType = imageMimeType)?.objOrNull() ?: return null
+        val name = (o["itemName"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+        val kcal = (o["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
+        val meal = (o["meal"] as? JsonPrimitive)?.contentOrNull?.lowercase()?.takeIf {
+            it in setOf("breakfast", "lunch", "dinner", "snack", "other")
+        } ?: "other"
+        return FoodPhotoEstimate(name, kcal, meal)
     }
 
     data class CalorieCheck(val kcal: Int, val carb: Int, val protein: Int, val fat: Int, val tip: String)
@@ -88,17 +127,37 @@ object NutritionAiService {
         )
     }
 
-    /** Estimated TOTAL macronutrients (grams) for today's foods: Triple(carb, protein, fat). Null on failure. */
-    suspend fun estimateMacros(items: List<String>, ageMonths: Int, lang: String): Triple<Int, Int, Int>? {
+    /** Estimated TOTAL nutrients for today's foods: macros in grams + calcium/iron in mg. */
+    data class MacroEstimate(val carb: Int, val protein: Int, val fat: Int, val calciumMg: Int, val ironMg: Int)
+
+    /** Estimated TOTAL macronutrients + calcium/iron for today's foods. Null on failure. */
+    suspend fun estimateMacros(items: List<String>, ageMonths: Int, lang: String): MacroEstimate? {
         if (items.isEmpty()) return null
         val list = items.joinToString(", ")
-        val prompt = "Estimate the TOTAL macronutrients in grams for these foods eaten by a $ageMonths-month-old child: $list. " +
-            "Return JSON exactly: {\"carb\":int,\"protein\":int,\"fat\":int}"
+        val prompt = "Estimate the TOTAL macronutrients (grams) and calcium/iron (mg) for these foods eaten by a $ageMonths-month-old child: $list. " +
+            "Return JSON exactly: {\"carb\":int,\"protein\":int,\"fat\":int,\"calciumMg\":int,\"ironMg\":int}"
         val o = ask(prompt, lang, useSearch = true)?.objOrNull() ?: return null
         val c = (o["carb"] as? JsonPrimitive)?.intOrNull ?: return null
         val p = (o["protein"] as? JsonPrimitive)?.intOrNull ?: 0
         val f = (o["fat"] as? JsonPrimitive)?.intOrNull ?: 0
-        return Triple(c, p, f)
+        val ca = (o["calciumMg"] as? JsonPrimitive)?.intOrNull ?: 0
+        val fe = (o["ironMg"] as? JsonPrimitive)?.intOrNull ?: 0
+        return MacroEstimate(c, p, f, ca, fe)
+    }
+
+    /** Qualitative status ("ok"|"boost"|"low") for micronutrients not tracked with numeric targets:
+     *  Vitamin A/C/D/B12, Zinc, DHA. Estimated from today's logged foods — a rough AI read, not a lab value. */
+    suspend fun estimateMicronutrients(items: List<String>, ageMonths: Int, lang: String): Map<String, String>? {
+        if (items.isEmpty()) return null
+        val list = items.joinToString(", ")
+        val prompt = "For a $ageMonths-month-old child who today ate: $list — judge whether daily intake of each of " +
+            "these nutrients looks sufficient so far, based ONLY on typical nutrient content of these foods: " +
+            "Vitamin A, Vitamin C, Vitamin D, Vitamin B12, Zinc, DHA/Omega-3. " +
+            "For each, return exactly one of: \"ok\", \"boost\", \"low\". " +
+            "Return JSON exactly: {\"A\":\"...\",\"C\":\"...\",\"D\":\"...\",\"B12\":\"...\",\"Zn\":\"...\",\"DHA\":\"...\"}"
+        val o = ask(prompt, lang, useSearch = true)?.objOrNull() ?: return null
+        val keys = listOf("A", "C", "D", "B12", "Zn", "DHA")
+        return keys.associateWith { k -> (o[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it in setOf("ok", "boost", "low") } ?: "ok" }
     }
 
     /** Estimated calories burned for an activity of [durationMin] by a child of [ageMonths]. Null on failure. */
@@ -123,6 +182,20 @@ object NutritionAiService {
             "Focus on affordable Thai-family staples parents can cook at home (e.g. rice porridge, soft rice, boiled egg, mashed banana/pumpkin, simple vegetable soup, minced pork/rice). " +
             "Do NOT suggest luxury, restaurant, imported, or expensive items (no steak, salmon, cheese boards, fancy desserts, etc.). " +
             "subtitle = one short line on nutrition benefit AND that it is budget-friendly. " +
+            "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\"}]"
+        return parseSuggestions(ask(prompt, lang) ?: return emptyList())
+    }
+
+    /** Recommend dishes targeted at boosting specific nutrients the child is currently short on
+     *  (e.g. "iron", "calcium", "protein", "carbohydrates", "fat"), still low-cost/home-style. */
+    suspend fun recommendMenusForNeeds(needs: List<String>, ageMonths: Int, lang: String): List<SuggestionItem> {
+        if (needs.isEmpty()) return recommendBudgetMenus(ageMonths, lang)
+        val list = needs.joinToString(", ")
+        val prompt = "Suggest 5 simple, LOW-COST, everyday home-style dishes suitable for a $ageMonths-month-old toddler, " +
+            "specifically chosen to help boost intake of: $list. " +
+            "Focus on affordable Thai-family staples parents can cook at home. " +
+            "Do NOT suggest luxury, restaurant, imported, or expensive items. " +
+            "subtitle = one short line naming which of these target nutrients this dish helps with, AND that it is budget-friendly. " +
             "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\"}]"
         return parseSuggestions(ask(prompt, lang) ?: return emptyList())
     }

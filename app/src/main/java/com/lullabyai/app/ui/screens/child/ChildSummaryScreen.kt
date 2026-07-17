@@ -23,7 +23,6 @@ import androidx.core.content.FileProvider
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -42,6 +41,15 @@ internal fun formatDate(iso: String?, isThai: Boolean): String = try {
     val day = p[2].toInt(); val month = p[1].toInt() - 1; val year = p[0].toInt()
     if (isThai) "$day ${THAI_MONTHS[month]} ${year + 543}" else "$day ${ENG_MONTHS[month]} $year"
 } catch (e: Exception) { iso ?: "" }
+
+/** Short bold headline for the AI Analysis card, synthesized from the milestone-achieved percentage
+ *  (there's no separate AI-generated headline field — the mockup pairs the score ring with a title
+ *  line, so this derives one deterministically rather than adding another AI call). */
+internal fun devHeadline(devPercent: Int, isThai: Boolean): String = when {
+    devPercent >= 70 -> if (isThai) "พัฒนาการโดยรวมดีมาก" else "Overall development is excellent"
+    devPercent >= 40 -> if (isThai) "พัฒนาการโดยรวมอยู่ในเกณฑ์ปกติ" else "Overall development is on track"
+    else -> if (isThai) "ควรติดตามพัฒนาการเพิ่มเติม" else "Development needs closer tracking"
+}
 
 /** Human label for a child's sex. Anything that isn't explicitly male/female is shown as "not told"
  *  rather than guessing a gender. Shared across the child screens. */
@@ -69,7 +77,10 @@ fun ChildSummaryScreen(
     val categories = remember(milestones) { milestones.map { it.category }.distinct().take(2) }
 
     LaunchedEffect(child) {
-        child?.let { chatViewModel.loadChildInfoSummary(it, s.isThai) }
+        child?.let {
+            chatViewModel.loadChildInfoSummary(it, s.isThai)
+            chatViewModel.loadChildInfoCardSummary(it, s.isThai)
+        }
     }
 
     // This screen never triggered its own load before (it relied on Dashboard having already
@@ -134,63 +145,43 @@ fun ChildSummaryScreen(
             }
 
             // Profile card (row)
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
               Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(64.dp).clip(CircleShape).background(SecondaryContainer), contentAlignment = Alignment.Center) {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(80.dp).clip(RoundedCornerShape(18.dp)).background(SecondaryContainer), contentAlignment = Alignment.Center) {
                         val avatar = childState.childAvatarSignedUrl
                         if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                         else Text("👶", fontSize = 30.sp)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        // Name + switch-child dropdown ("สลับบัญชี")
-                        var switchOpen by remember { mutableStateOf(false) }
-                        Box {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable { switchOpen = true }
-                            ) {
-                                Text(child?.name ?: (if (s.isThai) "ลูกของคุณ" else "Your child"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.width(4.dp))
-                                Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
-                                    Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(if (s.isThai) "สลับบัญชี" else "Switch", style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
-                                        Icon(Icons.Filled.ArrowDropDown, null, tint = Primary, modifier = Modifier.size(16.dp))
-                                    }
+                        // Name + switch-child trigger ("สลับบัญชี") — opens the bottom sheet below.
+                        var showSwitcherSheet by remember { mutableStateOf(false) }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { showSwitcherSheet = true }
+                        ) {
+                            Text(child?.name ?: (if (s.isThai) "ลูกของคุณ" else "Your child"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(4.dp))
+                            Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
+                                Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (s.isThai) "สลับบัญชี" else "Switch", style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
+                                    Icon(Icons.Filled.ArrowDropDown, null, tint = Primary, modifier = Modifier.size(16.dp))
                                 }
                             }
-                            DropdownMenu(expanded = switchOpen, onDismissRequest = { switchOpen = false }) {
-                                childState.children.forEach { c ->
-                                    DropdownMenuItem(
-                                        text = { Text(c.name + if (c.id == child?.id) "  ✓" else "") },
-                                        onClick = { switchOpen = false; childViewModel.selectChild(c.id) },
-                                        trailingIcon = {
-                                            IconButton(onClick = { switchOpen = false; childToDelete = c }, modifier = Modifier.size(28.dp)) {
-                                                Icon(Icons.Filled.DeleteOutline, if (s.isThai) "ลบเด็ก" else "Delete child", tint = Error, modifier = Modifier.size(18.dp))
-                                            }
-                                        }
-                                    )
-                                }
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Filled.Add, null, tint = Primary) },
-                                    text = { Text(if (s.isThai) "เพิ่มเด็ก" else "Add child", color = Primary, fontWeight = FontWeight.Bold) },
-                                    onClick = {
-                                        switchOpen = false
-                                        navController.navigate(Screen.AddChildChoice.route)
-                                    }
-                                )
-                                child?.let { c ->
-                                    DropdownMenuItem(
-                                        leadingIcon = { Icon(Icons.Filled.SyncAlt, null, tint = Primary) },
-                                        text = { Text(if (s.isThai) "เชิญผู้ปกครองอีกท่าน (สำหรับ ${c.name})" else "Invite another parent (for ${c.name})", color = Primary) },
-                                        onClick = {
-                                            switchOpen = false
-                                            childViewModel.generateInviteCode(c.id)
-                                        }
-                                    )
-                                }
-                            }
+                        }
+                        if (showSwitcherSheet) {
+                            ChildSwitcherSheet(
+                                isThai = s.isThai,
+                                children = childState.children,
+                                activeChildId = child?.id,
+                                childAvatarSignedUrl = childState.childAvatarSignedUrl,
+                                onSelect = { c -> showSwitcherSheet = false; childViewModel.selectChild(c.id) },
+                                onDelete = { c -> showSwitcherSheet = false; childToDelete = c },
+                                onAddChild = { showSwitcherSheet = false; navController.navigate(Screen.AddChildChoice.route) },
+                                onInvite = { c -> showSwitcherSheet = false; childViewModel.generateInviteCode(c.id) },
+                                onDismiss = { showSwitcherSheet = false }
+                            )
                         }
 
                         childState.inviteCode?.let { code ->
@@ -237,9 +228,6 @@ fun ChildSummaryScreen(
                         Text((if (s.isThai) "อายุ " else "Age ") + "${childViewModel.calculateAge(s.isThai)} (" + genderLabel(child?.gender, s.isThai) + ")", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text((if (s.isThai) "วันเกิด " else "Born ") + formatDate(child?.birthdate, s.isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
                     }
-                    IconButton(onClick = { navController.navigate(Screen.EditChild.route) }) {
-                        Icon(Icons.Filled.Edit, null, tint = Primary, modifier = Modifier.size(20.dp))
-                    }
                 }
                 // "Check health data" CTA -> new AI-aggregated summary screen. Merged into the same
                 // card as the avatar/name/age (mockup keeps these in one continuous card boundary),
@@ -255,41 +243,64 @@ fun ChildSummaryScreen(
                 }
               }
             }
+            // Floating edit button (mockup: absolute top-right over the card)
+            IconButton(
+                onClick = { navController.navigate(Screen.EditChild.route) },
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            ) {
+                Icon(Icons.Filled.Edit, null, tint = Outline, modifier = Modifier.size(20.dp))
+            }
+            }
 
-            // AI insight card
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.07f))) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            // AI Analysis card — headline synthesized from the development percentage (no separate
+            // AI field for it), short summary from generateChildInfoCardSummary (distinct from the
+            // fuller text used on the health-check/monthly-summary pages).
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(20.dp))
-                            Text(if (s.isThai) "ข้อมูลเชิงลึกจาก AI" else "AI Insights", style = MaterialTheme.typography.titleSmall, color = Primary, fontWeight = FontWeight.Bold)
+                            Text(if (s.isThai) "การวิเคราะห์จาก AI" else "AI Analysis", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         }
-                        Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.15f)) {
-                            Text(if (s.isThai) "อัปเดตวันนี้" else "Updated today", modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = Primary)
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
-                            CircularProgressIndicator(progress = { devPercent / 100f }, modifier = Modifier.fillMaxSize(), color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant, strokeWidth = 7.dp)
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("$devPercent%", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                Text(if (s.isThai) "พัฒนาการ" else "Development", style = MaterialTheme.typography.labelSmall, color = Outline, fontSize = 8.sp)
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(if (s.isThai) "สรุปภาพรวม" else "Overview", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                            if (chatState.childInfoSummary != null) {
-                                Text(chatState.childInfoSummary!!, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                            } else {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                            }
+                        Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.08f)) {
+                            Text(if (s.isThai) "เรียลไทม์" else "Real-time", modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
                         }
                     }
-                    if (categories.isNotEmpty()) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            categories.forEach { cat ->
-                                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface) {
-                                    Text("#${catLabel(cat, s.isThai)}", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
+                                CircularProgressIndicator(progress = { devPercent / 100f }, modifier = Modifier.fillMaxSize(), color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant, strokeWidth = 7.dp)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("$devPercent%", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Primary)
+                                    Text(if (s.isThai) "คะแนน" else "Score", style = MaterialTheme.typography.labelSmall, color = Outline, fontSize = 8.sp)
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    devHeadline(devPercent, s.isThai),
+                                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
+                                )
+                                if (chatState.childInfoCardSummary != null) {
+                                    Text(chatState.childInfoCardSummary!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else {
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
+                                }
+                            }
+                        }
+                        if (categories.isNotEmpty()) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                categories.forEach { cat ->
+                                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)) {
+                                        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Box(Modifier.size(6.dp).clip(CircleShape).background(Primary))
+                                            Text(catLabel(cat, s.isThai), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -297,11 +308,30 @@ fun ChildSummaryScreen(
                 }
             }
 
+            // Update weight/height banner -> dedicated add-record form (per 27.Growth mockup).
+            Card(
+                onClick = { navController.navigate(Screen.GrowthHistory.route) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = Primary.copy(0.05f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(0.1f))
+            ) {
+                Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.AddTask, null, tint = Primary, modifier = Modifier.size(24.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(if (s.isThai) "อัปเดตน้ำหนักและส่วนสูง" else "Update weight & height", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text(if (s.isThai) "เพื่อให้ AI วิเคราะห์สุขภาพได้อย่างแม่นยำที่สุด" else "So AI can analyze health more accurately", style = MaterialTheme.typography.labelSmall, color = Outline)
+                    }
+                    Icon(Icons.Filled.ChevronRight, null, tint = Primary.copy(0.4f), modifier = Modifier.size(20.dp))
+                }
+            }
+
             // Export-to-doctor PDF
             val context = LocalContext.current
-            OutlinedButton(
+            Card(
                 onClick = {
-                    childViewModel.exportDoctorReport(context, s.isThai) { file, err ->
+                    if (!childState.reportLoading) childViewModel.exportDoctorReport(context, s.isThai) { file, err ->
                         if (file == null) {
                             Toast.makeText(context, (if (s.isThai) "สร้าง PDF ไม่สำเร็จ" else "Couldn't create PDF") + (err?.let { ": $it" } ?: ""), Toast.LENGTH_LONG).show()
                         } else {
@@ -320,24 +350,29 @@ fun ChildSummaryScreen(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(100.dp),
-                enabled = !childState.reportLoading
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(1.dp)
             ) {
-                if (childState.reportLoading) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (s.isThai) "กำลังสร้าง PDF..." else "Generating PDF...")
-                } else {
-                    Icon(Icons.Filled.PictureAsPdf, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (s.isThai) "ส่งออกข้อมูลสรุป (PDF)" else "Export summary (PDF)", fontWeight = FontWeight.Bold)
+                Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Error.copy(0.08f)), contentAlignment = Alignment.Center) {
+                        if (childState.reportLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Error)
+                        else Icon(Icons.Filled.PictureAsPdf, null, tint = Error, modifier = Modifier.size(24.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (childState.reportLoading) (if (s.isThai) "กำลังสร้าง PDF..." else "Generating PDF...")
+                            else (if (s.isThai) "ส่งออกสรุป (PDF)" else "Export summary (PDF)"),
+                            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (s.isThai) "เอกสารสำหรับปรึกษาแพทย์ผู้เชี่ยวชาญ" else "For doctor consultations or your own records",
+                            style = MaterialTheme.typography.labelSmall, color = Outline
+                        )
+                    }
+                    Icon(Icons.Filled.ChevronRight, null, tint = Outline.copy(0.4f), modifier = Modifier.size(20.dp))
                 }
             }
-            Text(
-                if (s.isThai) "เหมาะสำหรับการปรึกษาแพทย์หรือเก็บเป็นประวัติส่วนตัว" else "For doctor consultations or your own records",
-                style = MaterialTheme.typography.labelSmall, color = Outline, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
-            )
 
             // Key info header — ประวัติ opens the full profile-history screen
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -359,13 +394,13 @@ fun ChildSummaryScreen(
                 GrowthStatCard(
                     if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"),
                     (if (s.isThai) weightStatus?.labelTh else weightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
-                    Modifier.weight(1f), statusColor = weightStatus?.color ?: Outline
-                ) { navController.navigate(Screen.GrowthMetrics.route) }
+                    Modifier.weight(1f), statusColor = weightStatus?.color ?: Outline, icon = Icons.Filled.MonitorWeight
+                ) { navController.navigate(Screen.GrowthHistory.route) }
                 GrowthStatCard(
                     if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"),
                     (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
-                    Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline
-                ) { navController.navigate(Screen.GrowthMetrics.route) }
+                    Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline, icon = Icons.Filled.Straighten
+                ) { navController.navigate(Screen.GrowthHistory.route) }
             }
             if (childState.allergies.isNotEmpty()) {
                 // Extra-large radius (mockup gives this card a bigger radius than the rest of the
@@ -424,6 +459,72 @@ fun ChildSummaryScreen(
             confirmButton = { TextButton(onClick = { childViewModel.deleteChild(target.id); childToDelete = null }) { Text(if (s.isThai) "ลบ" else "Delete", color = Error, fontWeight = FontWeight.Bold) } },
             dismissButton = { TextButton(onClick = { childToDelete = null }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
         )
+    }
+}
+
+/** Bottom-sheet child switcher (mockup: replaces the old dropdown). Keeps the same actions the
+ *  dropdown had — select, delete, invite another parent, add child — just in sheet form. */
+@Composable
+private fun ChildSwitcherSheet(
+    isThai: Boolean,
+    children: List<com.lullabyai.app.data.model.Child>,
+    activeChildId: String?,
+    childAvatarSignedUrl: String?,
+    onSelect: (com.lullabyai.app.data.model.Child) -> Unit,
+    onDelete: (com.lullabyai.app.data.model.Child) -> Unit,
+    onAddChild: () -> Unit,
+    onInvite: (com.lullabyai.app.data.model.Child) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (isThai) "เลือกบัญชีลูก" else "Select child", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, null) }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                children.forEach { c ->
+                    val isActive = c.id == activeChildId
+                    Card(
+                        onClick = { onSelect(c) },
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = if (isActive) Primary.copy(0.06f) else MaterialTheme.colorScheme.surface),
+                        border = if (isActive) androidx.compose.foundation.BorderStroke(2.dp, Primary.copy(0.25f)) else null
+                    ) {
+                        Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(SecondaryContainer), contentAlignment = Alignment.Center) {
+                                if (isActive && !childAvatarSignedUrl.isNullOrBlank()) {
+                                    AsyncImage(model = childAvatarSignedUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                } else Text("👶", fontSize = 24.sp)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(c.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (isActive) (if (isThai) "กำลังใช้งาน" else "Active") else genderLabel(c.gender, isThai),
+                                    style = MaterialTheme.typography.labelSmall, color = if (isActive) Primary else Outline, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                            IconButton(onClick = { onInvite(c) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.SyncAlt, if (isThai) "เชิญผู้ปกครอง" else "Invite parent", tint = Primary, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(onClick = { onDelete(c) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Filled.DeleteOutline, if (isThai) "ลบเด็ก" else "Delete child", tint = Error, modifier = Modifier.size(18.dp))
+                            }
+                            if (isActive) Icon(Icons.Filled.CheckCircle, null, tint = Primary, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                }
+                OutlinedButton(
+                    onClick = onAddChild,
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Icon(Icons.Filled.Add, null, tint = Primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isThai) "เพิ่มบัญชีลูก" else "Add child", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
     }
 }
 
@@ -499,18 +600,36 @@ private fun InfoRow(icon: ImageVector, label: String, value: String, status: Str
 }
 
 @Composable
-internal fun GrowthStatCard(label: String, value: String, status: String, modifier: Modifier = Modifier, statusColor: Color = Color(0xFF2E7D32), onClick: () -> Unit) {
+internal fun GrowthStatCard(
+    label: String, value: String, status: String, modifier: Modifier = Modifier,
+    statusColor: Color = Color(0xFF2E7D32), icon: ImageVector = Icons.Filled.MonitorWeight, onClick: () -> Unit
+) {
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Primary)
-            Text(status, style = MaterialTheme.typography.labelSmall, color = statusColor)
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Primary.copy(0.08f)), contentAlignment = Alignment.Center) {
+                    Icon(icon, null, tint = Primary, modifier = Modifier.size(20.dp))
+                }
+                Surface(shape = RoundedCornerShape(100.dp), color = statusColor.copy(0.1f)) {
+                    Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // Only claim "normal" with a checkmark when the status color is actually the
+                        // "normal range" green (see GrowthReference) — otherwise it's a warning, not a pass.
+                        val isNormal = statusColor == Color(0xFF2E7D32)
+                        Icon(if (isNormal) Icons.Filled.Check else Icons.Filled.PriorityHigh, null, tint = statusColor, modifier = Modifier.size(10.dp))
+                        Text(status, style = MaterialTheme.typography.labelSmall, color = statusColor, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    }
+                }
+            }
+            Column {
+                Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Outline, fontWeight = FontWeight.Bold)
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

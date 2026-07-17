@@ -167,6 +167,29 @@ class HealthRepository {
         supabase.from("allergies").delete { filter { eq("id", id) } }
     }
 
+    // ---------------- CHRONIC CONDITIONS ----------------
+
+    suspend fun getChronicConditions(childId: String): Result<List<com.lullabyai.app.data.model.ChronicCondition>> = runCatching {
+        supabase.from("chronic_conditions").select {
+            filter { eq("child_id", childId) }
+            order("recorded_at", Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.ChronicCondition>()
+    }
+
+    suspend fun addChronicCondition(childId: String, name: String, notes: String?): Result<Unit> = runCatching {
+        supabase.from("chronic_conditions").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(childId))
+                put("name", JsonPrimitive(name))
+                put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
+            }
+        )
+    }
+
+    suspend fun deleteChronicCondition(id: String): Result<Unit> = runCatching {
+        supabase.from("chronic_conditions").delete { filter { eq("id", id) } }
+    }
+
     suspend fun getGrowthRecords(childId: String): Result<List<GrowthRecord>> = runCatching {
         supabase.from("growth_records").select {
             filter { eq("child_id", childId) }
@@ -188,6 +211,10 @@ class HealthRepository {
                 record.notes?.let { put("notes", JsonPrimitive(it)) }
             }
         ) { select() }.decodeSingle<GrowthRecord>()
+    }
+
+    suspend fun deleteGrowthRecord(id: String): Result<Unit> = runCatching {
+        supabase.from("growth_records").delete { filter { eq("id", id) } }
     }
 
     // recorded_at alone isn't a reliable sort key — the add-record screen only lets a parent pick a

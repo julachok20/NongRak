@@ -15,12 +15,19 @@ import java.time.temporal.ChronoUnit
 
 /**
  * Runs in the background (WorkManager) to remind parents about upcoming vaccine appointments.
- * Fires a notification 3 days before, 1 day before, and on the due day for each scheduled (not
+ * Fires a notification 3, 2, 1 days before, and on the due day for each scheduled (not
  * completed/skipped) dose. Dedupe markers ("vaccineId:offset") guarantee one notification per offset.
  */
 class VaccineReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
-    private val offsets = listOf(3, 1, 0)   // days-before to notify
+    private val offsets = listOf(3, 2, 1, 0)   // days-before to notify
+
+    // ponytail: static text, not per-vaccine-specific. Same wording already vetted in the
+    // research_chunks RAG corpus ("การดูแลหลังฉีดวัคซีน"). Upgrade to RAG-generated per-vaccine
+    // text later if the generic warning turns out not to be enough.
+    private val postVaccineSymptomWarning =
+        " หลังฉีดวัคซีนอาจมีไข้ต่ำและปวดบริเวณที่ฉีด ซึ่งเป็นเรื่องปกติและหายได้เองใน 1-2 วัน " +
+            "เตรียมเช็ดตัวลดไข้และให้ดื่มน้ำมากๆ ไว้ล่วงหน้า หากไข้สูงควรพบแพทย์"
 
     override suspend fun doWork(): Result {
         // Restore the persisted session (the process may have been cold-started by WorkManager).
@@ -56,10 +63,11 @@ class VaccineReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineW
                     1 -> "พรุ่งนี้"
                     else -> "อีก $days วัน"
                 }
+                val warning = if (days == 2 || days == 1) postVaccineSymptomWarning else ""
                 notifRepo.notify(
                     NotifCategory.SCHEDULE,
                     "เตือนนัดวัคซีน",
-                    "$whenText (${due}) ${child.name} มีนัดวัคซีน ${v.vaccineName}"
+                    "$whenText (${due}) ${child.name} มีนัดวัคซีน ${v.vaccineName}$warning"
                 )
                 newlyReminded += key
             }

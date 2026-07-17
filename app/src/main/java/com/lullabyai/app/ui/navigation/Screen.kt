@@ -22,7 +22,6 @@ sealed class Screen(val route: String) {
     object VaccineBook : Screen("vaccine_book")
     object DiseaseRisk : Screen("disease_risk")
     object WeeklyHealthReport : Screen("weekly_health_report")
-    object GrowthMetrics : Screen("growth_metrics")
     object Settings : Screen("settings")
     object EditProfile : Screen("edit_profile")
     object HelpFaq : Screen("help_faq")
@@ -64,6 +63,7 @@ sealed class Screen(val route: String) {
     object FullMedicationHistory : Screen("full_medication_history")
     object HealthHistory : Screen("health_history")
     object GrowthHistory : Screen("growth_history")
+    object AddGrowthRecord : Screen("add_growth_record")
     object MentalHealthAssessment : Screen("mental_health_assessment")
     object MentalHealthResult : Screen("mental_health_result")
     object ChildAiSummary : Screen("child_ai_summary")
@@ -76,4 +76,6 @@ sealed class Screen(val route: String) {
     object WhoWeightForAgeDetail : Screen("who_weight_for_age_detail")
     object WhoHeightForAgeDetail : Screen("who_height_for_age_detail")
     object MonthlyReport : Screen("monthly_report")
+    object QuickActionSearch : Screen("quick_action_search")
+    object RecommendedFood : Screen("recommended_food")
 }

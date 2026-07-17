@@ -126,11 +126,19 @@ fun ChildAiSummaryScreen(childViewModel: ChildViewModel, chatViewModel: ChatView
                 }
                 item {
                     SummaryTile(Icons.Filled.MedicalServices, if (isThai) "ข้อมูลทางการแพทย์" else "Medical",
-                        buildString {
-                            append(if (child?.bloodGroup != null) "${child.bloodGroup}" else (if (isThai) "ไม่ระบุกรุ๊ปเลือด" else "No blood type"))
-                            append(" · ")
-                            append(chronicCondition?.takeIf { it.isNotBlank() } ?: (if (isThai) "ไม่มีโรคประจำตัว" else "No chronic condition"))
-                        }) { navController.navigate(Screen.AllergyHistory.route) }
+                        if (child?.bloodGroup != null) "${child.bloodGroup}" else (if (isThai) "ไม่ระบุกรุ๊ปเลือด" else "No blood type")
+                    ) { navController.navigate(Screen.EditChild.route) }
+                }
+                item {
+                    SummaryTile(Icons.Filled.Warning, if (isThai) "ภูมิแพ้" else "Allergies",
+                        if (childState.allergies.isEmpty()) (if (isThai) "ไม่มีประวัติแพ้" else "No known allergies")
+                        else "${childState.allergies.size} " + (if (isThai) "รายการ" else "recorded")
+                    ) { navController.navigate(Screen.AllergyHistory.route) }
+                }
+                item {
+                    SummaryTile(Icons.Filled.HealthAndSafety, if (isThai) "โรคประจำตัว" else "Chronic conditions",
+                        chronicCondition?.takeIf { it.isNotBlank() } ?: (if (isThai) "ไม่มีโรคประจำตัว" else "None recorded")
+                    ) { navController.navigate(Screen.EditChild.route) }
                 }
                 item {
                     SummaryTile(Icons.Filled.TrendingUp, if (isThai) "พัฒนาการ" else "Milestones",

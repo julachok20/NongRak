@@ -29,6 +29,7 @@ import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
+import com.lullabyai.app.viewmodel.NutritionViewModel
 import kotlinx.coroutines.launch
 
 private val QUICK_PICKS_ML = listOf(120, 150, 180, 210)
@@ -36,7 +37,7 @@ private val QUICK_PICKS_ML = listOf(120, 150, 180, 210)
 /** Milk feeding log — entry form (breast/formula, volume, side for breastfeeding) plus the history
  *  table the mockup itself didn't include (it was entry-form only, no history view). */
 @Composable
-fun MilkRecordScreen(childViewModel: ChildViewModel, navController: NavController, onBack: () -> Unit) {
+fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val isThai = s.isThai
     val childState by childViewModel.uiState.collectAsState()
@@ -178,6 +179,7 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, navController: NavControlle
                                     repo.addMilkLog(cid, milkType, volumeMl, if (milkType == "breast") side else null, null)
                                     saving = false
                                     reload()
+                                    nutritionViewModel.load(lang)
                                 }
                             },
                             enabled = !saving && childId != null,

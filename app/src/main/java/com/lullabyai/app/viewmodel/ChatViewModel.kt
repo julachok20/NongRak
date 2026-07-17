@@ -24,6 +24,7 @@ data class ChatUiState(
     val error: String? = null,
     val dashboardSummary: String? = null,
     val childInfoSummary: String? = null,
+    val childInfoCardSummary: String? = null,
     val healthAnalysis: String? = null,
     val diseaseRiskAnalysis: String? = null,
     val growthInsight: String? = null,
@@ -357,6 +358,18 @@ class ChatViewModel : ViewModel() {
                 repo.generateChildSummary(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(childInfoSummary = text)
+        }
+    }
+
+    // Short AI card on ข้อมูลลูก ภาพรวม (Child Info overview) — 1-2 sentences, separate from the
+    // fuller childInfoSummary used by the health-check and monthly-summary pages.
+    fun loadChildInfoCardSummary(child: Child, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "child_summary_card_${langTag(isThai)}") {
+                repo.generateChildInfoCardSummary(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(childInfoCardSummary = text)
         }
     }
 

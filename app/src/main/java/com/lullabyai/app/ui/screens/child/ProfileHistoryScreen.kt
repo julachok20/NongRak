@@ -103,8 +103,8 @@ fun ProfileHistoryScreen(
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    GrowthStatCard(if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"), "", Modifier.weight(1f)) { navController.navigate(Screen.GrowthMetrics.route) }
-                    GrowthStatCard(if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"), "", Modifier.weight(1f)) { navController.navigate(Screen.GrowthMetrics.route) }
+                    GrowthStatCard(if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"), "", Modifier.weight(1f)) { navController.navigate(Screen.GrowthHistory.route) }
+                    GrowthStatCard(if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"), "", Modifier.weight(1f)) { navController.navigate(Screen.GrowthHistory.route) }
                 }
                 LinearProgressIndicator(progress = { 0.6f }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(100.dp)), color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

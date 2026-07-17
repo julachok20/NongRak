@@ -36,7 +36,6 @@ import com.lullabyai.app.ui.screens.sleep.SleepScheduleScreen
 import com.lullabyai.app.ui.screens.sleep.SleepGuidanceScreen
 import com.lullabyai.app.ui.screens.common.MaintenanceScreen
 import com.lullabyai.app.ui.screens.dashboard.DashboardScreen
-import com.lullabyai.app.ui.screens.growth.GrowthMetricsScreen
 import com.lullabyai.app.ui.screens.help.HelpFaqScreen
 import com.lullabyai.app.ui.screens.onboarding.AddChildChoiceScreen
 import com.lullabyai.app.ui.screens.onboarding.SyncChildScreen
@@ -281,11 +280,12 @@ fun AppNavigation(
                 onNavigateToVaccine = { navController.navigate(Screen.VaccineBook.route) },
                 onNavigateToDevelopment = { navController.navigate(Screen.ChildDevelopment.route) },
                 onNavigateToHealth = { navController.navigate(Screen.ChildHealth.route) },
-                onNavigateToGrowth = { navController.navigate(Screen.GrowthMetrics.route) },
+                onNavigateToGrowth = { navController.navigate(Screen.GrowthHistory.route) },
                 onNavigateToNutrition = { navController.navigate(Screen.Nutrition.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToHelp = { navController.navigate(Screen.HelpFaq.route) },
                 onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
+                onNavigateToQuickActionSearch = { navController.navigate(Screen.QuickActionSearch.route) },
                 onNavigateToStats = { navController.navigate(Screen.StatisticsInsights.route) },
                 onNavigateToSleep = { navController.navigate(Screen.SleepTracker.route) },
                 onNavigateToAddChild = { navController.navigate(Screen.AddChildChoice.route) },
@@ -383,16 +383,15 @@ fun AppNavigation(
         composable(Screen.SleepGuidance.route) {
             SleepGuidanceScreen(navController = navController, onBack = { navController.popBackStack() }, onCreateSchedule = { navController.navigate(Screen.SleepSchedule.route) })
         }
-        composable(Screen.GrowthMetrics.route) {
-            androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("growth") }
-            GrowthMetricsScreen(
-                childViewModel, chatViewModel, navController,
-                onBack = { navController.popBackStack() },
-                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
-            )
-        }
         composable(Screen.GrowthHistory.route) {
+            androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("growth") }
             com.lullabyai.app.ui.screens.growth.GrowthHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.AddGrowthRecord.route) {
+            com.lullabyai.app.ui.screens.growth.AddGrowthRecordScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.QuickActionSearch.route) {
+            com.lullabyai.app.ui.screens.search.QuickActionSearchScreen(navController, isThai = lang == "th") { navController.popBackStack() }
         }
         composable(Screen.WhoWeightForAgeDetail.route) {
             com.lullabyai.app.ui.screens.growth.WhoWeightForAgeDetailScreen(childViewModel, navController)
@@ -401,7 +400,7 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.growth.WhoHeightForAgeDetailScreen(childViewModel, navController)
         }
         composable(Screen.NutritionInsights.route) {
-            com.lullabyai.app.ui.screens.stats.NutritionInsightsScreen(childViewModel, chatViewModel, navController)
+            com.lullabyai.app.ui.screens.stats.NutritionInsightsScreen(nutritionViewModel, childViewModel, chatViewModel, navController)
         }
         composable(Screen.SleepActivityInsights.route) {
             com.lullabyai.app.ui.screens.stats.SleepActivityInsightsScreen(childViewModel, chatViewModel, navController)
@@ -443,7 +442,7 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.settings.MedicalDataVaultScreen(childViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.MilkRecord.route) {
-            com.lullabyai.app.ui.screens.nutrition.MilkRecordScreen(childViewModel, navController) { navController.popBackStack() }
+            com.lullabyai.app.ui.screens.nutrition.MilkRecordScreen(childViewModel, nutritionViewModel, lang, navController) { navController.popBackStack() }
         }
         composable(Screen.HelpFaq.route) {
             HelpFaqScreen(navController = navController, onBack = { navController.popBackStack() })
@@ -525,6 +524,9 @@ fun AppNavigation(
         }
         composable(Screen.EditFoodEntries.route) {
             EditFoodEntriesScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+        }
+        composable(Screen.RecommendedFood.route) {
+            com.lullabyai.app.ui.screens.nutrition.RecommendedFoodScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
         }
         composable(Screen.Exercise.route) {
             ExerciseScreen(nutritionViewModel, lang, navController)

@@ -86,6 +86,7 @@ fun ForceChangePasswordScreen(
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     PasswordField("รหัสผ่านใหม่ (New Password)", newPass) { newPass = it }
+                    if (newPass.isNotEmpty()) PasswordStrengthBar(newPass, isThai = true)
                     PasswordField("ยืนยันรหัสผ่านใหม่ (Confirm Password)", confirm) { confirm = it }
 
                     if (error != null) {

@@ -178,6 +178,79 @@ fun ChildHealthScreen(
                 }
             }
 
+            // Chronic conditions — inline add/delete (no edit; delete + re-add covers corrections
+            // for a short name field, matching what was actually asked for).
+            item {
+                var newConditionName by remember { mutableStateOf("") }
+                var conditionToDelete by remember { mutableStateOf<com.lullabyai.app.data.model.ChronicCondition?>(null) }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(modifier = Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(Primary.copy(0.12f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.HealthAndSafety, null, tint = Primary, modifier = Modifier.size(16.dp))
+                            }
+                            Text(if (s.isThai) "โรคประจำตัว" else "Chronic conditions", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        }
+                        if (childState.chronicConditions.isEmpty()) {
+                            Text(if (s.isThai) "ยังไม่มีข้อมูลโรคประจำตัว" else "No chronic conditions recorded yet", style = MaterialTheme.typography.bodySmall, color = Outline)
+                        } else {
+                            childState.chronicConditions.forEach { cc ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Primary.copy(0.06f)).padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Primary))
+                                    Text(cc.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { conditionToDelete = cc }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Filled.DeleteOutline, if (s.isThai) "ลบ" else "Delete", tint = Error, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = newConditionName, onValueChange = { newConditionName = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text(if (s.isThai) "เช่น หอบหืด, ภูมิแพ้อากาศ" else "e.g. Asthma", color = Outline) },
+                                singleLine = true, shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary)
+                            )
+                            IconButton(
+                                onClick = {
+                                    if (newConditionName.isNotBlank()) {
+                                        childViewModel.addChronicCondition(newConditionName.trim(), null)
+                                        newConditionName = ""
+                                    }
+                                },
+                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(Primary)
+                            ) {
+                                Icon(Icons.Filled.Add, if (s.isThai) "เพิ่ม" else "Add", tint = Color.White)
+                            }
+                        }
+                    }
+                }
+
+                conditionToDelete?.let { target ->
+                    AlertDialog(
+                        onDismissRequest = { conditionToDelete = null },
+                        icon = { Icon(Icons.Filled.DeleteOutline, null, tint = Error) },
+                        title = { Text(if (s.isThai) "ลบโรคประจำตัว?" else "Delete chronic condition?", fontWeight = FontWeight.Bold) },
+                        text = { Text(if (s.isThai) "ต้องการลบ \"${target.name}\" หรือไม่?" else "Remove \"${target.name}\"?") },
+                        confirmButton = {
+                            TextButton(onClick = { childViewModel.deleteChronicCondition(target.id); conditionToDelete = null }) {
+                                Text(if (s.isThai) "ลบ" else "Delete", color = Error, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = { TextButton(onClick = { conditionToDelete = null }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
+                    )
+                }
+            }
+
             // Vaccine progress summary
             item {
                 val total = vaccines.size

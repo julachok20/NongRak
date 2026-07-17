@@ -27,24 +27,24 @@ class AuthViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState
 
-    fun signUp(email: String, password: String, fullName: String, onSuccess: () -> Unit) {
+    fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
-            repo.signUp(email, password, fullName)
+            repo.signUp(email, password, fullName, captchaToken)
                 .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
                 .onFailure { _uiState.value = AuthUiState(error = friendlyAuthError(it.message)) }
         }
     }
 
     /** onSuccess reports whether the account must change its (temporary) password before continuing. */
-    fun signIn(email: String, password: String, onSuccess: (mustChangePassword: Boolean) -> Unit) {
+    fun signIn(email: String, password: String, captchaToken: String? = null, onSuccess: (mustChangePassword: Boolean) -> Unit) {
         viewModelScope.launch {
             if (email.isBlank() || password.isBlank()) {
                 _uiState.value = AuthUiState(error = "กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน")
                 return@launch
             }
             _uiState.value = AuthUiState(isLoading = true)
-            repo.signIn(email, password)
+            repo.signIn(email, password, captchaToken)
                 .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess(repo.mustChangePassword()) }
                 .onFailure { _uiState.value = AuthUiState(error = friendlyAuthError(it.message)) }
         }

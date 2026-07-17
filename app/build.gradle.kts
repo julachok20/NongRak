@@ -20,7 +20,7 @@ android {
         applicationId = "com.publish.NongRak"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
+        versionCode = 10
         versionName = "1.0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -32,6 +32,9 @@ android {
         buildConfigField("String", "MEDGEMMA_TOKEN", "\"${localProps["MEDGEMMA_TOKEN"] ?: ""}\"")
         buildConfigField("String", "MEDGEMMA_MODEL", "\"${localProps["MEDGEMMA_MODEL"] ?: ""}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProps["GOOGLE_WEB_CLIENT_ID"]}\"")
+        // hCaptcha SITE key only (public by design) — the secret key lives solely in Supabase's
+        // Auth "Bot and Abuse Protection" setting, never in the app.
+        buildConfigField("String", "HCAPTCHA_SITE_KEY", "\"${localProps["HCAPTCHA_SITE_KEY"] ?: ""}\"")
 
         manifestPlaceholders["supabaseRedirectScheme"] = "lullabyai"
     }

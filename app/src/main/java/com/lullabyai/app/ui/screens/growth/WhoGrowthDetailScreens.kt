@@ -96,7 +96,7 @@ private fun WhoGrowthDetailScreen(childViewModel: ChildViewModel, navController:
 
             item {
                 Button(
-                    onClick = { navController.navigate(Screen.GrowthMetrics.route) },
+                    onClick = { navController.navigate(Screen.GrowthHistory.route) },
                     modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(100.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary)
                 ) {

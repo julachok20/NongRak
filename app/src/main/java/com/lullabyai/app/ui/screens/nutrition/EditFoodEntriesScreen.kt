@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,6 +23,14 @@ import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
 import java.time.LocalDate
+
+private fun mealLabel(key: String, isThai: Boolean) = when (key) {
+    "breakfast" -> if (isThai) "มื้อเช้า" else "Breakfast"
+    "lunch" -> if (isThai) "มื้อกลางวัน" else "Lunch"
+    "dinner" -> if (isThai) "มื้อเย็น" else "Dinner"
+    "snack" -> if (isThai) "ของว่าง" else "Snack"
+    else -> if (isThai) "อื่นๆ" else "Other"
+}
 
 @Composable
 fun EditFoodEntriesScreen(vm: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
@@ -95,6 +104,7 @@ fun EditFoodEntriesScreen(vm: NutritionViewModel, lang: String, navController: N
                                 Icon(Icons.Filled.Restaurant, null, tint = Primary, modifier = Modifier.size(22.dp))
                             }
                             Column(Modifier.weight(1f)) {
+                                Text(mealLabel(f.mealType, isThai), style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
                                 Text(f.itemName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 val time = com.lullabyai.app.util.TimeUtils.localTime(f.createdAt) ?: ""
                                 Text((if (time.isNotBlank()) "$time " + (if (isThai) "น." else "") + " • " else "") + "${f.calories ?: "-"} " + (if (isThai) "แคลอรี่" else "kcal"),
@@ -111,6 +121,30 @@ fun EditFoodEntriesScreen(vm: NutritionViewModel, lang: String, navController: N
                 }
             }
 
+            item {
+                val target = ui.targetKcal.coerceAtLeast(1)
+                val pct = (total.toFloat() / target).coerceIn(0f, 1f)
+                val remaining = (ui.targetKcal - total).coerceAtLeast(0)
+                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Primary)) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (isThai) "สรุปแคลอรี่รวมวันนี้" else "Today's total calories", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                            Surface(shape = RoundedCornerShape(100.dp), color = Color.White.copy(0.2f)) {
+                                Text((if (isThai) "เป้าหมาย: " else "Target: ") + "${ui.targetKcal} kcal", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("$total", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(" / ${ui.targetKcal} kcal", color = Color.White.copy(0.8f), style = MaterialTheme.typography.bodyMedium)
+                        }
+                        LinearProgressIndicator(
+                            progress = { pct }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(100.dp)),
+                            color = Color.White, trackColor = Color.White.copy(0.2f)
+                        )
+                        Text(if (isThai) "เหลืออีก $remaining kcal" else "$remaining kcal left", color = Color.White.copy(0.85f), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
             item {
                 OutlinedButton(onClick = { navController.navigate(Screen.CalorieCalculator.route) }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(100.dp)) {
                     Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))

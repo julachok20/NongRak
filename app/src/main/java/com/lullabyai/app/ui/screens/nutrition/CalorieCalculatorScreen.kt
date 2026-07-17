@@ -1,6 +1,11 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.nutrition
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,23 +22,56 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.NavController
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
+import java.io.ByteArrayOutputStream
 
 @Composable
 fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
     val isThai = lang.startsWith("th")
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
+    var portion by remember { mutableStateOf("") }
+    var spilled by remember { mutableStateOf(false) }
+    var spillFraction by remember { mutableStateOf(0f) }
     var showExercise by remember { mutableStateOf(false) }
     var exName by remember { mutableStateOf("") }
     var exMinutes by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { if (ui.child == null) vm.load(lang) }
+
+    LaunchedEffect(ui.photoAddFailed) {
+        if (ui.photoAddFailed) {
+            Toast.makeText(context, if (isThai) "ไม่พบอาหารในรูปภาพ ลองถ่ายใหม่อีกครั้ง" else "No food recognized in the photo — try again", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun bitmapToJpeg(bmp: Bitmap): ByteArray = ByteArrayOutputStream().use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, 80, out); out.toByteArray() }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
+        if (bmp != null) {
+            vm.addFoodFromPhoto(bitmapToJpeg(bmp), lang, portion, spillFraction)
+            portion = ""; spilled = false; spillFraction = 0f
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) cameraLauncher.launch(null)
+        else Toast.makeText(context, if (isThai) "ต้องอนุญาตให้ใช้กล้องก่อน" else "Camera permission is needed", Toast.LENGTH_SHORT).show()
+    }
+    val openCamera = {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            cameraLauncher.launch(null)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     val totalKcal = ui.foods.sumOf { it.calories ?: 0 }
 
@@ -86,8 +124,66 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
                             singleLine = true, shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
                         )
-                        Button(onClick = { if (query.isNotBlank()) { vm.addFoodSmart(query, lang); query = "" } }, shape = RoundedCornerShape(12.dp), enabled = !ui.calculating, colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                        Button(
+                            onClick = {
+                                if (query.isNotBlank()) {
+                                    vm.addFoodSmart(query, lang, portion, spillFraction)
+                                    query = ""; portion = ""; spilled = false; spillFraction = 0f
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp), enabled = !ui.calculating, colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                        ) {
                             Text(if (isThai) "เพิ่ม" else "Add", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = portion, onValueChange = { portion = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(if (isThai) "ปริมาณที่ทาน" else "Portion eaten", color = Outline) },
+                        placeholder = { Text(if (isThai) "เช่น 1 ถ้วย, 100 กรัม" else "e.g. 1 cup, 100g", color = Outline) },
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
+                    )
+
+                    OutlinedButton(
+                        onClick = { openCamera() },
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), enabled = !ui.calculating
+                    ) {
+                        Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                        Text(if (isThai) "ถ่ายรูปอาหาร ให้ AI คำนวณให้" else "Take a photo — AI calculates for you", fontWeight = FontWeight.Bold)
+                    }
+
+                    Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.3f))) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(Icons.Filled.ErrorOutline, null, tint = Primary, modifier = Modifier.size(20.dp))
+                                Text(if (isThai) "น้องทำหกหรือไม่?" else "Did your child spill it?", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Switch(
+                                    checked = spilled,
+                                    onCheckedChange = { spilled = it; if (!it) spillFraction = 0f },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Primary)
+                                )
+                            }
+                            if (spilled) {
+                                Text(if (isThai) "น้องทานหกหรือคายทิ้งประมาณเท่าไหร่?" else "About how much did they spill or spit out?", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val options = listOf(
+                                    Triple(0.15f, if (isThai) "เล็กน้อย" else "A little", if (isThai) "~15%" else "~15%"),
+                                    Triple(0.5f, if (isThai) "ประมาณครึ่งหนึ่ง" else "About half", if (isThai) "~50%" else "~50%"),
+                                    Triple(0.8f, if (isThai) "เกือบทั้งหมด" else "Almost all", if (isThai) "~80%" else "~80%")
+                                )
+                                options.forEach { (frac, label, pct) ->
+                                    OutlinedButton(
+                                        onClick = { spillFraction = frac },
+                                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                                        colors = if (spillFraction == frac) ButtonDefaults.outlinedButtonColors(containerColor = Primary.copy(0.1f), contentColor = Primary) else ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    ) {
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text(label); Text(pct, color = Outline, style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 

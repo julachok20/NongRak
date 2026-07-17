@@ -11,7 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Height
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MonitorWeight
@@ -68,6 +68,7 @@ fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
     val child = childState.child
     val records = childState.growthRecords // newest-first
     val ageMonthsNow = childViewModel.getAgeMonths()
+    var recordToDelete by remember { mutableStateOf<GrowthRecord?>(null) }
 
     val latestWeight = records.firstOrNull { it.weightKg != null }
     val latestHeight = records.firstOrNull { it.heightCm != null }
@@ -136,7 +137,7 @@ fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(if (isThai) "บันทึกประวัติ" else "History", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { navController.navigate(Screen.GrowthMetrics.route) }) {
+                    TextButton(onClick = { navController.navigate(Screen.AddGrowthRecord.route) }) {
                         Icon(Icons.Filled.AddCircle, null, tint = Primary, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(if (isThai) "เพิ่มข้อมูล" else "Add data", color = Primary, fontWeight = FontWeight.Bold)
@@ -156,10 +157,25 @@ fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
                     val severity = listOfNotNull(weightStatus, heightStatus).maxByOrNull {
                         when (it.color) { Color(0xFFC62828) -> 2; Color(0xFFEF6C00) -> 1; else -> 0 }
                     }
-                    GrowthRecordRow(r, ageMonths, weightStatus, heightStatus, severity, isThai)
+                    GrowthRecordRow(r, ageMonths, weightStatus, heightStatus, severity, isThai) { recordToDelete = r }
                 }
             }
         }
+    }
+
+    recordToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { recordToDelete = null },
+            icon = { Icon(Icons.Filled.Delete, null, tint = Error) },
+            title = { Text(if (isThai) "ลบบันทึกนี้?" else "Delete this record?", fontWeight = FontWeight.Bold) },
+            text = { Text(if (isThai) "ไม่สามารถย้อนกลับได้หลังจากลบ" else "This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = { childViewModel.deleteGrowthRecord(target.id); recordToDelete = null }) {
+                    Text(if (isThai) "ลบ" else "Delete", color = Error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { recordToDelete = null }) { Text(if (isThai) "ยกเลิก" else "Cancel") } }
+        )
     }
 }
 
@@ -197,7 +213,7 @@ private fun GrowthStatBentoCard(
 private fun GrowthRecordRow(
     r: GrowthRecord, ageMonths: Int,
     weightStatus: GrowthReference.GrowthStatus?, heightStatus: GrowthReference.GrowthStatus?,
-    severity: GrowthReference.GrowthStatus?, isThai: Boolean
+    severity: GrowthReference.GrowthStatus?, isThai: Boolean, onDelete: () -> Unit
 ) {
     val borderColor = severity?.color ?: Color(0xFF2E7D32)
     val flagged = severity != null && severity.color != Color(0xFF2E7D32)
@@ -217,8 +233,8 @@ private fun GrowthRecordRow(
                         }
                         Text(com.lullabyai.app.util.TimeUtils.localDate(r.recordedAt) ?: "", style = MaterialTheme.typography.labelSmall, color = Outline)
                     }
-                    IconButton(onClick = {}, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.Edit, null, tint = Outline, modifier = Modifier.size(18.dp))
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Delete, null, tint = Outline, modifier = Modifier.size(18.dp))
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)

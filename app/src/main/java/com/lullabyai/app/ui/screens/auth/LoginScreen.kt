@@ -48,6 +48,7 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+    var captchaToken by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(uiState.error) {
         if (uiState.error != null) {
@@ -153,6 +154,11 @@ fun LoginScreen(
                         )
                     }
 
+                    // hCaptcha temporarily disabled — the WebView-based widget renders blank on the
+                    // emulator (GPU compositing bug, GFXSTREAM/Mesa errors in Logcat), blocking
+                    // login entirely. Re-enable HCaptchaWidget below once verified working on a
+                    // real device. See MEMORY_GRAPH.md for the fix attempts already tried.
+
                     uiState.error?.let {
                         Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
@@ -160,7 +166,7 @@ fun LoginScreen(
                     PrimaryButton(
                         text = s.login,
                         onClick = {
-                            authViewModel.signIn(email, password) { mustChange ->
+                            authViewModel.signIn(email, password, captchaToken) { mustChange ->
                                 if (mustChange) onNeedChangePassword() else onLoginSuccess()
                             }
                         },

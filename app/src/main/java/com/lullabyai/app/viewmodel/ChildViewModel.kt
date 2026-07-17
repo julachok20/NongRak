@@ -3,6 +3,7 @@ package com.lullabyai.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lullabyai.app.data.model.Allergy
+import com.lullabyai.app.data.model.ChronicCondition
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.DevelopmentMilestone
 import com.lullabyai.app.data.model.GrowthRecord
@@ -29,6 +30,7 @@ data class ChildUiState(
     val growthRecords: List<GrowthRecord> = emptyList(),
     val healthRecords: List<HealthRecord> = emptyList(),
     val allergies: List<Allergy> = emptyList(),
+    val chronicConditions: List<ChronicCondition> = emptyList(),
     val milestones: List<DevelopmentMilestone> = emptyList(),
     val aiTasks: List<AiTask> = emptyList(),
     val tasksLoading: Boolean = false,
@@ -434,6 +436,11 @@ class ChildViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(allergies = it)
             }
         }
+        viewModelScope.launch {
+            healthRepo.getChronicConditions(childId).onSuccess {
+                _uiState.value = _uiState.value.copy(chronicConditions = it)
+            }
+        }
     }
 
     private fun reloadAllergies() {
@@ -490,6 +497,26 @@ class ChildViewModel : ViewModel() {
     fun deleteAllergy(id: String) {
         viewModelScope.launch {
             healthRepo.deleteAllergy(id).onSuccess { reloadAllergies() }
+        }
+    }
+
+    private fun reloadChronicConditions() {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            healthRepo.getChronicConditions(childId).onSuccess { _uiState.value = _uiState.value.copy(chronicConditions = it) }
+        }
+    }
+
+    fun addChronicCondition(name: String, notes: String?) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            healthRepo.addChronicCondition(childId, name, notes).onSuccess { reloadChronicConditions() }
+        }
+    }
+
+    fun deleteChronicCondition(id: String) {
+        viewModelScope.launch {
+            healthRepo.deleteChronicCondition(id).onSuccess { reloadChronicConditions() }
         }
     }
 
@@ -799,6 +826,17 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             healthRepo.addGrowthRecord(record.copy(childId = childId)).onSuccess {
+                healthRepo.getGrowthRecords(childId).onSuccess {
+                    _uiState.value = _uiState.value.copy(growthRecords = it)
+                }
+            }
+        }
+    }
+
+    fun deleteGrowthRecord(id: String) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            healthRepo.deleteGrowthRecord(id).onSuccess {
                 healthRepo.getGrowthRecords(childId).onSuccess {
                     _uiState.value = _uiState.value.copy(growthRecords = it)
                 }

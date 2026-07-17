@@ -218,6 +218,16 @@ data class GrowthRecord(
 )
 
 @Serializable
+data class ChronicCondition(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    val name: String = "",
+    val notes: String? = null,
+    @SerialName("recorded_at") val recordedAt: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
 data class Allergy(
     val id: String = "",
     @SerialName("child_id") val childId: String = "",
