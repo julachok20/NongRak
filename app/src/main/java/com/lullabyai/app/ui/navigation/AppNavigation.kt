@@ -1,7 +1,10 @@
 package com.lullabyai.app.ui.navigation
 
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -100,14 +103,16 @@ fun AppNavigation(
             .background(MaterialTheme.colorScheme.background)
             .imePadding()
     ) {
+    // Slide (not crossfade) so two differently-themed screen backgrounds (e.g. onboarding's forced
+    // light theme vs. the rest of the app in dark mode) never alpha-blend into a visible flash —
+    // each screen stays fully opaque and simply slides, only briefly exposing the themed Box behind.
     NavHost(
         navController = navController,
         startDestination = startDestination,
-        // No cross-fade flash: instant transitions on a themed background
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None }
+        enterTransition = { slideInHorizontally(tween(220), initialOffsetX = { it / 4 }) + fadeIn(tween(220)) },
+        exitTransition = { slideOutHorizontally(tween(220), targetOffsetX = { -it / 4 }) + fadeOut(tween(220)) },
+        popEnterTransition = { slideInHorizontally(tween(220), initialOffsetX = { -it / 4 }) + fadeIn(tween(220)) },
+        popExitTransition = { slideOutHorizontally(tween(220), targetOffsetX = { it / 4 }) + fadeOut(tween(220)) }
     ) {
         composable(Screen.Welcome.route) {
             NongRakTheme(darkTheme = false) {
