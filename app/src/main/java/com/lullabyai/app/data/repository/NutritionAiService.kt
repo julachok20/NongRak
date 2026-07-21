@@ -108,7 +108,7 @@ object NutritionAiService {
         return FoodPhotoEstimate(name, kcal, meal)
     }
 
-    data class CalorieCheck(val kcal: Int, val carb: Int, val protein: Int, val fat: Int, val tip: String)
+    data class CalorieCheck(val kcal: Int, val carb: Int, val protein: Int, val fat: Int, val tip: String, val itemName: String? = null)
 
     /** Parent-facing quick calorie check for any typed dish/meal: total kcal + macros + one tip. */
     suspend fun calorieCheck(food: String, lang: String): CalorieCheck? {
@@ -124,6 +124,27 @@ object NutritionAiService {
             protein = (o["protein"] as? JsonPrimitive)?.intOrNull ?: 0,
             fat = (o["fat"] as? JsonPrimitive)?.intOrNull ?: 0,
             tip = o.str("tip")
+        )
+    }
+
+    /** Same as [calorieCheck] but the dish is identified from a photo instead of typed text.
+     *  Null if no food is clearly visible in the photo. */
+    suspend fun calorieCheckFromPhoto(imageBase64: String, imageMimeType: String, lang: String): CalorieCheck? {
+        val prompt = "This photo shows a food or meal a young child (0-3 years old) is eating. Identify the dish, " +
+            "then estimate the TOTAL calories (kcal) and macronutrients in grams for it. " +
+            "Also give ONE short, practical healthy-eating tip. " +
+            "If no food is clearly visible, return {\"itemName\":null}. " +
+            "Return JSON exactly: {\"itemName\":\"...\",\"kcal\":int,\"carb\":int,\"protein\":int,\"fat\":int,\"tip\":\"...\"}"
+        val o = ask(prompt, lang, imageBase64 = imageBase64, imageMimeType = imageMimeType)?.objOrNull() ?: return null
+        val name = (o["itemName"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+        val kcal = (o["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
+        return CalorieCheck(
+            kcal = kcal,
+            carb = (o["carb"] as? JsonPrimitive)?.intOrNull ?: 0,
+            protein = (o["protein"] as? JsonPrimitive)?.intOrNull ?: 0,
+            fat = (o["fat"] as? JsonPrimitive)?.intOrNull ?: 0,
+            tip = o.str("tip"),
+            itemName = name
         )
     }
 

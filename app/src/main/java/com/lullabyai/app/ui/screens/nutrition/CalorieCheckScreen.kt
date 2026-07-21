@@ -1,6 +1,12 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.nutrition
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -22,6 +29,7 @@ import coil.compose.AsyncImage
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
+import java.io.ByteArrayOutputStream
 
 /**
  * Parent-facing calorie check (design: 06.Re-Nutrition/calorie_check_ai_calculation).
@@ -31,8 +39,33 @@ import com.lullabyai.app.viewmodel.NutritionViewModel
 fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
     val isThai = lang.startsWith("th")
+    val context = LocalContext.current
     var food by remember { mutableStateOf("") }
     val r = ui.calorieCheck
+
+    // Photo-check fills the food field with the AI-identified dish name, same as a typed check.
+    LaunchedEffect(ui.checkedFood) { if (ui.checkedFood.isNotBlank()) food = ui.checkedFood }
+    LaunchedEffect(ui.checkPhotoFailed) {
+        if (ui.checkPhotoFailed) {
+            Toast.makeText(context, if (isThai) "ไม่พบอาหารในรูปภาพ ลองถ่ายใหม่อีกครั้ง" else "No food recognized in the photo — try again", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun bitmapToJpeg(bmp: Bitmap): ByteArray = ByteArrayOutputStream().use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, 80, out); out.toByteArray() }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
+        if (bmp != null) vm.runCalorieCheckFromPhoto(bitmapToJpeg(bmp), lang)
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) cameraLauncher.launch(null)
+        else Toast.makeText(context, if (isThai) "ต้องอนุญาตให้ใช้กล้องก่อน" else "Camera permission is needed", Toast.LENGTH_SHORT).show()
+    }
+    val openCamera = {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            cameraLauncher.launch(null)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -75,6 +108,13 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
             ) {
                 if (ui.checkLoading) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White); Spacer(Modifier.width(8.dp)) }
                 Text(if (isThai) "ให้ AI คำนวณ" else "Let AI calculate", fontWeight = FontWeight.Bold)
+            }
+            OutlinedButton(
+                onClick = { openCamera() },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), enabled = !ui.checkLoading
+            ) {
+                Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text(if (isThai) "ถ่ายรูปอาหาร ให้ AI คำนวณให้" else "Take a photo — AI calculates for you", fontWeight = FontWeight.Bold)
             }
 
             Text(if (isThai) "ผลลัพธ์การคำนวณ" else "Result", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)

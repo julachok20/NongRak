@@ -48,6 +48,7 @@ data class NutritionUiState(
     val calorieCheck: NutritionAiService.CalorieCheck? = null,
     val checkedFood: String = "",
     val checkLoading: Boolean = false,
+    val checkPhotoFailed: Boolean = false,  // last calorie-check photo couldn't identify a food
     val recipe: RecipeContent? = null,
     val recipeLoading: Boolean = false,
     val exercise: ExerciseContent? = null,
@@ -308,6 +309,20 @@ class NutritionViewModel : ViewModel() {
             _ui.value = _ui.value.copy(checkLoading = true, checkedFood = food.trim())
             val r = NutritionAiService.calorieCheck(food.trim(), lang)
             _ui.value = _ui.value.copy(calorieCheck = r, checkLoading = false)
+        }
+    }
+
+    /** Same as [runCalorieCheck] but the dish is identified from a camera photo (base64 JPEG). */
+    fun runCalorieCheckFromPhoto(imageBytes: ByteArray, lang: String) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(checkLoading = true, checkPhotoFailed = false)
+            val imageBase64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
+            val r = NutritionAiService.calorieCheckFromPhoto(imageBase64, "image/jpeg", lang)
+            if (r == null) {
+                _ui.value = _ui.value.copy(checkLoading = false, checkPhotoFailed = true)
+                return@launch
+            }
+            _ui.value = _ui.value.copy(calorieCheck = r, checkedFood = r.itemName ?: "", checkLoading = false)
         }
     }
 
