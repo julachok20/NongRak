@@ -22,7 +22,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lullabyai.app.data.settings.AppLanguage
-import com.lullabyai.app.ui.components.HCaptchaWidget
+import com.lullabyai.app.ui.components.HCaptchaVerifyButton
 import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
@@ -160,7 +160,7 @@ fun LoginScreen(
                     // device (the WebView GPU-compositing bug it once hit on some emulators —
                     // HCaptchaWidget already forces software rendering to work around that) login
                     // still goes through with a null token instead of locking anyone out.
-                    HCaptchaWidget(onTokenChange = { captchaToken = it })
+                    HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
 
                     uiState.error?.let {
                         Text(it, color = Error, style = MaterialTheme.typography.bodySmall)

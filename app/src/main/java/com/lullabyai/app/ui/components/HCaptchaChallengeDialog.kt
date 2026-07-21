@@ -7,23 +7,90 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import com.lullabyai.app.BuildConfig
+import com.lullabyai.app.ui.theme.Primary
 
 /**
- * Inline hCaptcha checkbox widget — embedded directly in the form (not a popup dialog), same as
- * the standard "I'm not a robot" checkbox. [onTokenChange] fires with the verification token
- * once checked, and with null again if the challenge expires — callers should gate their submit
- * button on `token != null` rather than firing once and forgetting.
+ * hCaptcha entry point for a form: a plain button, not an inline widget. An earlier version
+ * embedded the WebView directly in the form at a fixed 100dp height — fine for the plain checkbox
+ * pass-through, but hCaptcha's actual image-challenge popup (triggered whenever it doesn't trust a
+ * plain click) needs far more room and was getting clipped/"out of frame" inside that small box.
+ * Tapping this button opens the WebView in a proper full-size [Dialog] instead, where the challenge
+ * has space to render.
+ */
+@Composable
+fun HCaptchaVerifyButton(token: String?, onTokenChange: (String?) -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    val verified = token != null
+
+    OutlinedButton(
+        onClick = { showDialog = true },
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (verified) ButtonDefaults.outlinedButtonColors(contentColor = Primary) else ButtonDefaults.outlinedButtonColors()
+    ) {
+        Icon(if (verified) Icons.Filled.CheckCircle else Icons.Filled.VerifiedUser, null, modifier = Modifier.height(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(if (verified) "ยืนยันแล้ว / Verified" else "ยืนยันว่าไม่ใช่บอท / Verify you're not a robot")
+    }
+
+    if (showDialog) {
+        Dialog(onDismissRequest = { showDialog = false }) {
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        IconButton(onClick = { showDialog = false }) {
+                            Icon(Icons.Filled.Close, "ปิด", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    HCaptchaWebView(
+                        modifier = Modifier.fillMaxWidth().height(480.dp),
+                        onTokenChange = { newToken ->
+                            onTokenChange(newToken)
+                            if (newToken != null) showDialog = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The raw hCaptcha WebView. [onTokenChange] fires with the verification token once checked, and
+ * with null again if the challenge expires.
  *
- * The token is passed as `captchaToken` into Supabase's signUpWith/signInWith — Supabase Auth
- * calls hCaptcha's /siteverify server-side once Bot Protection is enabled with the secret key;
- * this widget only needs to produce the token, not verify it.
+ * The token is passed as `captchaToken` into Supabase's signUpWith/signInWith — Supabase Auth calls
+ * hCaptcha's /siteverify server-side once Bot Protection is enabled with the secret key; this widget
+ * only needs to produce the token, not verify it.
  *
  * NOTE: hCaptcha ties a site key to registered hostnames. This loads with base URL
  * "https://hcaptcha.com" (WebView requires *some* https origin) — if your hCaptcha site is
@@ -33,9 +100,9 @@ import com.lullabyai.app.BuildConfig
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun HCaptchaWidget(onTokenChange: (String?) -> Unit) {
+private fun HCaptchaWebView(modifier: Modifier = Modifier, onTokenChange: (String?) -> Unit) {
     AndroidView(
-        modifier = Modifier.fillMaxWidth().height(100.dp),
+        modifier = modifier,
         factory = { context ->
             if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
             WebView(context).apply {
@@ -52,22 +119,11 @@ fun HCaptchaWidget(onTokenChange: (String?) -> Unit) {
                 // see the captcha" looks like.
                 settings.domStorageEnabled = true
                 settings.databaseEnabled = true
-                // Without an explicit viewport, WebView renders the page at a wide desktop-style
-                // width by default and then scales it down — the hCaptcha checkbox iframe doesn't
-                // scale proportionally with that, so it spills past this box's edges. Locking the
-                // viewport to the WebView's actual CSS width, disabling zoom, and hiding scrollbars
-                // keeps the widget confined to its allotted space.
                 settings.useWideViewPort = true
                 settings.loadWithOverviewMode = true
-                settings.setSupportZoom(false)
-                settings.builtInZoomControls = false
-                settings.displayZoomControls = false
-                isHorizontalScrollBarEnabled = false
-                isVerticalScrollBarEnabled = false
-                overScrollMode = WebView.OVER_SCROLL_NEVER
                 webViewClient = WebViewClient()
-                // Piped to Logcat (tag "HCaptcha") so a silent failure — blank box, no error shown
-                // in the app UI — has an actual message to look at instead of guessing blind.
+                // Piped to Logcat (tag "HCaptcha") so a silent failure has an actual message to
+                // look at instead of guessing blind.
                 webChromeClient = object : WebChromeClient() {
                     override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                         android.util.Log.d("HCaptcha", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
@@ -80,8 +136,8 @@ fun HCaptchaWidget(onTokenChange: (String?) -> Unit) {
                     <head>
                       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                       <style>
-                        html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; }
-                        body { display:flex; justify-content:center; align-items:center; }
+                        html, body { margin:0; padding:0; width:100%; height:100%; }
+                        body { display:flex; justify-content:center; align-items:flex-start; padding-top:16px; }
                       </style>
                     </head>
                     <body>
@@ -95,7 +151,7 @@ fun HCaptchaWidget(onTokenChange: (String?) -> Unit) {
                         try {
                           hcaptcha.render('captcha-container', {
                             sitekey: '${BuildConfig.HCAPTCHA_SITE_KEY}',
-                            size: 'compact',
+                            size: 'normal',
                             callback: onVerify,
                             'expired-callback': onExpire,
                             'error-callback': onExpire
