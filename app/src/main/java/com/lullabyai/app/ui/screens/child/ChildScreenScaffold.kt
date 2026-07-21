@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.ui.navigation.Screen
+import com.lullabyai.app.ui.screens.onboarding.tourAnchor
 import com.lullabyai.app.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -94,7 +95,10 @@ fun ChildScreenScaffold(
                 val titleSlot: @Composable () -> Unit =
                     { Text(title, style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) }
                 val navSlot: @Composable () -> Unit = {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                    IconButton(
+                        onClick = { scope.launch { drawerState.open() } },
+                        modifier = Modifier.tourAnchor("sidebar_hamburger")
+                    ) {
                         Icon(Icons.Filled.Menu, "เมนู", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
