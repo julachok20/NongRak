@@ -320,6 +320,7 @@ fun AppNavigation(
                 onNavigateToMentalHealth = { navController.navigate(Screen.MentalHealthAssessment.route) },
                 onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
                 onNavigateToWidgets = { navController.navigate(Screen.WidgetsIntro.route) },
+                onNavigateHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 isTourActive = tourActive
             )
         }
