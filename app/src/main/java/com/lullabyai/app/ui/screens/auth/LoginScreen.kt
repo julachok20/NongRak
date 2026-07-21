@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lullabyai.app.data.settings.AppLanguage
+import com.lullabyai.app.ui.components.HCaptchaWidget
 import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
@@ -154,10 +155,12 @@ fun LoginScreen(
                         )
                     }
 
-                    // hCaptcha temporarily disabled — the WebView-based widget renders blank on the
-                    // emulator (GPU compositing bug, GFXSTREAM/Mesa errors in Logcat), blocking
-                    // login entirely. Re-enable HCaptchaWidget below once verified working on a
-                    // real device. See MEMORY_GRAPH.md for the fix attempts already tried.
+                    // Re-added for the test version — kept NON-BLOCKING: the login button below
+                    // never gates on captchaToken, so if the widget fails to render on a given
+                    // device (the WebView GPU-compositing bug it once hit on some emulators —
+                    // HCaptchaWidget already forces software rendering to work around that) login
+                    // still goes through with a null token instead of locking anyone out.
+                    HCaptchaWidget(onTokenChange = { captchaToken = it })
 
                     uiState.error?.let {
                         Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
