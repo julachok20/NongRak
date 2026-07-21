@@ -39,6 +39,7 @@ import com.lullabyai.app.ui.screens.dashboard.DashboardScreen
 import com.lullabyai.app.ui.screens.help.HelpFaqScreen
 import com.lullabyai.app.ui.screens.onboarding.AddChildChoiceScreen
 import com.lullabyai.app.ui.screens.onboarding.SyncChildScreen
+import com.lullabyai.app.ui.screens.onboarding.UploadBirthCertificateScreen
 import com.lullabyai.app.ui.screens.onboarding.LastSetupScreen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep1Screen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep2Screen
@@ -183,6 +184,7 @@ fun AppNavigation(
                         }
                     },
                     onSync = { navController.navigate(Screen.SyncChild.route) },
+                    onUploadCertificate = { navController.navigate(Screen.UploadBirthCertificate.route) },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -192,6 +194,27 @@ fun AppNavigation(
                 SyncChildScreen(
                     childViewModel = childViewModel,
                     onDone = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.UploadBirthCertificate.route) {
+            val authState by authViewModel.uiState.collectAsState()
+            NongRakTheme(darkTheme = false) {
+                UploadBirthCertificateScreen(
+                    onExtracted = { name, birthdate, gender ->
+                        // Same first-child-vs-add-child branch as AddChildChoice's "Add new child":
+                        // first-ever child still needs the medical disclaimer + Last Setup.
+                        if (authState.profile?.relationship.isNullOrBlank()) {
+                            onboardingViewModel.reset()
+                            onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
+                            navController.navigate(Screen.MedicalDisclaimer.route)
+                        } else {
+                            onboardingViewModel.startAddChild()
+                            onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
+                            navController.navigate(Screen.OnboardingStep1.route)
+                        }
+                    },
                     onBack = { navController.popBackStack() }
                 )
             }

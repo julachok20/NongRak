@@ -19,9 +19,10 @@ import androidx.compose.ui.unit.dp
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
 
-/** First step of adding a child: create a brand new profile, or sync into one another parent made. */
+/** First step of adding a child: create a brand new profile, sync into one another parent made,
+ *  or auto-fill a new profile from a photo of the birth certificate. */
 @Composable
-fun AddChildChoiceScreen(onAddNew: () -> Unit, onSync: () -> Unit, onBack: () -> Unit) {
+fun AddChildChoiceScreen(onAddNew: () -> Unit, onSync: () -> Unit, onUploadCertificate: () -> Unit, onBack: () -> Unit) {
     val s = LocalStrings.current
     val isThai = s.isThai
 
@@ -51,6 +52,13 @@ fun AddChildChoiceScreen(onAddNew: () -> Unit, onSync: () -> Unit, onBack: () ->
                 title = if (isThai) "เชื่อมข้อมูลลูก" else "Sync child",
                 subtitle = if (isThai) "เข้าถึงข้อมูลลูกที่ผู้ปกครองอีกท่านสร้างไว้แล้ว" else "Get access to a child another parent already created",
                 onClick = onSync
+            )
+            Spacer(Modifier.height(16.dp))
+            ChoiceCard(
+                icon = Icons.Filled.CloudUpload,
+                title = if (isThai) "อัปโหลดสูติบัตร" else "Upload birth certificate",
+                subtitle = if (isThai) "ถ่ายรูปสูติบัตรเพื่อกรอกข้อมูลลูกให้อัตโนมัติ" else "Snap a photo to auto-fill your child's info",
+                onClick = onUploadCertificate
             )
         }
     }

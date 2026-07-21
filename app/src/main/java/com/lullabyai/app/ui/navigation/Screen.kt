@@ -9,6 +9,7 @@ sealed class Screen(val route: String) {
     object MedicalDisclaimer : Screen("medical_disclaimer")
     object AddChildChoice : Screen("add_child_choice")
     object SyncChild : Screen("sync_child")
+    object UploadBirthCertificate : Screen("upload_birth_certificate")
     object OnboardingStep1 : Screen("onboarding_step1")
     object OnboardingStep2 : Screen("onboarding_step2")
     object OnboardingStep3 : Screen("onboarding_step3")
