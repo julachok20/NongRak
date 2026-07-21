@@ -2,6 +2,7 @@
 package com.lullabyai.app.ui.screens.nutrition
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -68,9 +69,24 @@ fun RecipeDetailScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit)
                             Text(r.nutritionNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         SectionTitle(if (isThai) "ส่วนผสม" else "Ingredients")
-                        r.ingredients.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                        // Checkable prep list — ticking off is per-view-session only (not persisted),
+                        // matching the mockup's "check as you go" behavior while cooking.
+                        r.ingredients.forEach { item ->
+                            var checked by remember(item) { mutableStateOf(false) }
+                            Row(
+                                Modifier.fillMaxWidth().clickable { checked = !checked },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = { checked = it })
+                                Text(
+                                    item, style = MaterialTheme.typography.bodyMedium,
+                                    textDecoration = if (checked) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                                    color = if (checked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         SectionTitle(if (isThai) "วิธีทำ" else "Steps")

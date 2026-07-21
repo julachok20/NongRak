@@ -111,7 +111,7 @@ fun RecommendedFoodScreen(vm: NutritionViewModel, lang: String, navController: N
                 needs.forEach { key ->
                     val (icon, foods) = needFoods[key] ?: return@forEach
                     item {
-                        NutrientFoodCard(needLabels[key] ?: key, icon, foods, isThai)
+                        NutrientFoodCard(needLabels[key] ?: key, icon, foods, isThai) { name -> vm.addFoodSmart(name, lang) }
                     }
                 }
             }
@@ -157,7 +157,10 @@ fun RecommendedFoodScreen(vm: NutritionViewModel, lang: String, navController: N
 }
 
 @Composable
-private fun NutrientFoodCard(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, foods: List<NutrientFood>, isThai: Boolean) {
+private fun NutrientFoodCard(
+    label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, foods: List<NutrientFood>, isThai: Boolean,
+    onAdd: (String) -> Unit
+) {
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -165,7 +168,13 @@ private fun NutrientFoodCard(label: String, icon: androidx.compose.ui.graphics.v
                 Text(label, fontWeight = FontWeight.Bold)
             }
             foods.forEach { f ->
-                Text(if (isThai) f.nameTh else f.nameEn, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val name = if (isThai) f.nameTh else f.nameEn
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = { onAdd(name) }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.AddCircle, if (isThai) "เพิ่ม" else "Add", tint = Primary, modifier = Modifier.size(22.dp))
+                    }
+                }
             }
         }
     }

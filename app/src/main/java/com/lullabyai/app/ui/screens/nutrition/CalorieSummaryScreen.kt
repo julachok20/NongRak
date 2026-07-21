@@ -105,21 +105,17 @@ fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: Na
                     Text(if (isThai) "แก้ไข" else "Edit", color = Primary, style = MaterialTheme.typography.labelMedium)
                 }
             }
-            // Flat food summary (just the menu items + kcal, no meal separation)
+            // Grouped by meal type — matches the mockup (มื้อเช้า/มื้อเที่ยง/มื้อเย็น/ของว่าง),
+            // was previously a flat list even though MealCard already existed for this.
             if (ui.foods.isEmpty()) {
                 Text(if (isThai) "ยังไม่มีรายการอาหาร" else "No food items yet", style = MaterialTheme.typography.bodyMedium, color = Outline)
             } else {
-                ui.foods.forEach { f ->
-                    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.size(36.dp).background(Primary.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Restaurant, null, tint = Primary, modifier = Modifier.size(18.dp))
-                            }
-                            Text(f.itemName, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Text("${f.calories ?: "-"} kcal", color = Primary, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                listOf("breakfast", "lunch", "dinner", "snack").forEach { mealType ->
+                    val foods = ui.foods.filter { it.mealType == mealType }
+                    if (foods.isNotEmpty()) MealCard(mealLabel(mealType, isThai), foods, Modifier.fillMaxWidth())
                 }
+                val other = ui.foods.filter { it.mealType !in setOf("breakfast", "lunch", "dinner", "snack") }
+                if (other.isNotEmpty()) MealCard(mealLabel("other", isThai), other, Modifier.fillMaxWidth())
             }
 
             if (burned > 0) {
