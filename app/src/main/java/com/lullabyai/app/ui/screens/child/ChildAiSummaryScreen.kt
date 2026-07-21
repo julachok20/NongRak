@@ -168,7 +168,7 @@ fun ChildAiSummaryScreen(childViewModel: ChildViewModel, chatViewModel: ChatView
                 colors = ButtonDefaults.buttonColors(containerColor = Primary)
             ) { Text(if (isThai) "อัปเดตข้อมูล" else "Update data", fontWeight = FontWeight.Bold) }
             OutlinedButton(
-                onClick = { childViewModel.exportDoctorReport(context, isThai) { _, _ -> } },
+                onClick = { navController.navigate(Screen.PdfExport.route) },
                 modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp)
             ) { Text(if (isThai) "ส่งออก PDF" else "Export PDF") }
         }

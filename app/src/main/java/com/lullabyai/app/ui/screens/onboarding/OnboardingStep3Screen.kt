@@ -48,6 +48,8 @@ fun OnboardingStep3Screen(
     var allergyName by remember { mutableStateOf("") }
     var allergySymptoms by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf(state.additionalNotes) }
+    var showAllergyError by remember { mutableStateOf(false) }
+    val allergyValid = state.noKnownAllergies || state.allergyEntries.isNotEmpty()
 
     // Document picker (PDF/JPG/PNG). Reads bytes via the content resolver and holds them in the
     // onboarding state; they upload to the private medical-docs bucket when onboarding completes.
@@ -323,47 +325,69 @@ fun OnboardingStep3Screen(
                     Text("Allergy history", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text("ประวัติการแพ้", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = allergyName, onValueChange = { allergyName = it },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        placeholder = { Text("สารก่อภูมิแพ้ เช่น ถั่ว, นม", color = Outline) },
-                        shape = RoundedCornerShape(12.dp), colors = fieldColors()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            onboardingViewModel.setNoKnownAllergies(!state.noKnownAllergies)
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = state.noKnownAllergies,
+                            onCheckedChange = { onboardingViewModel.setNoKnownAllergies(it) }
+                        )
+                        Text("ไม่มีประวัติแพ้ (No known allergies)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    if (!state.noKnownAllergies) {
+                        Spacer(Modifier.height(4.dp))
                         OutlinedTextField(
-                            value = allergySymptoms, onValueChange = { allergySymptoms = it },
-                            modifier = Modifier.weight(1f), singleLine = true,
-                            placeholder = { Text("อาการ เช่น ผื่น, บวม", color = Outline) },
+                            value = allergyName, onValueChange = { allergyName = it },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true,
+                            placeholder = { Text("สารก่อภูมิแพ้ เช่น ถั่ว, นม", color = Outline) },
                             shape = RoundedCornerShape(12.dp), colors = fieldColors()
                         )
-                        FilledIconButton(
-                            onClick = {
-                                if (allergyName.isNotBlank()) {
-                                    onboardingViewModel.addAllergyEntry(allergyName, allergySymptoms)
-                                    allergyName = ""; allergySymptoms = ""
-                                }
-                            },
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Primary)
-                        ) { Icon(Icons.Filled.Add, "เพิ่มการแพ้", tint = Color.White) }
-                    }
-                    if (state.allergyEntries.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text("Added allergies", style = MaterialTheme.typography.labelSmall, color = Outline)
-                        state.allergyEntries.forEachIndexed { i, a ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(a.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    if (a.symptoms.isNotBlank()) Text(a.symptoms, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                IconButton(onClick = { onboardingViewModel.removeAllergyEntry(i) }) {
-                                    Icon(Icons.Filled.DeleteOutline, "ลบ", tint = Error, modifier = Modifier.size(18.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = allergySymptoms, onValueChange = { allergySymptoms = it },
+                                modifier = Modifier.weight(1f), singleLine = true,
+                                placeholder = { Text("อาการ เช่น ผื่น, บวม", color = Outline) },
+                                shape = RoundedCornerShape(12.dp), colors = fieldColors()
+                            )
+                            FilledIconButton(
+                                onClick = {
+                                    if (allergyName.isNotBlank()) {
+                                        onboardingViewModel.addAllergyEntry(allergyName, allergySymptoms)
+                                        allergyName = ""; allergySymptoms = ""
+                                    }
+                                },
+                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Primary)
+                            ) { Icon(Icons.Filled.Add, "เพิ่มการแพ้", tint = Color.White) }
+                        }
+                        if (state.allergyEntries.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Added allergies", style = MaterialTheme.typography.labelSmall, color = Outline)
+                            state.allergyEntries.forEachIndexed { i, a ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(a.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        if (a.symptoms.isNotBlank()) Text(a.symptoms, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    IconButton(onClick = { onboardingViewModel.removeAllergyEntry(i) }) {
+                                        Icon(Icons.Filled.DeleteOutline, "ลบ", tint = Error, modifier = Modifier.size(18.dp))
+                                    }
                                 }
                             }
                         }
+                    }
+                    if (showAllergyError && !allergyValid) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "กรุณากรอกข้อมูลการแพ้ หรือติ๊กว่าไม่มีประวัติแพ้ (Please fill in allergy info, or check 'No known allergies')",
+                            style = MaterialTheme.typography.bodySmall, color = Error, fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
 
@@ -422,8 +446,12 @@ fun OnboardingStep3Screen(
                     text = if (state.isLoading) "..." else "Complete ✓",
                     enabled = !state.isLoading,
                     onClick = {
-                        onboardingViewModel.updateStep3(hasMedication, medDetails, selectedVaccines.toList(), conditions, notes)
-                        onNext()
+                        if (!allergyValid) {
+                            showAllergyError = true
+                        } else {
+                            onboardingViewModel.updateStep3(hasMedication, medDetails, selectedVaccines.toList(), conditions, notes)
+                            onNext()
+                        }
                     }
                 )
                 TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {

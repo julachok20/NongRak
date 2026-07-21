@@ -86,7 +86,10 @@ fun HealthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
                 items(filtered, key = { it.id }) { record ->
                     HealthHistoryCard(record, s.isThai) {
                         childViewModel.selectHealthRecord(record.id)
-                        navController.navigate(Screen.HealthDetail.route)
+                        // Ongoing episodes get the day-tracker; recovered/one-off entries keep the
+                        // existing single-record detail view.
+                        if (record.status == "monitoring") navController.navigate(Screen.SicknessFollowUp.route)
+                        else navController.navigate(Screen.HealthDetail.route)
                     }
                 }
             }

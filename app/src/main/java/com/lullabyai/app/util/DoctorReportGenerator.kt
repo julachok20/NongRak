@@ -23,6 +23,7 @@ object DoctorReportGenerator {
     data class Growth(val date: String, val weight: String, val height: String, val status: String, val note: String)
     /** One development domain row. Order is fixed by the generator (see DEV_DOMAINS). */
     data class DevStatus(val normal: Boolean, val monitor: Boolean, val note: String)
+    data class MedDoc(val fileName: String, val uploadedDate: String)
 
     data class ChildData(
         val documentRef: String,
@@ -46,8 +47,12 @@ object DoctorReportGenerator {
         // §6 การนอนและการทานยา (added — was tracked in-app but never reached this export)
         val sleepSummary: String, val medicationSummary: String,
         // §7 สรุปและข้อเสนอแนะ
-        val overallSummary: String, val recommendations: String
+        val overallSummary: String, val recommendations: String,
+        // §8 เอกสารแนบ (medical documents — optional category)
+        val medicalDocs: List<MedDoc> = emptyList()
     )
+
+    val ALL_CATEGORIES = setOf("basic", "vaccine", "milestones", "nutrition", "health", "ai", "documents")
 
     val DEV_DOMAINS = listOf(
         "กล้ามเนื้อมัดใหญ่",
@@ -88,7 +93,11 @@ object DoctorReportGenerator {
      *  keepWithNext forces the following block onto the same page (avoids orphaned section bars / headers). */
     private class Block(val height: Float, val gapAfter: Float, val keepWithNext: Boolean = false, val draw: (android.graphics.Canvas, Float) -> Unit)
 
-    fun generate(context: Context, data: ChildData): File {
+    /** categories: any of "basic","vaccine","milestones","nutrition","health","ai","documents" —
+     *  gates which sections render (§7 summary/recommendations always renders; "ai" only gates
+     *  whether the AI-generated paragraph appears within it). detailed=false skips the free-text
+     *  observation/notes boxes but keeps all tables and headline fields. */
+    fun generate(context: Context, data: ChildData, categories: Set<String> = ALL_CATEGORIES, detailed: Boolean = true): File {
         val titleP = p(23f, WHITE, true)
         val subP = p(9f, Color.rgb(220, 228, 245))
         val metaP = p(9f, Color.rgb(220, 228, 245))
@@ -234,51 +243,76 @@ object DoctorReportGenerator {
             blocks.add(Block(0f, 14f) { _, _ -> })
         }
 
-        // ================= build the document content =================
-        sectionBar("1. ข้อมูลเด็ก")
-        fieldRow("รหัสเด็ก" to data.childCode, "ชื่อเล่น" to data.nickname, "วันเดือนปีเกิด" to data.birthdate)
-        fieldRow("อายุ" to data.age, "เพศ" to data.gender, "เลขประจำตัว/เลขสูติบัตร" to data.idNumber)
-        fieldRow("สัญชาติ" to data.nationality, "เชื้อชาติ" to data.ethnicity, "ศาสนา" to data.religion)
-        fieldRow("หน่วยงาน/ห้องเรียน" to data.unitClass, "ผู้บันทึก" to data.recorder, "วันที่ปรับปรุงข้อมูล" to data.updatedDate)
-        blocks.add(Block(8f, 0f) { _, _ -> })
+        // ================= build the document content (gated by selected categories) =================
+        if ("basic" in categories) {
+            sectionBar("1. ข้อมูลเด็ก")
+            fieldRow("รหัสเด็ก" to data.childCode, "ชื่อเล่น" to data.nickname, "วันเดือนปีเกิด" to data.birthdate)
+            fieldRow("อายุ" to data.age, "เพศ" to data.gender, "เลขประจำตัว/เลขสูติบัตร" to data.idNumber)
+            fieldRow("สัญชาติ" to data.nationality, "เชื้อชาติ" to data.ethnicity, "ศาสนา" to data.religion)
+            fieldRow("หน่วยงาน/ห้องเรียน" to data.unitClass, "ผู้บันทึก" to data.recorder, "วันที่ปรับปรุงข้อมูล" to data.updatedDate)
+            blocks.add(Block(8f, 0f) { _, _ -> })
+        }
 
-        sectionBar("2. วัคซีนที่ได้รับ")
-        table(
-            listOf("ช่วงอายุ", "วัคซีนที่ได้รับ", "วันที่ได้รับ", "สถานที่/หน่วยบริการ", "หมายเหตุ"),
-            listOf(80f, 150f, 90f, 110f, CONTENT_W - 80f - 150f - 90f - 110f),
-            data.vaccines.map { listOf(it.ageGroup, it.name, it.dateGiven, it.place, it.note) }
-        )
+        if ("vaccine" in categories) {
+            sectionBar("2. วัคซีนที่ได้รับ")
+            table(
+                listOf("ช่วงอายุ", "วัคซีนที่ได้รับ", "วันที่ได้รับ", "สถานที่/หน่วยบริการ", "หมายเหตุ"),
+                listOf(80f, 150f, 90f, 110f, CONTENT_W - 80f - 150f - 90f - 110f),
+                data.vaccines.map { listOf(it.ageGroup, it.name, it.dateGiven, it.place, it.note) }
+            )
+        }
 
-        sectionBar("3. พัฒนาการ")
-        devTable()
-        textArea("ข้อสังเกตด้านพัฒนาการ/สิ่งที่ควรติดตาม", data.devObservation)
+        if ("milestones" in categories) {
+            sectionBar("3. พัฒนาการ")
+            devTable()
+            if (detailed) textArea("ข้อสังเกตด้านพัฒนาการ/สิ่งที่ควรติดตาม", data.devObservation)
+        }
 
-        sectionBar("4. โภชนาการ")
-        fieldRow("อาหารที่รับประทานเป็นประจำ" to data.regularFood, "อาหารที่แพ้หรือควรหลีกเลี่ยง" to data.allergyAvoid, "ปัญหาการกิน/ข้อจำกัด" to data.eatingProblem)
-        blocks.add(Block(6f, 0f) { _, _ -> })
-        table(
-            listOf("วันที่", "น้ำหนัก", "ส่วนสูง", "ภาวะโภชนาการ", "หมายเหตุ"),
-            listOf(90f, 80f, 80f, 140f, CONTENT_W - 90f - 80f - 80f - 140f),
-            data.growth.map { listOf(it.date, it.weight, it.height, it.status, it.note) }
-        )
-        textArea("คำแนะนำด้านโภชนาการเพิ่มเติม", data.nutritionAdvice)
+        if ("nutrition" in categories) {
+            sectionBar("4. โภชนาการและการเติบโต")
+            fieldRow("อาหารที่รับประทานเป็นประจำ" to data.regularFood, "อาหารที่แพ้หรือควรหลีกเลี่ยง" to data.allergyAvoid, "ปัญหาการกิน/ข้อจำกัด" to data.eatingProblem)
+            blocks.add(Block(6f, 0f) { _, _ -> })
+            table(
+                listOf("วันที่", "น้ำหนัก", "ส่วนสูง", "ภาวะโภชนาการ", "หมายเหตุ"),
+                listOf(90f, 80f, 80f, 140f, CONTENT_W - 90f - 80f - 80f - 140f),
+                data.growth.map { listOf(it.date, it.weight, it.height, it.status, it.note) }
+            )
+            if (detailed) textArea("คำแนะนำด้านโภชนาการเพิ่มเติม", data.nutritionAdvice)
+        }
 
-        sectionBar("5. ประวัติสุขภาพ")
-        fieldRow("โรคประจำตัว" to data.chronicDisease, "ประวัติแพ้ยา/อาหาร" to data.drugFoodAllergy)
-        fieldRow("ยาหรือการดูแลที่ใช้อยู่" to data.medications, "ประวัติเจ็บป่วยสำคัญ" to data.majorIllness)
-        fieldRow("ประวัติผ่าตัด/นอนโรงพยาบาล" to data.surgeryHospital, "แพทย์/หน่วยบริการที่ติดตาม" to data.followupDoctor)
-        blocks.add(Block(6f, 0f) { _, _ -> })
-        textArea("รายละเอียดประวัติสุขภาพ", data.healthHistoryDetail, minLines = 4)
-        textArea("การดูแลสุขภาพปัจจุบัน หรือคำแนะนำจากแพทย์/ผู้ดูแล", data.currentCare)
+        if ("health" in categories) {
+            sectionBar("5. ประวัติสุขภาพ")
+            fieldRow("โรคประจำตัว" to data.chronicDisease, "ประวัติแพ้ยา/อาหาร" to data.drugFoodAllergy)
+            fieldRow("ยาหรือการดูแลที่ใช้อยู่" to data.medications, "ประวัติเจ็บป่วยสำคัญ" to data.majorIllness)
+            fieldRow("ประวัติผ่าตัด/นอนโรงพยาบาล" to data.surgeryHospital, "แพทย์/หน่วยบริการที่ติดตาม" to data.followupDoctor)
+            blocks.add(Block(6f, 0f) { _, _ -> })
+            if (detailed) {
+                textArea("รายละเอียดประวัติสุขภาพ", data.healthHistoryDetail, minLines = 4)
+                textArea("การดูแลสุขภาพปัจจุบัน หรือคำแนะนำจากแพทย์/ผู้ดูแล", data.currentCare)
+            }
 
-        // §6 — tracked in-app (sleep sessions, medication dose adherence) but previously never
-        // reached this export; both are things a doctor visit commonly asks about directly.
-        sectionBar("6. การนอนและการทานยา")
-        textArea("สรุปการนอน", data.sleepSummary)
-        textArea("ยาที่ใช้ประจำและความสม่ำเสมอในการทาน", data.medicationSummary)
+            // §6 — tracked in-app (sleep sessions, medication dose adherence); doctor visits
+            // commonly ask about both directly, folded under the same "health" category.
+            sectionBar("6. การนอนและการทานยา")
+            if (detailed) {
+                textArea("สรุปการนอน", data.sleepSummary)
+                textArea("ยาที่ใช้ประจำและความสม่ำเสมอในการทาน", data.medicationSummary)
+            }
+        }
 
+        if ("documents" in categories && data.medicalDocs.isNotEmpty()) {
+            sectionBar("8. เอกสารแนบทางการแพทย์")
+            table(
+                listOf("ชื่อไฟล์", "วันที่อัปโหลด"),
+                listOf(CONTENT_W - 150f, 150f),
+                data.medicalDocs.map { listOf(it.fileName, it.uploadedDate) }
+            )
+        }
+
+        // §7 always renders — a report needs a conclusion — but the AI paragraph only appears
+        // when "ai" is a selected category; recommendations (concrete follow-ups) always show.
         sectionBar("7. สรุปและข้อเสนอแนะ")
-        textArea("สรุปภาพรวม/ประเด็นสำคัญที่ควรติดตาม", data.overallSummary, minLines = 4)
+        if ("ai" in categories) textArea("สรุปภาพรวม/ประเด็นสำคัญที่ควรติดตาม (วิเคราะห์โดย AI)", data.overallSummary, minLines = 4)
         textArea("ข้อเสนอแนะสำหรับผู้ดูแล/ครู/เจ้าหน้าที่", data.recommendations)
 
         // ================= paginate =================

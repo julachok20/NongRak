@@ -136,6 +136,30 @@ fun ChildSummaryScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
+            val context = LocalContext.current
+
+            // Persistent one-tap emergency line — flagged in the professional-polish audit as
+            // needed (a real visual element, not just prose buried in an AI reply). ACTION_DIAL
+            // (not ACTION_CALL) so it just opens the dialer pre-filled — no CALL_PHONE permission.
+            Card(
+                onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:1669"))) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Error.copy(0.08f))
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Filled.Call, null, tint = Error, modifier = Modifier.size(18.dp))
+                    Text(
+                        if (s.isThai) "เหตุฉุกเฉิน โทร 1669" else "Emergency? Call 1669",
+                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Error,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(Icons.Filled.ChevronRight, null, tint = Error.copy(0.5f), modifier = Modifier.size(18.dp))
+                }
+            }
+
             childState.dailyQuestion?.let {
                 com.lullabyai.app.ui.components.DailyQuestionBanner(
                     isThai = s.isThai,
@@ -252,6 +276,30 @@ fun ChildSummaryScreen(
             }
             }
 
+            // Growth indicators — moved here (right after the profile card, before AI Analysis) to
+            // match the 30.new_dash mockup's order; previously sat lower down the page.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (s.isThai) "ตัวชี้วัดการเติบโต" else "Growth indicators", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Surface(onClick = { navController.navigate(Screen.ProfileHistory.route) }, shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Text(if (s.isThai) "ประวัติการบันทึก" else "History", modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val ageMonths = childViewModel.getAgeMonths()
+                val weightStatus = com.lullabyai.app.util.GrowthReference.weightStatus(child?.weightKg, ageMonths)
+                val heightStatus = com.lullabyai.app.util.GrowthReference.heightStatus(child?.heightCm, ageMonths)
+                GrowthStatCard(
+                    if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"),
+                    (if (s.isThai) weightStatus?.labelTh else weightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
+                    Modifier.weight(1f), statusColor = weightStatus?.color ?: Outline, icon = Icons.Filled.MonitorWeight
+                ) { navController.navigate(Screen.GrowthHistory.route) }
+                GrowthStatCard(
+                    if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"),
+                    (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
+                    Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline, icon = Icons.Filled.Straighten
+                ) { navController.navigate(Screen.GrowthHistory.route) }
+            }
+
             // AI Analysis card — headline synthesized from the development percentage (no separate
             // AI field for it), short summary from generateChildInfoCardSummary (distinct from the
             // fuller text used on the health-check/monthly-summary pages).
@@ -327,44 +375,20 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Export-to-doctor PDF
-            val context = LocalContext.current
+            // Export-to-doctor PDF — routes to the universal export-selection screen (choose
+            // period / data categories / detailed-vs-summary) instead of exporting directly.
             Card(
-                onClick = {
-                    if (!childState.reportLoading) childViewModel.exportDoctorReport(context, s.isThai) { file, err ->
-                        if (file == null) {
-                            Toast.makeText(context, (if (s.isThai) "สร้าง PDF ไม่สำเร็จ" else "Couldn't create PDF") + (err?.let { ": $it" } ?: ""), Toast.LENGTH_LONG).show()
-                        } else {
-                            try {
-                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/pdf"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    clipData = android.content.ClipData.newRawUri("report", uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(send, if (s.isThai) "ส่งออกข้อมูลสรุป" else "Export summary"))
-                            } catch (e: Exception) {
-                                Toast.makeText(context, (if (s.isThai) "แชร์ไม่สำเร็จ: " else "Share failed: ") + e.message, Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                },
+                onClick = { navController.navigate(Screen.PdfExport.route) },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(1.dp)
             ) {
                 Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Error.copy(0.08f)), contentAlignment = Alignment.Center) {
-                        if (childState.reportLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Error)
-                        else Icon(Icons.Filled.PictureAsPdf, null, tint = Error, modifier = Modifier.size(24.dp))
+                        Icon(Icons.Filled.PictureAsPdf, null, tint = Error, modifier = Modifier.size(24.dp))
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            if (childState.reportLoading) (if (s.isThai) "กำลังสร้าง PDF..." else "Generating PDF...")
-                            else (if (s.isThai) "ส่งออกสรุป (PDF)" else "Export summary (PDF)"),
-                            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
-                        )
+                        Text(if (s.isThai) "ส่งออกสรุป (PDF)" else "Export summary (PDF)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         Text(
                             if (s.isThai) "เอกสารสำหรับปรึกษาแพทย์ผู้เชี่ยวชาญ" else "For doctor consultations or your own records",
                             style = MaterialTheme.typography.labelSmall, color = Outline
@@ -374,34 +398,6 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Key info header — ประวัติ opens the full profile-history screen
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(if (s.isThai) "ข้อมูลสำคัญ" else "Key info", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(onClick = { }, shape = RoundedCornerShape(100.dp), color = Primary) {
-                        Text(if (s.isThai) "ล่าสุด" else "Latest", modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Surface(onClick = { navController.navigate(Screen.ProfileHistory.route) }, shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Text(if (s.isThai) "ประวัติ" else "History", modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val ageMonths = childViewModel.getAgeMonths()
-                val weightStatus = com.lullabyai.app.util.GrowthReference.weightStatus(child?.weightKg, ageMonths)
-                val heightStatus = com.lullabyai.app.util.GrowthReference.heightStatus(child?.heightCm, ageMonths)
-                GrowthStatCard(
-                    if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"),
-                    (if (s.isThai) weightStatus?.labelTh else weightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
-                    Modifier.weight(1f), statusColor = weightStatus?.color ?: Outline, icon = Icons.Filled.MonitorWeight
-                ) { navController.navigate(Screen.GrowthHistory.route) }
-                GrowthStatCard(
-                    if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"),
-                    (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
-                    Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline, icon = Icons.Filled.Straighten
-                ) { navController.navigate(Screen.GrowthHistory.route) }
-            }
             if (childState.allergies.isNotEmpty()) {
                 // Extra-large radius (mockup gives this card a bigger radius than the rest of the
                 // page's cards) and outlined chips instead of solid-filled pills.
@@ -431,17 +427,67 @@ fun ChildSummaryScreen(
                 InfoRow(Icons.Filled.Warning, if (s.isThai) "การแพ้" else "Allergies", if (s.isThai) "ไม่มีประวัติแพ้" else "None", null) { navController.navigate(Screen.AllergyHistory.route) }
             }
 
-            // Main-service quick links (same services as the home dashboard) — #5
-            Text(if (s.isThai) "บริการหลัก" else "Main services", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ChildQuickLink(if (s.isThai) "วัคซีน" else "Vaccine", Icons.Filled.Vaccines, Modifier.weight(1f)) { navController.navigate(Screen.VaccineBook.route) }
-                ChildQuickLink(if (s.isThai) "พัฒนาการ" else "Dev", Icons.Filled.TrendingUp, Modifier.weight(1f)) { navController.navigate(Screen.ChildDevelopment.route) }
-                ChildQuickLink(if (s.isThai) "สุขภาพ" else "Health", Icons.Filled.HealthAndSafety, Modifier.weight(1f)) { navController.navigate(Screen.ChildHealth.route) }
-                ChildQuickLink(if (s.isThai) "โภชนาการ" else "Nutrition", Icons.Filled.Restaurant, Modifier.weight(1f)) { navController.navigate(Screen.Nutrition.route) }
+            // Chronic conditions summary — mirrors the allergy card above. Data is already loaded
+            // into childState.chronicConditions alongside allergies (see ChildViewModel.loadChild),
+            // and stays in sync with onboarding (completeOnboarding seeds this same table) and the
+            // Health Hub's add/delete card, so this is read-only here, no separate fetch needed.
+            Card(
+                Modifier.fillMaxWidth().clickable { navController.navigate(Screen.ChildHealth.route) },
+                shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(1.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Filled.HealthAndSafety, null, tint = Primary, modifier = Modifier.size(18.dp))
+                        Text(if (s.isThai) "โรคประจำตัว" else "Chronic conditions", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    if (childState.chronicConditions.isEmpty()) {
+                        Text(if (s.isThai) "ไม่มีข้อมูลโรคประจำตัว" else "No chronic conditions recorded", style = MaterialTheme.typography.labelSmall, color = Outline)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            childState.chronicConditions.take(4).forEach { cc ->
+                                Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.06f)) {
+                                    Text(cc.name, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary)
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ChildQuickLink(if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", Icons.Filled.MonitorHeart, Modifier.weight(1f)) { navController.navigate(Screen.DiseaseRisk.route) }
-                ChildQuickLink(if (s.isThai) "ออกกำลังกาย" else "Exercise", Icons.Filled.DirectionsRun, Modifier.weight(1f)) { navController.navigate(Screen.Exercise.route) }
+
+            // Shortcuts — per the 30.new_dash mockup this is a single row, not the old 6-tile grid.
+            // "ดูทั้งหมด" opens QuickLogHub (the app's actual "see everything you can do" screen).
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (s.isThai) "ทางลัด" else "Shortcuts", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                TextButton(onClick = { navController.navigate(Screen.QuickLogHub.route) }) {
+                    Text(if (s.isThai) "ดูทั้งหมด" else "View all", color = Primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Vaccine Book — same row style as before.
+                ShortcutRow(
+                    Icons.Filled.MenuBook,
+                    if (s.isThai) "สมุดวัคซีน" else "Vaccine Book",
+                    if (s.isThai) "ตรวจสอบและบันทึกการฉีดวัคซีน" else "Track and log vaccinations"
+                ) { navController.navigate(Screen.VaccineBook.route) }
+                // The app's actual standout features (จุดเด่น), not just record-keeping: the
+                // agentic AI chatbot, AI disease-risk prediction, and AI-assisted sleep tracking.
+                ShortcutRow(
+                    Icons.Filled.SmartToy,
+                    if (s.isThai) "แชทกับน้องรัก AI" else "Chat with NongRak AI",
+                    if (s.isThai) "ผู้ช่วย AI ส่วนตัวสำหรับลูกคุณ" else "Your child's personal AI assistant"
+                ) { navController.navigate(Screen.AiChat.route) }
+                ShortcutRow(
+                    Icons.Filled.MonitorHeart,
+                    if (s.isThai) "ความเสี่ยงโรค (AI)" else "AI Disease Risk",
+                    if (s.isThai) "วิเคราะห์ความเสี่ยงสุขภาพด้วย AI" else "AI-powered health risk analysis"
+                ) { navController.navigate(Screen.DiseaseRisk.route) }
+                ShortcutRow(
+                    Icons.Filled.Bedtime,
+                    if (s.isThai) "การนอนหลับ" else "Sleep Tracker",
+                    if (s.isThai) "ติดตามการนอนพร้อมคำแนะนำจาก AI" else "Track sleep with AI recommendations"
+                ) { navController.navigate(Screen.SleepTracker.route) }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -529,13 +575,22 @@ private fun ChildSwitcherSheet(
 }
 
 @Composable
-private fun ChildQuickLink(label: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.padding(vertical = 14.dp, horizontal = 6.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.size(38.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+private fun ShortcutRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(100.dp)).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
                 Icon(icon, null, tint = Primary, modifier = Modifier.size(20.dp))
             }
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text(description, style = MaterialTheme.typography.labelSmall, color = Outline)
+            }
+            Icon(Icons.Filled.ChevronRight, null, tint = Outline, modifier = Modifier.size(20.dp))
         }
     }
 }

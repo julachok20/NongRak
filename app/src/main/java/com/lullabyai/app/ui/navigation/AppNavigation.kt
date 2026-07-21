@@ -364,6 +364,15 @@ fun AppNavigation(
         composable(Screen.HealthHistory.route) {
             com.lullabyai.app.ui.screens.child.HealthHistoryScreen(childViewModel, navController) { navController.popBackStack() }
         }
+        composable(Screen.PdfExport.route) {
+            com.lullabyai.app.ui.screens.child.PdfExportScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.SicknessFollowUp.route) {
+            com.lullabyai.app.ui.screens.child.SicknessFollowUpScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.LogSicknessSymptoms.route) {
+            com.lullabyai.app.ui.screens.child.LogSicknessSymptomsScreen(childViewModel, navController) { navController.popBackStack() }
+        }
         composable(Screen.AddMedicineSchedule.route) {
             AddMedicineScheduleScreen(childViewModel, navController) { navController.popBackStack() }
         }

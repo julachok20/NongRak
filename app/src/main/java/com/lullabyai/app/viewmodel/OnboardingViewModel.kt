@@ -36,6 +36,7 @@ data class OnboardingUiState(
     val selectedVaccines: List<String> = emptyList(),
     val underlyingConditions: String = "",
     val allergyEntries: List<AllergyEntry> = emptyList(),   // list-based allergies (name + symptoms)
+    val noKnownAllergies: Boolean = false,   // explicit "checked none" — distinct from just not having filled it in yet
     val additionalNotes: String = "",
     val pendingDocs: List<PendingDoc> = emptyList(),         // medical docs picked, uploaded after child is created
     // Last Setup
@@ -93,6 +94,10 @@ class OnboardingViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(
             allergyEntries = _uiState.value.allergyEntries.filterIndexed { i, _ -> i != index }
         )
+    }
+
+    fun setNoKnownAllergies(value: Boolean) {
+        _uiState.value = _uiState.value.copy(noKnownAllergies = value)
     }
 
     fun addPendingDoc(name: String, mime: String?, bytes: ByteArray) {
@@ -160,6 +165,15 @@ class OnboardingViewModel : ViewModel() {
                     underlyingConditions = state.underlyingConditions.ifBlank { null }
                 )
                 childRepo.saveMedicalHistory(history)
+
+                // Sync free-text "underlying conditions" into the structured chronic_conditions
+                // table too, so it actually shows up on the Health Hub / Child Info chronic-
+                // conditions cards instead of sitting only in this freetext field nobody reads.
+                val noConditionMarkers = setOf("none", "no", "ไม่มี", "ไม่มีค่ะ", "ไม่มีครับ", "-")
+                state.underlyingConditions.split(",", "\n")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it.lowercase() !in noConditionMarkers }
+                    .forEach { name -> healthRepo.addChronicCondition(savedChild.id, name, null) }
 
                 val ageMonths = calculateAgeMonths(state.birthdate)
                 childRepo.insertDefaultMilestones(savedChild.id, ageMonths)

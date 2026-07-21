@@ -167,6 +167,32 @@ class HealthRepository {
         supabase.from("allergies").delete { filter { eq("id", id) } }
     }
 
+    // ---------------- SYMPTOM LOGS (sickness day-tracking, parent = a health_records row) ----------------
+
+    suspend fun getSymptomLogs(healthRecordId: String): Result<List<com.lullabyai.app.data.model.SymptomLog>> = runCatching {
+        supabase.from("health_symptom_logs").select {
+            filter { eq("health_record_id", healthRecordId) }
+            order("log_date", Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.SymptomLog>()
+    }
+
+    suspend fun addSymptomLog(
+        healthRecordId: String, childId: String, symptoms: Map<String, String>,
+        temperature: Double?, feeling: String?, dayStatus: String, notes: String?
+    ): Result<Unit> = runCatching {
+        supabase.from("health_symptom_logs").insert(
+            buildJsonObject {
+                put("health_record_id", JsonPrimitive(healthRecordId))
+                put("child_id", JsonPrimitive(childId))
+                put("symptoms", buildJsonObject { symptoms.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
+                put("temperature", temperature?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("feeling", feeling?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("day_status", JsonPrimitive(dayStatus))
+                put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
+            }
+        )
+    }
+
     // ---------------- CHRONIC CONDITIONS ----------------
 
     suspend fun getChronicConditions(childId: String): Result<List<com.lullabyai.app.data.model.ChronicCondition>> = runCatching {

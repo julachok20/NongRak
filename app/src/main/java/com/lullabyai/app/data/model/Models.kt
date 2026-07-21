@@ -260,6 +260,22 @@ data class HealthRecord(
     val status: String = "monitoring"
 )
 
+// One entry per day of tracking an illness (health_records row = the episode/parent). symptoms is
+// a name->severity map (none|mild|moderate|severe) so custom symptoms need no schema change.
+@Serializable
+data class SymptomLog(
+    val id: String = "",
+    @SerialName("health_record_id") val healthRecordId: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("log_date") val logDate: String = "",
+    val symptoms: Map<String, String> = emptyMap(),
+    val temperature: Double? = null,
+    val feeling: String? = null,           // cold | normal | hot
+    @SerialName("day_status") val dayStatus: String = "active",   // started | active | recovered
+    val notes: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
 @Serializable
 data class DevelopmentMilestone(
     val id: String = "",

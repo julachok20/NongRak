@@ -55,6 +55,9 @@ data class ChildUiState(
     val healthPhotoUploading: Boolean = false,
     val healthDetailSaving: Boolean = false,
     val wasteRecords: List<com.lullabyai.app.data.model.WasteRecord> = emptyList(),
+    // --- Sickness day-tracking (symptom logs under an open health-record "episode") ---
+    val symptomLogs: List<com.lullabyai.app.data.model.SymptomLog> = emptyList(),
+    val symptomLogSaving: Boolean = false,
     // --- Sync child (multi-parent access) ---
     val syncSearching: Boolean = false,
     val syncSearchResults: List<com.lullabyai.app.data.model.ChildSyncMatch> = emptyList(),
@@ -205,7 +208,12 @@ class ChildViewModel : ViewModel() {
      * records, milestones, and an AI summary of recent parent concerns) and returns the File so the
      * screen can share it. Off the main thread; uses already-loaded uiState plus a couple of fetches.
      */
-    fun exportDoctorReport(context: android.content.Context, isThai: Boolean, onResult: (java.io.File?, String?) -> Unit) {
+    fun exportDoctorReport(
+        context: android.content.Context, isThai: Boolean,
+        categories: Set<String> = DoctorReportGenerator.ALL_CATEGORIES,
+        periodMonths: Int? = null, detailed: Boolean = true,
+        onResult: (java.io.File?, String?) -> Unit
+    ) {
         val st = _uiState.value
         val child = st.child ?: run { onResult(null, "no child selected"); return }
         viewModelScope.launch {
@@ -254,7 +262,20 @@ class ChildViewModel : ViewModel() {
                 val birth = runCatching { java.time.LocalDate.parse(child.birthdate) }.getOrNull()
                 val ageMonths = birth?.let { val pp = java.time.Period.between(it, today); pp.years * 12 + pp.months } ?: Int.MAX_VALUE
 
-                // §2 vaccines actually received (completed).
+                // Period filter (null = all-time). Applied to date-stamped rows (vaccines, growth);
+                // ponytail: "Custom" range from the export screen currently maps to all-time too —
+                // add a real date-range picker if users need a specific arbitrary window.
+                val periodCutoff = periodMonths?.let { today.minusMonths(it.toLong()) }
+                fun inPeriod(dateStr: String?): Boolean {
+                    if (periodCutoff == null) return true
+                    val d = runCatching { java.time.LocalDate.parse(dateStr) }.getOrNull() ?: return true
+                    return !d.isBefore(periodCutoff)
+                }
+
+                // §2 vaccines actually received (completed) — the export screen labels this
+                // category "Vaccination Book (ALL)": deliberately exempt from the period filter,
+                // unlike growth/nutrition rows below. A parent needs the full vaccination history
+                // in every export, not just whatever happened in the last 3-6 months.
                 val vacRows = st.vaccines.filter { it.status == "completed" }
                     .sortedBy { it.ageOrder ?: 0 }
                     .map { DoctorReportGenerator.Vac(it.ageGroup ?: "", it.vaccineName, d10(it.dateGiven), "", it.notes ?: it.description ?: "") }
@@ -277,7 +298,7 @@ class ChildViewModel : ViewModel() {
                     .take(8).joinToString("\n") { "• ${it.milestoneName}" }
 
                 // §4 growth history.
-                val growthRows = st.growthRecords.map {
+                val growthRows = st.growthRecords.filter { inPeriod(it.recordedAt) }.map {
                     DoctorReportGenerator.Growth(d10(it.recordedAt), it.weightKg?.let { w -> "$w" } ?: "", it.heightCm?.let { h -> "$h" } ?: "", "", it.notes ?: "")
                 }
                 val foodAllergies = st.allergies.filter { it.type == "food" }.joinToString(", ") { it.name }
@@ -363,9 +384,11 @@ class ChildViewModel : ViewModel() {
                     // §6
                     sleepSummary = sleepSummary, medicationSummary = medicationSummary,
                     // §7
-                    overallSummary = aiSummary, recommendations = recommendations
+                    overallSummary = aiSummary, recommendations = recommendations,
+                    // §8 — filename + upload date only (the files themselves aren't embedded).
+                    medicalDocs = st.medicalDocuments.map { DoctorReportGenerator.MedDoc(it.fileName, d10(it.createdAt)) }
                 )
-                DoctorReportGenerator.generate(context, formData)
+                DoctorReportGenerator.generate(context, formData, categories, detailed)
             }
             result.exceptionOrNull()?.let { android.util.Log.e("DoctorReport", "export failed", it) }
             _uiState.value = _uiState.value.copy(reportLoading = false)
@@ -966,6 +989,26 @@ class ChildViewModel : ViewModel() {
             healthRepo.updateHealthStatus(recordId, next).onSuccess {
                 healthRepo.getHealthRecords(childId).onSuccess { _uiState.value = _uiState.value.copy(healthRecords = it) }
             }
+        }
+    }
+
+    fun loadSymptomLogs(healthRecordId: String) {
+        viewModelScope.launch {
+            healthRepo.getSymptomLogs(healthRecordId).onSuccess { _uiState.value = _uiState.value.copy(symptomLogs = it) }
+        }
+    }
+
+    fun addSymptomLog(
+        healthRecordId: String, symptoms: Map<String, String>, temperature: Double?,
+        feeling: String?, dayStatus: String, notes: String?, onDone: () -> Unit
+    ) {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(symptomLogSaving = true)
+            healthRepo.addSymptomLog(healthRecordId, childId, symptoms, temperature, feeling, dayStatus, notes)
+                .onSuccess { healthRepo.getSymptomLogs(healthRecordId).onSuccess { logs -> _uiState.value = _uiState.value.copy(symptomLogs = logs) } }
+            _uiState.value = _uiState.value.copy(symptomLogSaving = false)
+            onDone()
         }
     }
 
