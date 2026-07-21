@@ -257,7 +257,8 @@ fun DashboardScreen(
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.HOME,
-                onHome = {}, onChatbot = onNavigateToChat, onChild = onNavigateToChild, onStats = onNavigateToStats, onSettings = onNavigateToSettings
+                // Already home — tapping it re-fetches instead of a no-op navigate to self.
+                onHome = { childViewModel.loadChild() }, onChatbot = onNavigateToChat, onChild = onNavigateToChild, onStats = onNavigateToStats, onSettings = onNavigateToSettings
             )
         },
         // Quick Action FAB — the Quick Log Hub already exists (search this file for onNavigateToStats
@@ -271,8 +272,13 @@ fun DashboardScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+            isRefreshing = childState.isLoading,
+            onRefresh = { childViewModel.loadChild() },
+            modifier = Modifier.fillMaxSize().padding(padding)
+        ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         ) {
             // Header
             Row(
@@ -523,6 +529,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(8.dp))
             }
+        }
         }
     }
 }
