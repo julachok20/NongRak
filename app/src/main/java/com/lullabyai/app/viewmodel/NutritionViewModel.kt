@@ -343,12 +343,17 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
-    /** Log an exercise session; AI estimates calories burned. */
-    fun logExercise(activity: String, durationMin: Int, lang: String) {
+    /** Log an exercise session; AI estimates calories burned. date/mood/notes are for the manual
+     *  "Log Exercise" form — AI-suggested-activity logging (same day, no mood/notes) omits them. */
+    fun logExercise(
+        activity: String, durationMin: Int, lang: String,
+        date: String? = null, mood: String? = null, notes: String? = null
+    ) {
         viewModelScope.launch {
             val child = _ui.value.child ?: return@launch
             val burn = NutritionAiService.estimateBurn(activity, durationMin, ageMonths(child), lang)
-            repo.addExercise(child.id, activity, durationMin, burn)
+            if (date != null) repo.addExercise(child.id, activity, durationMin, burn, date, mood, notes)
+            else repo.addExercise(child.id, activity, durationMin, burn)
             val ex = repo.getExerciseLogs(child.id)
             val weekly = repo.getWeeklyExercise(child.id).sumOf { it.durationMin ?: 0 }
             val summary = repo.getDailySummary(child.id)

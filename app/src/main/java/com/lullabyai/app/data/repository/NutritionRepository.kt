@@ -100,7 +100,8 @@ class NutritionRepository {
     }.getOrDefault(emptyList())
 
     suspend fun addExercise(
-        childId: String, activityName: String, durationMin: Int?, caloriesBurned: Int?, date: String = today()
+        childId: String, activityName: String, durationMin: Int?, caloriesBurned: Int?, date: String = today(),
+        mood: String? = null, notes: String? = null
     ): Result<Unit> = runCatching {
         supabase.from("exercise_logs").insert(buildJsonObject {
             put("child_id", JsonPrimitive(childId))
@@ -108,6 +109,8 @@ class NutritionRepository {
             put("activity_name", JsonPrimitive(activityName))
             put("duration_min", durationMin?.let { JsonPrimitive(it) } ?: JsonNull)
             put("calories_burned", caloriesBurned?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("mood", mood?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
         })
     }
 

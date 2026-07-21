@@ -563,6 +563,9 @@ fun AppNavigation(
         composable(Screen.Exercise.route) {
             ExerciseScreen(nutritionViewModel, lang, navController)
         }
+        composable(Screen.LogExercise.route) {
+            com.lullabyai.app.ui.screens.exercise.LogExerciseScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+        }
         composable(Screen.ExerciseInstruction.route) {
             com.lullabyai.app.ui.screens.exercise.ExerciseInstructionScreen(nutritionViewModel, lang) { navController.popBackStack() }
         }

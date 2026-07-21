@@ -60,6 +60,41 @@ fun ExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavContr
                 }
             }
 
+            // Days-this-week-with-activity streak — a real count from ui.exerciseLogs (this week's
+            // logs), not a fabricated claim. Matches the mockup's weekly-consistency card.
+            item {
+                val daysWithActivity = ui.exerciseLogs.map { it.logDate }.distinct().size
+                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f))) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.CalendarMonth, null, tint = Primary, modifier = Modifier.size(18.dp))
+                            Text(if (isThai) "สถิติสัปดาห์นี้" else "This week's consistency", style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                            Text(
+                                if (isThai) "ทำกิจกรรมแล้ว $daysWithActivity วันจาก 7 วัน" else "Active $daysWithActivity of 7 days this week",
+                                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Manual log entry point — ponytail: skipped a separate "AI recommends" insight card
+            // here (the mockup has one); the per-activity list below already carries AI-suggested
+            // activities with tags, add a standalone insight card if that's not enough signal.
+            item {
+                Button(
+                    onClick = { navController.navigate(Screen.LogExercise.route) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) {
+                    Icon(Icons.Filled.AddCircle, null, tint = Color.White); Spacer(Modifier.width(8.dp))
+                    Text(if (isThai) "บันทึกการออกกำลังกาย" else "Log Exercise", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+
             item {
                 Text(if (isThai) "กิจกรรมแนะนำตามวัย" else "Recommended activities", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             }
@@ -105,6 +140,19 @@ fun ExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavContr
                                 Icon(Icons.Filled.PlayCircle, null, tint = Primary)
                             }
                         }
+                    }
+                }
+            }
+
+            item {
+                Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = SecondaryContainer.copy(0.3f))) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (isThai) "เกร็ดความรู้การออกกำลังกาย" else "Did you know?", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            if (isThai) "การมีกิจกรรมทางกายตั้งแต่วัยเยาว์ช่วยพัฒนาเซลล์สมอง เสริมสร้างความแข็งแรงของหัวใจ และส่งผลดีต่ออารมณ์และพฤติกรรมในอนาคต"
+                            else "Physical activity from an early age supports brain cell development, strengthens the heart, and has lasting positive effects on mood and behavior.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

@@ -385,6 +385,8 @@ data class ExerciseLog(
     @SerialName("duration_min") val durationMin: Int? = null,
     @SerialName("calories_burned") val caloriesBurned: Int? = null,
     val completed: Boolean = true,
+    val mood: String? = null,   // tired | happy | energized — how the child felt after
+    val notes: String? = null,
     @SerialName("created_at") val createdAt: String? = null
 )
 
