@@ -587,7 +587,8 @@ fun AppNavigation(
             onNext = { tourStep++ },
             onBack = { if (tourStep > 0) tourStep-- },
             onSkip = { finishTour() },
-            onFinish = { finishTour() }
+            onFinish = { finishTour() },
+            onToggleLanguage = { settingsViewModel.toggleLanguage() }
         )
     }
     }
