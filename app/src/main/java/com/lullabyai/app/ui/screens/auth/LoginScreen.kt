@@ -29,8 +29,10 @@ import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.SettingsViewModel
 
-// Toggle this to true once Google OAuth is fully set up to show the Google button again.
-const val ENABLE_GOOGLE_SIGN_IN = false
+// Requires the OAuth client's SHA-1/SHA-256 fingerprint (debug AND release) to be registered
+// against com.publish.NongRak in Google Cloud Console, or Credential Manager sign-in will fail
+// even with a valid GOOGLE_WEB_CLIENT_ID. See MEMORY_GRAPH.md for why this was disabled before.
+const val ENABLE_GOOGLE_SIGN_IN = true
 
 @Composable
 fun LoginScreen(
