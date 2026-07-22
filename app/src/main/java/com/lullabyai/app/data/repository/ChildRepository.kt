@@ -34,9 +34,20 @@ class ChildRepository {
      *  false "please add a child" prompt that reappeared on every screen visit. */
     suspend fun getChildren(): Result<List<Child>> {
         val first = runCatching { supabase.from("children").select().decodeList<Child>() }
-        if (first.isSuccess) return first
+        if (first.isSuccess) {
+            first.getOrNull()?.let { com.lullabyai.app.data.offline.OfflineCache.put("children", it) }
+            return first
+        }
         kotlinx.coroutines.delay(600)
-        return runCatching { supabase.from("children").select().decodeList<Child>() }
+        val second = runCatching { supabase.from("children").select().decodeList<Child>() }
+        if (second.isSuccess) {
+            second.getOrNull()?.let { com.lullabyai.app.data.offline.OfflineCache.put("children", it) }
+            return second
+        }
+        // Both attempts failed (likely offline) — fall back to the last successfully loaded list
+        // instead of leaving the dashboard blank/erroring. Stale but present beats empty.
+        val cached = com.lullabyai.app.data.offline.OfflineCache.get<List<Child>>("children")
+        return if (cached != null) Result.success(cached) else second
     }
 
     suspend fun getFirstChild(): Result<Child?> = runCatching {

@@ -37,6 +37,8 @@ class NongRakApp : Application() {
         rescheduleSleepReminders()
         scheduleWeeklyHealthReport()
         scheduleSleepBedtimeRecommendation()
+        // Retry any growth-log writes that failed while offline last session.
+        CoroutineScope(Dispatchers.IO).launch { com.lullabyai.app.data.offline.PendingWriteQueue.flush() }
     }
 
     /** Proactive bedtime-recommendation nudge, gated by the same 3-day cooldown the in-app

@@ -848,11 +848,16 @@ class ChildViewModel : ViewModel() {
     fun addGrowthRecord(record: GrowthRecord) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
-            healthRepo.addGrowthRecord(record.copy(childId = childId)).onSuccess {
-                healthRepo.getGrowthRecords(childId).onSuccess {
-                    _uiState.value = _uiState.value.copy(growthRecords = it)
+            val toSave = record.copy(childId = childId)
+            healthRepo.addGrowthRecord(toSave)
+                .onSuccess {
+                    healthRepo.getGrowthRecords(childId).onSuccess {
+                        _uiState.value = _uiState.value.copy(growthRecords = it)
+                    }
                 }
-            }
+                // Likely offline — queue it instead of silently losing what the parent just typed;
+                // PendingWriteQueue.flush() retries this at next app start.
+                .onFailure { com.lullabyai.app.data.offline.PendingWriteQueue.enqueueGrowthRecord(toSave) }
         }
     }
 
