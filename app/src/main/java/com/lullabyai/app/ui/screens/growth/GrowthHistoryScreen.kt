@@ -3,6 +3,7 @@ package com.lullabyai.app.ui.screens.growth
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -114,6 +115,21 @@ fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
                         Column {
                             Text(child?.name ?: (if (isThai) "ลูกของคุณ" else "Your child"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text("$ageMonthsNow " + (if (isThai) "เดือน" else "months"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            if (childState.children.size > 1) {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth().clickable { navController.navigate(Screen.SiblingCompare.route) },
+                        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = Primary)
+                            Text(if (isThai) "เปรียบเทียบการเติบโตกับพี่น้อง" else "Compare growth with siblings", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Filled.Info, null, tint = Primary, modifier = Modifier.size(18.dp))
                         }
                     }
                 }

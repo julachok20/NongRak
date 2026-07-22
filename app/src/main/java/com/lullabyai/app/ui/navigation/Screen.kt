@@ -68,6 +68,7 @@ sealed class Screen(val route: String) {
     object SicknessFollowUp : Screen("sickness_follow_up")
     object LogSicknessSymptoms : Screen("log_sickness_symptoms")
     object GrowthHistory : Screen("growth_history")
+    object SiblingCompare : Screen("sibling_compare")
     object AddGrowthRecord : Screen("add_growth_record")
     object MentalHealthAssessment : Screen("mental_health_assessment")
     object MentalHealthResult : Screen("mental_health_result")
