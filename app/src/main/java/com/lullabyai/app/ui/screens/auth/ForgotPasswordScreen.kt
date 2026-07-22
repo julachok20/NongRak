@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lullabyai.app.ui.components.HCaptchaVerifyButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ForgotPasswordViewModel
 import com.lullabyai.app.viewmodel.ForgotStep
@@ -94,6 +95,7 @@ private fun EmailStep(
     onBackToLogin: () -> Unit
 ) {
     var email by remember { mutableStateOf("") }
+    var captchaToken by remember { mutableStateOf<String?>(null) }
 
     Spacer(Modifier.height(24.dp))
     Card(
@@ -138,12 +140,15 @@ private fun EmailStep(
                 )
             }
 
+            // Mandatory for everyone — no risk-based skip, no dev-account bypass (unlike Login/SignUp).
+            HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
+
             if (error != null) {
                 Text(error, color = Error, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
             }
 
             Button(
-                onClick = { viewModel.sendOtp(email) },
+                onClick = { viewModel.sendOtp(email, captchaToken) },
                 enabled = !isLoading,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(100.dp),

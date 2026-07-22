@@ -38,6 +38,14 @@ const val ENABLE_GOOGLE_SIGN_IN = true
 // accounts, so iterating on the app isn't blocked by the bot-check gate applied to everyone else.
 val CAPTCHA_BYPASS_EMAILS = setOf("41801@sbw.ac.th", "julachok@gmail.com")
 
+// Risk-based captcha for Login/SignUp: hidden by default, only shown+required once one of these
+// (deliberately simple, honest heuristics — no real ML/device risk signal available client-side)
+// trips: submitting faster than a human could plausibly type the form, or repeated attempts on
+// the same screen visit (which only happens if earlier attempts failed, since success navigates
+// away). Forgot Password is unconditional — see ForgotPasswordScreen.kt.
+const val CAPTCHA_FAST_SUBMIT_THRESHOLD_MS = 2500L
+const val CAPTCHA_RETRY_BURST_THRESHOLD = 3
+
 @Composable
 fun LoginScreen(
     authViewModel: AuthViewModel,
@@ -58,6 +66,10 @@ fun LoginScreen(
     var captchaToken by remember { mutableStateOf<String?>(null) }
     var formError by remember { mutableStateOf<String?>(null) }
     val isThai = settings.language == AppLanguage.TH
+    val screenOpenedAtMs = remember { System.currentTimeMillis() }
+    var captchaRequired by remember { mutableStateOf(false) }
+    var attemptCount by remember { mutableStateOf(0) }
+    val bypassed = email.trim().lowercase() in CAPTCHA_BYPASS_EMAILS
 
     LaunchedEffect(uiState.error) {
         if (uiState.error != null) {
@@ -163,9 +175,11 @@ fun LoginScreen(
                         )
                     }
 
-                    // Blocking for everyone except CAPTCHA_BYPASS_EMAILS (trusted dev/test accounts) —
-                    // see the onClick check below.
-                    HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
+                    // Invisible by default — only shown once the risk heuristic below trips (or for
+                    // an already-flagged bypassed account, never at all).
+                    if (captchaRequired && !bypassed) {
+                        HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
+                    }
 
                     (formError ?: uiState.error)?.let {
                         Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
@@ -175,9 +189,13 @@ fun LoginScreen(
                         text = s.login,
                         onClick = {
                             formError = null
-                            val bypassed = email.trim().lowercase() in CAPTCHA_BYPASS_EMAILS
-                            if (captchaToken == null && !bypassed) {
-                                formError = if (isThai) "กรุณายืนยันว่าคุณไม่ใช่บอทก่อนเข้าสู่ระบบ" else "Please verify you're not a robot before signing in"
+                            attemptCount++
+                            val elapsed = System.currentTimeMillis() - screenOpenedAtMs
+                            if (!bypassed && (elapsed < CAPTCHA_FAST_SUBMIT_THRESHOLD_MS || attemptCount >= CAPTCHA_RETRY_BURST_THRESHOLD)) {
+                                captchaRequired = true
+                            }
+                            if (captchaRequired && !bypassed && captchaToken == null) {
+                                formError = if (isThai) "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนเข้าสู่ระบบ" else "Unusual activity detected — please verify you're not a robot before signing in"
                             } else {
                                 authViewModel.signIn(email, password, captchaToken) { mustChange ->
                                     if (mustChange) onNeedChangePassword() else onLoginSuccess()

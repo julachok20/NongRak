@@ -51,6 +51,10 @@ fun SignUpScreen(
     var passwordMismatch by remember { mutableStateOf(false) }
     var formError by remember { mutableStateOf<String?>(null) }
     var captchaToken by remember { mutableStateOf<String?>(null) }
+    val screenOpenedAtMs = remember { System.currentTimeMillis() }
+    var captchaRequired by remember { mutableStateOf(false) }
+    var attemptCount by remember { mutableStateOf(0) }
+    val bypassed = email.trim().lowercase() in CAPTCHA_BYPASS_EMAILS
 
     Box(
         modifier = Modifier
@@ -160,9 +164,11 @@ fun SignUpScreen(
                         if (passwordMismatch) Text(s.passwordMismatch, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
 
-                    // Blocking for everyone except CAPTCHA_BYPASS_EMAILS (trusted dev/test accounts) —
-                    // see the `when` block below.
-                    HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
+                    // Invisible by default — only shown once the risk heuristic in the `when` block
+                    // below trips (or never, for an already-flagged bypassed account).
+                    if (captchaRequired && !bypassed) {
+                        HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
+                    }
 
                     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Checkbox(
@@ -186,6 +192,11 @@ fun SignUpScreen(
                             // instead of leaving the button silently disabled.
                             formError = null
                             passwordMismatch = false
+                            attemptCount++
+                            val elapsed = System.currentTimeMillis() - screenOpenedAtMs
+                            if (!bypassed && (elapsed < CAPTCHA_FAST_SUBMIT_THRESHOLD_MS || attemptCount >= CAPTCHA_RETRY_BURST_THRESHOLD)) {
+                                captchaRequired = true
+                            }
                             when {
                                 fullName.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
                                     formError = "กรุณากรอกข้อมูลให้ครบทุกช่อง"
@@ -195,8 +206,8 @@ fun SignUpScreen(
                                     passwordMismatch = true
                                 !agreedToTerms ->
                                     formError = "กรุณายอมรับข้อตกลงและเงื่อนไขการใช้งานก่อนสมัคร"
-                                captchaToken == null && email.trim().lowercase() !in CAPTCHA_BYPASS_EMAILS ->
-                                    formError = "กรุณายืนยันว่าคุณไม่ใช่บอทก่อนสมัครสมาชิก"
+                                captchaRequired && !bypassed && captchaToken == null ->
+                                    formError = "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนสมัครสมาชิก"
                                 else ->
                                     authViewModel.signUp(email, password, fullName, captchaToken, onSignUpSuccess)
                             }

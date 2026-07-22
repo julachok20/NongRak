@@ -195,8 +195,8 @@ class AuthRepository {
         raw.contains("true", ignoreCase = true)
     }.getOrDefault(true) // default true = don't block on network error
 
-    suspend fun sendPasswordResetOtp(email: String): Result<Unit> = runCatching {
-        supabase.auth.resetPasswordForEmail(email.trim())
+    suspend fun sendPasswordResetOtp(email: String, captchaToken: String? = null): Result<Unit> = runCatching {
+        supabase.auth.resetPasswordForEmail(email.trim(), captchaToken = captchaToken)
     }
 
     /** Step 2: verify the 6-digit code — on success this creates an authenticated recovery session. */

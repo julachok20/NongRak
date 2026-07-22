@@ -24,11 +24,17 @@ class ForgotPasswordViewModel : ViewModel() {
     private val _state = MutableStateFlow(ForgotPasswordUiState())
     val state: StateFlow<ForgotPasswordUiState> = _state
 
-    /** Step 1 → send the OTP to the email, advance to the OTP step. */
-    fun sendOtp(email: String) {
+    /** Step 1 → send the OTP to the email, advance to the OTP step. Captcha is mandatory here
+     *  (no risk-based skip, no dev-account bypass) — unlike Login/SignUp, this is the one flow
+     *  where every attempt requires a verified token. */
+    fun sendOtp(email: String, captchaToken: String?) {
         val trimmed = email.trim()
         if (trimmed.isBlank() || !trimmed.contains("@")) {
             _state.value = _state.value.copy(error = "กรุณากรอกอีเมลให้ถูกต้อง")
+            return
+        }
+        if (captchaToken == null) {
+            _state.value = _state.value.copy(error = "กรุณายืนยันว่าคุณไม่ใช่บอทก่อนส่งรหัส")
             return
         }
         viewModelScope.launch {
@@ -42,7 +48,7 @@ class ForgotPasswordViewModel : ViewModel() {
                 )
                 return@launch
             }
-            repo.sendPasswordResetOtp(trimmed)
+            repo.sendPasswordResetOtp(trimmed, captchaToken)
                 .onSuccess {
                     _state.value = _state.value.copy(isLoading = false, step = ForgotStep.OTP, email = trimmed)
                 }
