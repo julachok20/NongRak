@@ -85,6 +85,9 @@ fun AIChatScreen(
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var selectedIsDocument by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val aiVoice = rememberAiVoice()
+    var voiceEnabled by remember { mutableStateOf(false) }
+    var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
 
     // Image OR document (PDF) picker — "like in Gemini", per the request: the model can read an
     // attached file, not just photos. Images are downscaled to JPEG at send time; PDFs are sent
@@ -128,6 +131,16 @@ fun AIChatScreen(
     }
 
     LaunchedEffect(Unit) { chatViewModel.loadSessions() }
+
+    // Reads the latest AI reply aloud when voice is enabled — one utterance per new message.
+    LaunchedEffect(chatState.messages, voiceEnabled) {
+        if (!voiceEnabled) return@LaunchedEffect
+        val latest = chatState.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (latest != null && latest.id != lastSpokenMessageId) {
+            lastSpokenMessageId = latest.id
+            aiVoice.speak(latest.content)
+        }
+    }
 
     LaunchedEffect(chatState.messages.size) {
         if (chatState.messages.isNotEmpty()) {
@@ -198,11 +211,25 @@ fun AIChatScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("คุยกับ AI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AiAvatarView(isSpeaking = aiVoice.isSpeaking, modifier = Modifier.size(28.dp))
+                            Text("คุยกับ AI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
                     },
                     actions = {
+                        IconButton(onClick = {
+                            voiceEnabled = !voiceEnabled
+                            if (!voiceEnabled) aiVoice.stop()
+                        }) {
+                            Icon(
+                                if (voiceEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                                "อ่านคำตอบออกเสียง", tint = if (voiceEnabled) Primary else LocalContentColor.current
+                            )
+                        }
                         IconButton(onClick = { onNavigate(Screen.CameraScan.route) }) {
                             Icon(Icons.Filled.CameraAlt, "สแกนรอบตัวลูก")
                         }
