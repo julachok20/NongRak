@@ -53,11 +53,17 @@ fun AIChatScreen(
     var sessionToDelete by remember { mutableStateOf<String?>(null) }
     var sessionToRename by remember { mutableStateOf<Pair<String, String>?>(null) }  // id to current title
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedIsDocument by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // Image picker → hold the URI; it's downscaled to JPEG bytes at send time.
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) selectedImageUri = uri
+    // Image OR document (PDF) picker — "like in Gemini", per the request: the model can read an
+    // attached file, not just photos. Images are downscaled to JPEG at send time; PDFs are sent
+    // as raw bytes (see sendCurrent below) since downscaling only makes sense for images.
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            selectedImageUri = uri
+            selectedIsDocument = context.contentResolver.getType(uri) == "application/pdf"
+        }
     }
     // Speech-to-text via Google's recognizer dialog (Thai), result fills the input field.
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
@@ -75,15 +81,20 @@ fun AIChatScreen(
         runCatching { speechLauncher.launch(intent) }
     }
 
-    // Send the current text + optional image, then clear both.
+    // Send the current text + optional image/document, then clear both.
     fun sendCurrent() {
         val text = inputText.trim()
         val uri = selectedImageUri
         if (text.isBlank() && uri == null) return
-        val bytes = uri?.let { com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, it) }
-        chatViewModel.sendMessage(text, childState.child, imageBytes = bytes, imageUri = uri?.toString(), imageMime = "image/jpeg")
+        val bytes = uri?.let {
+            if (selectedIsDocument) com.lullabyai.app.util.ImageUtils.readBytes(context, it)
+            else com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, it)
+        }
+        val mime = if (selectedIsDocument) "application/pdf" else "image/jpeg"
+        chatViewModel.sendMessage(text, childState.child, imageBytes = bytes, imageUri = uri?.toString(), imageMime = mime)
         inputText = ""
         selectedImageUri = null
+        selectedIsDocument = false
     }
 
     LaunchedEffect(Unit) { chatViewModel.loadSessions() }
@@ -174,7 +185,7 @@ fun AIChatScreen(
             },
             bottomBar = {
                 Column {
-                    // Selected-image preview (above the input) with a remove button.
+                    // Selected image/document preview (above the input) with a remove button.
                     selectedImageUri?.let { uri ->
                         Surface(color = MaterialTheme.colorScheme.surface) {
                             Row(
@@ -182,10 +193,19 @@ fun AIChatScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                AsyncImage(model = uri, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
-                                Text("แนบรูปภาพแล้ว", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { selectedImageUri = null }) {
-                                    Icon(Icons.Filled.Close, "ลบรูป", tint = Outline)
+                                if (selectedIsDocument) {
+                                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Filled.PictureAsPdf, null, tint = Primary)
+                                    }
+                                } else {
+                                    AsyncImage(model = uri, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
+                                }
+                                Text(
+                                    if (selectedIsDocument) "แนบเอกสารแล้ว" else "แนบรูปภาพแล้ว",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { selectedImageUri = null; selectedIsDocument = false }) {
+                                    Icon(Icons.Filled.Close, "ลบไฟล์แนบ", tint = Outline)
                                 }
                             }
                         }
@@ -209,6 +229,10 @@ fun AIChatScreen(
                                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                                 )
                             )
+                            // Attach (image or PDF document — "like in Gemini")
+                            IconButton(onClick = { imagePicker.launch(arrayOf("image/*", "application/pdf")) }) {
+                                Icon(Icons.Filled.AttachFile, "แนบรูปภาพหรือเอกสาร", tint = Primary)
+                            }
                             // Mic (speech → text)
                             IconButton(onClick = { startSpeech() }) {
                                 Icon(Icons.Filled.Mic, "พูดเพื่อพิมพ์", tint = Primary)

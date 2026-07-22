@@ -81,7 +81,12 @@ async function tryClaude(prompt: string, maxTokens: number, system: string, imag
   if (!key || key === "null") return null;
   try {
     const content: Record<string, unknown>[] = [];
-    if (image) content.push({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } });
+    // PDFs use Claude's separate "document" block type (not "image") -- sending a PDF under
+    // type:"image" is rejected outright since that block only accepts image media types.
+    if (image) {
+      const blockType = image.mimeType === "application/pdf" ? "document" : "image";
+      content.push({ type: blockType, source: { type: "base64", media_type: image.mimeType, data: image.data } });
+    }
     content.push({ type: "text", text: prompt });
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -120,6 +125,9 @@ const OPENROUTER_FREE_MODELS = [
 // single OPENROUTER_API_KEY secret if no numbered keys are set, so this deploys safely
 // before any new keys have actually been added.
 async function tryOpenRouter(prompt: string, maxTokens: number, system: string, image: ImageInput) {
+  // OpenRouter's free-tier models here don't accept PDFs via image_url -- skip straight to
+  // Claude (which has a real "document" block) rather than sending a request known to fail.
+  if (image?.mimeType === "application/pdf") return null;
   const raw = [
     Deno.env.get("OPENROUTER_API_KEY_1"),
     Deno.env.get("OPENROUTER_API_KEY_2"),

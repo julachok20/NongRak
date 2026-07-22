@@ -24,4 +24,10 @@ object ImageUtils {
             out.toByteArray()
         }
     }.getOrNull()
+
+    /** Reads [uri]'s raw bytes as-is — for non-image documents (PDF) where downscaling doesn't
+     *  apply. Null on failure. Caller is responsible for keeping the file small (Claude/Gemini
+     *  both cap request payload size) — no size check here, deliberately kept simple. */
+    fun readBytes(context: Context, uri: Uri): ByteArray? =
+        runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
 }
