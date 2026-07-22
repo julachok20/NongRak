@@ -169,10 +169,11 @@ class ChatViewModel : ViewModel() {
     /**
      * Executes the [messageId] message's pending AgentAction — the ONLY path that actually writes
      * data on the AI's behalf, and only ever runs when the user taps Confirm on the chat card.
-     * Scoped to additive/low-risk repository calls for this first version: logging sleep/food/
-     * exercise/health, updating growth numbers, and deleting the single most-recent log of a type.
-     * Not supported yet (out of scope for v1): editing an arbitrary existing record, medication
-     * schedules, vaccine records, or account/settings changes.
+     * Scoped to additive/low-risk repository calls: logging sleep/food/exercise/health/milk/waste,
+     * updating growth numbers, marking the next pending medicine dose taken, marking a vaccine
+     * completed, and deleting the single most-recent log of a type.
+     * Not supported yet (out of scope): editing an arbitrary existing record, adding/changing a
+     * medication SCHEDULE (only marking an existing dose taken), or account/settings changes.
      */
     fun confirmAgentAction(messageId: String, childId: String) {
         val msg = _uiState.value.messages.find { it.id == messageId } ?: return
@@ -293,6 +294,34 @@ class ChatViewModel : ViewModel() {
                 com.lullabyai.app.data.repository.NutritionRepository()
                     .addExercise(childId, p.requireCi("activityName", t) ?: action.confirmText.ifBlank { return false }, p.getCi("durationMin")?.toIntOrNull(), null)
                     .isSuccess
+            }
+            "medicine" in t || "medication" in t || "dose" in t -> {
+                // No specific dose ID from the model — take the soonest-due pending dose, same
+                // "best-guess most-relevant record" approach as delete_most_recent above.
+                val doses = com.lullabyai.app.data.repository.MedicationRepository().getDoses(childId)
+                    .getOrNull()?.filter { it.status == "pending" } ?: emptyList()
+                val target = doses.minByOrNull { it.scheduledAt } ?: return false
+                com.lullabyai.app.data.repository.MedicationRepository().markDoseTaken(target.id).isSuccess
+            }
+            "vaccine" in t -> {
+                val name = p.requireCi("vaccineName", t) ?: action.confirmText.ifBlank { return false }
+                val records = com.lullabyai.app.data.repository.HealthRepository().getVaccineRecords(childId).getOrNull() ?: emptyList()
+                val target = records.filter { it.status != "completed" }
+                    .firstOrNull { it.vaccineName.contains(name, ignoreCase = true) || name.contains(it.vaccineName, ignoreCase = true) }
+                    ?: return false
+                com.lullabyai.app.data.repository.HealthRepository()
+                    .updateVaccineStatus(target.id, "completed", java.time.LocalDate.now().toString()).isSuccess
+            }
+            "milk" in t || "formula" in t -> {
+                val volume = p.getCi("volumeMl")?.toIntOrNull() ?: return false
+                com.lullabyai.app.data.repository.NutritionRepository()
+                    .addMilkLog(childId, p.getCi("milkType") ?: "breast", volume, p.getCi("side"), p.getCi("notes")).isSuccess
+            }
+            "waste" in t || "diaper" in t || "poop" in t || "pee" in t -> {
+                com.lullabyai.app.data.repository.HealthRepository().addWasteRecord(
+                    childId, p.getCi("wasteType") ?: "poop", p.getCi("consistency"), p.getCi("color"),
+                    p.getCi("amount") ?: "ปกติ", p.getCi("notes")
+                ).isSuccess
             }
             "health" in t || "symptom" in t || "record" in t || "log" in t -> {
                 // Observed via logcat: the model sometimes emits params={} entirely for log_health

@@ -73,6 +73,10 @@ object RelationshipLabels {
             "- log_exercise: activityName, durationMin (ตัวเลข ไม่บังคับ)\n" +
             "- log_health: title, temperature (องศาเซลเซียส ไม่บังคับ), description (ไม่บังคับ)\n" +
             "- update_growth: weightKg (ไม่บังคับ), heightCm (ไม่บังคับ) — อย่างน้อยต้องมีค่าใดค่าหนึ่ง\n" +
+            "- log_medicine: (ไม่ต้องมี params — จะทำเครื่องหมายยาที่ใกล้ถึงเวลาที่สุดว่าให้แล้ว ใช้เมื่อผู้ใช้บอกว่าให้ยาลูกแล้ว)\n" +
+            "- complete_vaccine: vaccineName (ชื่อวัคซีน)\n" +
+            "- log_milk: milkType (breast หรือ formula), volumeMl (ตัวเลข มิลลิลิตร), side (ไม่บังคับ)\n" +
+            "- log_waste: wasteType (pee หรือ poop), consistency (ไม่บังคับ), color (ไม่บังคับ), amount (ไม่บังคับ)\n" +
             "- delete_most_recent: logType (sleep, food, exercise, หรือ health)\n" +
             "สำคัญมาก: ห้ามส่ง \"params\":{} (ว่างเปล่า) เด็ดขาด ต้องดึงค่าจริงจากข้อความของผู้ใช้มาใส่ใน params ให้ครบตามที่ระบุไว้ข้างต้นเสมอ " +
             "ตัวอย่างที่ถูกต้อง — ผู้ใช้พิมพ์ \"บันทึกว่าลูกตัวร้อน 38.2 องศา\" ให้ตอบ:\n" +
