@@ -160,11 +160,8 @@ fun SignUpScreen(
                         if (passwordMismatch) Text(s.passwordMismatch, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
 
-                    // Re-added for the test version — kept NON-BLOCKING: the submit button below
-                    // never gates on captchaToken (see the `when` block), so if the widget fails to
-                    // render on a given device (the WebView GPU-compositing bug it once hit on some
-                    // emulators — HCaptchaWidget already forces software rendering to work around
-                    // that) signup still goes through with a null token instead of locking anyone out.
+                    // Blocking for everyone except CAPTCHA_BYPASS_EMAILS (trusted dev/test accounts) —
+                    // see the `when` block below.
                     HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
 
                     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -198,6 +195,8 @@ fun SignUpScreen(
                                     passwordMismatch = true
                                 !agreedToTerms ->
                                     formError = "กรุณายอมรับข้อตกลงและเงื่อนไขการใช้งานก่อนสมัคร"
+                                captchaToken == null && email.trim().lowercase() !in CAPTCHA_BYPASS_EMAILS ->
+                                    formError = "กรุณายืนยันว่าคุณไม่ใช่บอทก่อนสมัครสมาชิก"
                                 else ->
                                     authViewModel.signUp(email, password, fullName, captchaToken, onSignUpSuccess)
                             }

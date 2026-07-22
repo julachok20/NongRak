@@ -34,6 +34,10 @@ import com.lullabyai.app.viewmodel.SettingsViewModel
 // even with a valid GOOGLE_WEB_CLIENT_ID. See MEMORY_GRAPH.md for why this was disabled before.
 const val ENABLE_GOOGLE_SIGN_IN = true
 
+// Accounts that can sign in/sign up without completing the hCaptcha challenge — trusted dev/test
+// accounts, so iterating on the app isn't blocked by the bot-check gate applied to everyone else.
+val CAPTCHA_BYPASS_EMAILS = setOf("41801@sbw.ac.th", "julachok@gmail.com")
+
 @Composable
 fun LoginScreen(
     authViewModel: AuthViewModel,
@@ -52,6 +56,8 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var captchaToken by remember { mutableStateOf<String?>(null) }
+    var formError by remember { mutableStateOf<String?>(null) }
+    val isThai = settings.language == AppLanguage.TH
 
     LaunchedEffect(uiState.error) {
         if (uiState.error != null) {
@@ -115,7 +121,7 @@ fun LoginScreen(
                         Text(s.email, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
                         OutlinedTextField(
                             value = email,
-                            onValueChange = { email = it; authViewModel.clearError() },
+                            onValueChange = { email = it; authViewModel.clearError(); formError = null },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text("name@example.com", color = Outline) },
                             leadingIcon = { Icon(Icons.Filled.Email, null, tint = Outline) },
@@ -138,7 +144,7 @@ fun LoginScreen(
                         }
                         OutlinedTextField(
                             value = password,
-                            onValueChange = { password = it; authViewModel.clearError() },
+                            onValueChange = { password = it; authViewModel.clearError(); formError = null },
                             modifier = Modifier.fillMaxWidth(),
                             leadingIcon = { Icon(Icons.Filled.Lock, null, tint = Outline) },
                             trailingIcon = {
@@ -157,22 +163,25 @@ fun LoginScreen(
                         )
                     }
 
-                    // Re-added for the test version — kept NON-BLOCKING: the login button below
-                    // never gates on captchaToken, so if the widget fails to render on a given
-                    // device (the WebView GPU-compositing bug it once hit on some emulators —
-                    // HCaptchaWidget already forces software rendering to work around that) login
-                    // still goes through with a null token instead of locking anyone out.
+                    // Blocking for everyone except CAPTCHA_BYPASS_EMAILS (trusted dev/test accounts) —
+                    // see the onClick check below.
                     HCaptchaVerifyButton(token = captchaToken, onTokenChange = { captchaToken = it })
 
-                    uiState.error?.let {
+                    (formError ?: uiState.error)?.let {
                         Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
 
                     PrimaryButton(
                         text = s.login,
                         onClick = {
-                            authViewModel.signIn(email, password, captchaToken) { mustChange ->
-                                if (mustChange) onNeedChangePassword() else onLoginSuccess()
+                            formError = null
+                            val bypassed = email.trim().lowercase() in CAPTCHA_BYPASS_EMAILS
+                            if (captchaToken == null && !bypassed) {
+                                formError = if (isThai) "กรุณายืนยันว่าคุณไม่ใช่บอทก่อนเข้าสู่ระบบ" else "Please verify you're not a robot before signing in"
+                            } else {
+                                authViewModel.signIn(email, password, captchaToken) { mustChange ->
+                                    if (mustChange) onNeedChangePassword() else onLoginSuccess()
+                                }
                             }
                         },
                         isLoading = uiState.isLoading,
