@@ -171,7 +171,8 @@ class ChatViewModel : ViewModel() {
      * data on the AI's behalf, and only ever runs when the user taps Confirm on the chat card.
      * Scoped to additive/low-risk repository calls: logging sleep/food/exercise/health/milk/waste,
      * updating growth numbers, marking the next pending medicine dose taken, marking a vaccine
-     * completed, and deleting the single most-recent log of a type.
+     * completed, adding an allergy or chronic condition, navigating to a screen, and deleting the
+     * single most-recent log of a type.
      * Not supported yet (out of scope): editing an arbitrary existing record, adding/changing a
      * medication SCHEDULE (only marking an existing dose taken), or account/settings changes.
      */
@@ -323,6 +324,21 @@ class ChatViewModel : ViewModel() {
                     p.getCi("amount") ?: "ปกติ", p.getCi("notes")
                 ).isSuccess
             }
+            "allergy" in t -> {
+                com.lullabyai.app.data.repository.HealthRepository().addAllergy(
+                    childId, p.requireCi("name", t) ?: action.confirmText.ifBlank { return false },
+                    p.getCi("allergyType") ?: "other", p.getCi("severity") ?: "mild", p.getCi("symptoms")
+                ).isSuccess
+            }
+            "chronic" in t || "condition" in t -> {
+                com.lullabyai.app.data.repository.HealthRepository().addChronicCondition(
+                    childId, p.requireCi("name", t) ?: action.confirmText.ifBlank { return false }, p.getCi("notes")
+                ).isSuccess
+            }
+            // Navigation is UI-only — actually fired in AIChatScreen's confirm handler (it needs
+            // NavController, which this ViewModel deliberately doesn't hold). This branch only marks
+            // the card "confirmed" for the same tap.
+            "navigate" in t -> true
             "health" in t || "symptom" in t || "record" in t || "log" in t -> {
                 // Observed via logcat: the model sometimes emits params={} entirely for log_health
                 // (confirmed live — 3 identical failures) despite the type matching correctly.

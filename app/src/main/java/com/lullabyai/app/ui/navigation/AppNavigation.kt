@@ -334,7 +334,8 @@ fun AppNavigation(
                 onNavHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onNavChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onNavSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onNavStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } }
+                onNavStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
+                onNavigate = { route -> navController.navigate(route) { launchSingleTop = true } }
             )
         }
         composable(Screen.ChildSummary.route) {

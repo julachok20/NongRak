@@ -29,10 +29,39 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.lullabyai.app.data.model.UiChatMessage
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import kotlinx.coroutines.launch
+
+// Same normalization ChatViewModel.dispatchAgentAction uses — models don't reproduce a literal
+// type string reliably ("Navigate" / "navigate-to" instead of "navigate").
+private fun normalizeActionType(type: String) = type.trim().lowercase().replace(Regex("[ -]"), "_")
+
+/** Keyword match (English or Thai) from the AI's free-form "screen" param to a real route —
+ *  same forgiving approach as ChatViewModel's param lookups, since the model won't always emit
+ *  an exact route string. Covers the main destinations reachable from chat; null falls through to
+ *  a no-op rather than crashing on an unrecognized screen name. */
+private fun resolveNavRoute(key: String): String? {
+    val k = key.trim().lowercase()
+    return when {
+        k.isBlank() -> null
+        "nutrition" in k || "food" in k || "โภชนาการ" in k -> Screen.Nutrition.route
+        "vaccine" in k || "วัคซีน" in k -> Screen.VaccineBook.route
+        "growth" in k || "เติบโต" in k -> Screen.GrowthHistory.route
+        "sleep" in k || "นอน" in k -> Screen.SleepTracker.route
+        "exercise" in k || "ออกกำลัง" in k -> Screen.Exercise.route
+        "disease" in k || "risk" in k || "ความเสี่ยง" in k -> Screen.DiseaseRisk.route
+        "health" in k || "สุขภาพ" in k -> Screen.ChildHealth.route
+        "setting" in k || "ตั้งค่า" in k -> Screen.Settings.route
+        "stat" in k || "สถิติ" in k -> Screen.StatisticsInsights.route
+        "pdf" in k || "export" in k -> Screen.PdfExport.route
+        "child" in k || "ข้อมูลลูก" in k -> Screen.ChildSummary.route
+        "home" in k || "dashboard" in k || "หน้าหลัก" in k -> Screen.Dashboard.route
+        else -> null
+    }
+}
 
 @Composable
 fun AIChatScreen(
@@ -42,7 +71,8 @@ fun AIChatScreen(
     onNavHome: () -> Unit = {},
     onNavChild: () -> Unit = {},
     onNavSettings: () -> Unit = {},
-    onNavStats: () -> Unit = {}
+    onNavStats: () -> Unit = {},
+    onNavigate: (String) -> Unit = {}
 ) {
     val chatState by chatViewModel.uiState.collectAsState()
     val childState by childViewModel.uiState.collectAsState()
@@ -268,7 +298,16 @@ fun AIChatScreen(
                 items(chatState.messages) { message ->
                     ChatBubble(
                         message = message,
-                        onConfirmAction = { childState.child?.id?.let { chatViewModel.confirmAgentAction(message.id, it) } },
+                        onConfirmAction = {
+                            // "navigate" is UI-only (no repository write) — resolved and fired here,
+                            // alongside confirmAgentAction which still marks the card confirmed/failed.
+                            val action = message.agentAction
+                            if (action != null && normalizeActionType(action.type).contains("navigate")) {
+                                val screenKey = action.params["screen"] ?: action.params["route"] ?: ""
+                                resolveNavRoute(screenKey)?.let { onNavigate(it) }
+                            }
+                            childState.child?.id?.let { chatViewModel.confirmAgentAction(message.id, it) }
+                        },
                         onCancelAction = { chatViewModel.cancelAgentAction(message.id) }
                     )
                 }
