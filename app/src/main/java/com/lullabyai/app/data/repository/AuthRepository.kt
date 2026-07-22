@@ -303,6 +303,28 @@ class AuthRepository {
         }.decodeList<MentalHealthAssessment>()
     }
 
+    /** Submits the monthly parent postpartum physical-recovery self-assessment (see
+     *  PostpartumCatalog). Separate table/axis from mental health — bleeding/pain/fever, not mood. */
+    suspend fun submitPostpartumCheckIn(answers: List<Int>): Result<com.lullabyai.app.data.model.PostpartumCheckIn> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        val totalScore = answers.sum()
+        val tier = com.lullabyai.app.data.PostpartumCatalog.riskTier(totalScore)
+        val flaggedUrgent = com.lullabyai.app.data.PostpartumCatalog.URGENT_FLAG_INDICES.any { i -> answers.getOrNull(i) == 3 }
+        supabase.from("postpartum_checkins").insert(buildJsonObject {
+            put("user_id", JsonPrimitive(userId))
+            put("answers", JsonArray(answers.map { JsonPrimitive(it) }))
+            put("total_score", JsonPrimitive(totalScore))
+            put("risk_tier", JsonPrimitive(tier))
+            put("flagged_urgent", JsonPrimitive(flaggedUrgent))
+        }) { select() }.decodeSingle<com.lullabyai.app.data.model.PostpartumCheckIn>()
+    }
+
+    suspend fun getPostpartumHistory(): Result<List<com.lullabyai.app.data.model.PostpartumCheckIn>> = runCatching {
+        supabase.from("postpartum_checkins").select {
+            order("created_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.PostpartumCheckIn>()
+    }
+
     suspend fun setAiTrainingConsent(value: Boolean): Result<Unit> = runCatching {
         val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
         supabase.from("profiles").update(buildJsonObject {

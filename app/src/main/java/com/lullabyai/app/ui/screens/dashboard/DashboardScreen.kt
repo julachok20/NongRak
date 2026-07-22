@@ -51,6 +51,7 @@ fun DashboardScreen(
     onNavigateToSleep: () -> Unit = {},
     onNavigateToAddChild: () -> Unit = {},
     onNavigateToMentalHealth: () -> Unit = {},
+    onNavigateToPostpartum: () -> Unit = {},
     onNavigateToQuickLog: () -> Unit = {},
     onNavigateToWidgets: () -> Unit = {},
     onNavigateHome: () -> Unit = {},
@@ -158,13 +159,33 @@ fun DashboardScreen(
         ?: authState.profile?.fullName?.takeIf { it.isNotBlank() }
     val relationship = authState.profile?.relationship
 
-    LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile(); childViewModel.loadPendingSyncRequests(); authViewModel.loadMentalHealthHistory() }
+    LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile(); childViewModel.loadPendingSyncRequests(); authViewModel.loadMentalHealthHistory(); authViewModel.loadPostpartumHistory() }
 
     // Monthly parent mental-health check-in nudge — only shows if nothing was submitted this
     // calendar month yet (per-parent, not per-child; see MentalHealthCatalog).
     val needsMentalHealthCheckin = remember(authState.mentalHealthHistory) {
         val latest = authState.mentalHealthHistory.firstOrNull()?.createdAt
         latest == null || !latest.take(7).equals(LocalDate.now().toString().take(7))
+    }
+
+    // Same monthly-nudge logic, separate axis (physical postpartum recovery, not mood) — but ONLY
+    // for accounts with a very young child (postpartum recovery is a first-few-months thing, not
+    // relevant to a parent of a toddler the way the mental-health check-in stays relevant indefinitely).
+    val youngestChildAgeMonths = remember(childState.children) {
+        childState.children.minOfOrNull { c ->
+            runCatching {
+                val parts = c.birthdate.split("-")
+                val by = parts[0].toInt(); val bm = parts[1].toInt()
+                val now = LocalDate.now()
+                (now.year - by) * 12 + (now.monthValue - bm)
+            }.getOrDefault(Int.MAX_VALUE)
+        } ?: Int.MAX_VALUE
+    }
+    val needsPostpartumCheckin = remember(authState.postpartumHistory, youngestChildAgeMonths) {
+        if (youngestChildAgeMonths > 3) false else {
+            val latest = authState.postpartumHistory.firstOrNull()?.createdAt
+            latest == null || !latest.take(7).equals(LocalDate.now().toString().take(7))
+        }
     }
 
     // AI "what do you want to know more" popup — open-ended question, capped 3/day (see
@@ -433,6 +454,39 @@ fun DashboardScreen(
                             }
                             Button(
                                 onClick = onNavigateToMentalHealth, modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                            ) { Text(if (isThai) "เริ่มทำแบบประเมิน" else "Start check-in", fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+
+                // Monthly postpartum physical-recovery check-in banner — separate axis from mental
+                // health above (bleeding/pain/fever, not mood), only shown for a very young child.
+                if (needsPostpartumCheckin) {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(0.2f))
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Box(Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(0.15f)), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Filled.Favorite, null, tint = Primary)
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        if (isThai) "ประเมินการฟื้นตัวหลังคลอด" else "Postpartum recovery check-in",
+                                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        if (isThai) "แบบประเมินสั้นๆ รายเดือน" else "A short monthly check-in",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = onNavigateToPostpartum, modifier = Modifier.fillMaxWidth().height(44.dp),
                                 shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)
                             ) { Text(if (isThai) "เริ่มทำแบบประเมิน" else "Start check-in", fontWeight = FontWeight.Bold) }
                         }

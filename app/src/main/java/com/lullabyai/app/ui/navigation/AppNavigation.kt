@@ -318,6 +318,7 @@ fun AppNavigation(
                 onNavigateToSleep = { navController.navigate(Screen.SleepTracker.route) },
                 onNavigateToAddChild = { navController.navigate(Screen.AddChildChoice.route) },
                 onNavigateToMentalHealth = { navController.navigate(Screen.MentalHealthAssessment.route) },
+                onNavigateToPostpartum = { navController.navigate(Screen.PostpartumCheckIn.route) },
                 onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
                 onNavigateToWidgets = { navController.navigate(Screen.WidgetsIntro.route) },
                 onNavigateHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
@@ -461,6 +462,18 @@ fun AppNavigation(
         }
         composable(Screen.MentalHealthResult.route) {
             com.lullabyai.app.ui.screens.mentalhealth.MentalHealthResultScreen(authViewModel, navController) {
+                navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
+            }
+        }
+        composable(Screen.PostpartumCheckIn.route) {
+            com.lullabyai.app.ui.screens.mentalhealth.PostpartumCheckInScreen(
+                authViewModel,
+                onDone = { navController.navigate(Screen.PostpartumResult.route) { popUpTo(Screen.Dashboard.route) } },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.PostpartumResult.route) {
+            com.lullabyai.app.ui.screens.mentalhealth.PostpartumResultScreen(authViewModel, navController) {
                 navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
             }
         }

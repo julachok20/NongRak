@@ -18,7 +18,11 @@ data class AuthUiState(
     // --- Mental health self-assessment (parent-level, monthly) ---
     val mentalHealthHistory: List<com.lullabyai.app.data.model.MentalHealthAssessment> = emptyList(),
     val mentalHealthSubmitting: Boolean = false,
-    val lastMentalHealthResult: com.lullabyai.app.data.model.MentalHealthAssessment? = null
+    val lastMentalHealthResult: com.lullabyai.app.data.model.MentalHealthAssessment? = null,
+    // --- Postpartum physical-recovery self-assessment (parent-level, monthly) ---
+    val postpartumHistory: List<com.lullabyai.app.data.model.PostpartumCheckIn> = emptyList(),
+    val postpartumSubmitting: Boolean = false,
+    val lastPostpartumResult: com.lullabyai.app.data.model.PostpartumCheckIn? = null
 )
 
 class AuthViewModel : ViewModel() {
@@ -187,6 +191,27 @@ class AuthViewModel : ViewModel() {
                     onDone()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(mentalHealthSubmitting = false) }
+        }
+    }
+
+    fun loadPostpartumHistory() {
+        viewModelScope.launch {
+            repo.getPostpartumHistory().onSuccess { _uiState.value = _uiState.value.copy(postpartumHistory = it) }
+        }
+    }
+
+    fun submitPostpartumCheckIn(answers: List<Int>, onDone: () -> Unit) {
+        _uiState.value = _uiState.value.copy(postpartumSubmitting = true)
+        viewModelScope.launch {
+            repo.submitPostpartumCheckIn(answers)
+                .onSuccess { result ->
+                    _uiState.value = _uiState.value.copy(
+                        postpartumSubmitting = false, lastPostpartumResult = result,
+                        postpartumHistory = listOf(result) + _uiState.value.postpartumHistory
+                    )
+                    onDone()
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(postpartumSubmitting = false) }
         }
     }
 

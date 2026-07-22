@@ -72,6 +72,8 @@ sealed class Screen(val route: String) {
     object AddGrowthRecord : Screen("add_growth_record")
     object MentalHealthAssessment : Screen("mental_health_assessment")
     object MentalHealthResult : Screen("mental_health_result")
+    object PostpartumCheckIn : Screen("postpartum_checkin")
+    object PostpartumResult : Screen("postpartum_result")
     object ChildAiSummary : Screen("child_ai_summary")
     object WasteRecord : Screen("waste_record")
     object MedicalDataVault : Screen("medical_data_vault")
