@@ -270,39 +270,46 @@ fun AIChatScreen(
                             }
                         }
                     }
-                    // Message input
+                    // Message input — large field + large tap targets, easy to type/click on a phone.
                     Surface(shadowElevation = 4.dp, color = MaterialTheme.colorScheme.surface) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                                OutlinedTextField(
+                            OutlinedTextField(
                                 value = inputText,
                                 onValueChange = { inputText = it },
                                 modifier = Modifier.weight(1f),
-                                placeholder = { Text("พิมพ์ข้อความของคุณ...", color = Outline) },
-                                shape = RoundedCornerShape(100.dp),
-                                maxLines = 3,
+                                placeholder = { Text("พิมพ์ข้อความของคุณ...", color = Outline, style = MaterialTheme.typography.bodyLarge) },
+                                textStyle = MaterialTheme.typography.bodyLarge,
+                                shape = RoundedCornerShape(24.dp),
+                                minLines = 2,
+                                maxLines = 5,
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = Primary,
                                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                                 )
                             )
-                            // Attach (image or PDF document — "like in Gemini")
-                            IconButton(onClick = { imagePicker.launch(arrayOf("image/*", "application/pdf")) }) {
-                                Icon(Icons.Filled.AttachFile, "แนบรูปภาพหรือเอกสาร", tint = Primary)
-                            }
-                            // Mic (speech → text)
-                            IconButton(onClick = { startSpeech() }) {
-                                Icon(Icons.Filled.Mic, "พูดเพื่อพิมพ์", tint = Primary)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                // Attach (image or PDF document — "like in Gemini")
+                                IconButton(
+                                    onClick = { imagePicker.launch(arrayOf("image/*", "application/pdf")) },
+                                    modifier = Modifier.size(52.dp)
+                                ) {
+                                    Icon(Icons.Filled.AttachFile, "แนบรูปภาพหรือเอกสาร", tint = Primary, modifier = Modifier.size(26.dp))
+                                }
+                                // Mic (speech → text)
+                                IconButton(onClick = { startSpeech() }, modifier = Modifier.size(52.dp)) {
+                                    Icon(Icons.Filled.Mic, "พูดเพื่อพิมพ์", tint = Primary, modifier = Modifier.size(26.dp))
+                                }
                             }
                             IconButton(
                                 onClick = { sendCurrent() },
-                                modifier = Modifier.size(48.dp).clip(CircleShape).background(Primary),
+                                modifier = Modifier.size(56.dp).clip(CircleShape).background(Primary),
                                 enabled = (inputText.isNotBlank() || selectedImageUri != null) && !chatState.isLoading
                             ) {
-                                Icon(Icons.Filled.Send, null, tint = Color.White)
+                                Icon(Icons.Filled.Send, null, tint = Color.White, modifier = Modifier.size(28.dp))
                             }
                         }
                     }
