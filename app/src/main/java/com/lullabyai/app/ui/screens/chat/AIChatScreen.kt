@@ -203,6 +203,9 @@ fun AIChatScreen(
                         IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
                     },
                     actions = {
+                        IconButton(onClick = { onNavigate(Screen.CameraScan.route) }) {
+                            Icon(Icons.Filled.CameraAlt, "สแกนรอบตัวลูก")
+                        }
                         IconButton(onClick = { chatViewModel.newChat() }) {
                             Icon(Icons.Filled.AddComment, "แชทใหม่")
                         }

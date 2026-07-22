@@ -433,6 +433,9 @@ fun AppNavigation(
         composable(Screen.SiblingCompare.route) {
             com.lullabyai.app.ui.screens.growth.SiblingCompareScreen(childViewModel, navController) { navController.popBackStack() }
         }
+        composable(Screen.CameraScan.route) {
+            com.lullabyai.app.ui.screens.chat.CameraScanScreen(isThai = lang == "th") { navController.popBackStack() }
+        }
         composable(Screen.QuickActionSearch.route) {
             com.lullabyai.app.ui.screens.search.QuickActionSearchScreen(navController, isThai = lang == "th") { navController.popBackStack() }
         }
