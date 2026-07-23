@@ -48,7 +48,8 @@ fun SleepGuidanceScreen(navController: NavController, onBack: () -> Unit, onCrea
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
-                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
+                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

@@ -55,6 +55,7 @@ fun DashboardScreen(
     onNavigateToQuickLog: () -> Unit = {},
     onNavigateToWidgets: () -> Unit = {},
     onNavigateHome: () -> Unit = {},
+    onNavigateToConnect: () -> Unit = {},
     isTourActive: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
@@ -279,7 +280,7 @@ fun DashboardScreen(
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.HOME,
-                onHome = onNavigateHome, onChatbot = onNavigateToChat, onChild = onNavigateToChild, onStats = onNavigateToStats, onSettings = onNavigateToSettings
+                onHome = onNavigateHome, onChatbot = onNavigateToChat, onChild = onNavigateToChild, onStats = onNavigateToStats, onSettings = onNavigateToSettings, onConnect = onNavigateToConnect
             )
         },
         // Quick Action FAB — the Quick Log Hub already exists (search this file for onNavigateToStats

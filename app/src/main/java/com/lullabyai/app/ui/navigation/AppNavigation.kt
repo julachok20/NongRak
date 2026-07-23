@@ -322,6 +322,7 @@ fun AppNavigation(
                 onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
                 onNavigateToWidgets = { navController.navigate(Screen.WidgetsIntro.route) },
                 onNavigateHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onNavigateToConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } },
                 isTourActive = tourActive
             )
         }

@@ -59,7 +59,8 @@ fun MentalHealthResultScreen(authViewModel: AuthViewModel, navController: androi
                 onChatbot = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.StatisticsInsights.route) { launchSingleTop = true } },
-                onSettings = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.Settings.route) { launchSingleTop = true } }
+                onSettings = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.Settings.route) { launchSingleTop = true } },
+                onConnect = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.Maintenance.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

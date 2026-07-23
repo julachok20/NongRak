@@ -168,7 +168,8 @@ fun StatisticsInsightsScreen(
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = {},
-                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
+                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

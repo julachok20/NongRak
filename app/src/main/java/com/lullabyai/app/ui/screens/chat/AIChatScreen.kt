@@ -323,7 +323,8 @@ fun AIChatScreen(
                         onChatbot = {},
                         onChild = onNavChild,
                         onStats = onNavStats,
-                        onSettings = onNavSettings
+                        onSettings = onNavSettings,
+                        onConnect = { onNavigate(Screen.Maintenance.route) }
                     )
                 }
             },
