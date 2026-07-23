@@ -375,29 +375,6 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Export-to-doctor PDF — routes to the universal export-selection screen (choose
-            // period / data categories / detailed-vs-summary) instead of exporting directly.
-            Card(
-                onClick = { navController.navigate(Screen.PdfExport.route) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(1.dp)
-            ) {
-                Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Error.copy(0.08f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.PictureAsPdf, null, tint = Error, modifier = Modifier.size(24.dp))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(if (s.isThai) "ส่งออกสรุป (PDF)" else "Export summary (PDF)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (s.isThai) "เอกสารสำหรับปรึกษาแพทย์ผู้เชี่ยวชาญ" else "For doctor consultations or your own records",
-                            style = MaterialTheme.typography.labelSmall, color = Outline
-                        )
-                    }
-                    Icon(Icons.Filled.ChevronRight, null, tint = Outline.copy(0.4f), modifier = Modifier.size(20.dp))
-                }
-            }
-
             if (childState.allergies.isNotEmpty()) {
                 // Extra-large radius (mockup gives this card a bigger radius than the rest of the
                 // page's cards) and outlined chips instead of solid-filled pills.
@@ -456,38 +433,24 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Shortcuts — per the 30.new_dash mockup this is a single row, not the old 6-tile grid.
-            // "ดูทั้งหมด" opens QuickLogHub (the app's actual "see everything you can do" screen).
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(if (s.isThai) "ทางลัด" else "Shortcuts", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                TextButton(onClick = { navController.navigate(Screen.QuickLogHub.route) }) {
-                    Text(if (s.isThai) "ดูทั้งหมด" else "View all", color = Primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                }
+            // Main 4-button grid — the app's primary navigation now that the sidebar is gone.
+            // Vaccine/Development/Sleep/Nutrition/Exercise/Chat all still reachable, just via
+            // the Health Log hub (button 1) or the persistent chatbot FAB, not a flat shortcut list.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DashboardActionButton(
+                    Icons.Filled.EditNote, if (s.isThai) "บันทึกสุขภาพ" else "Health Log", Modifier.weight(1f)
+                ) { navController.navigate(Screen.HealthLog.route) }
+                DashboardActionButton(
+                    Icons.Filled.BarChart, if (s.isThai) "ดูสถิติ" else "Stats", Modifier.weight(1f)
+                ) { navController.navigate(Screen.StatisticsInsights.route) }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Vaccine Book — same row style as before.
-                ShortcutRow(
-                    Icons.Filled.MenuBook,
-                    if (s.isThai) "สมุดวัคซีน" else "Vaccine Book",
-                    if (s.isThai) "ตรวจสอบและบันทึกการฉีดวัคซีน" else "Track and log vaccinations"
-                ) { navController.navigate(Screen.VaccineBook.route) }
-                // The app's actual standout features (จุดเด่น), not just record-keeping: the
-                // agentic AI chatbot, AI disease-risk prediction, and AI-assisted sleep tracking.
-                ShortcutRow(
-                    Icons.Filled.SmartToy,
-                    if (s.isThai) "แชทกับน้องรัก AI" else "Chat with NongRak AI",
-                    if (s.isThai) "ผู้ช่วย AI ส่วนตัวสำหรับลูกคุณ" else "Your child's personal AI assistant"
-                ) { navController.navigate(Screen.AiChat.route) }
-                ShortcutRow(
-                    Icons.Filled.MonitorHeart,
-                    if (s.isThai) "ความเสี่ยงโรค (AI)" else "AI Disease Risk",
-                    if (s.isThai) "วิเคราะห์ความเสี่ยงสุขภาพด้วย AI" else "AI-powered health risk analysis"
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DashboardActionButton(
+                    Icons.Filled.MonitorHeart, if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", Modifier.weight(1f)
                 ) { navController.navigate(Screen.DiseaseRisk.route) }
-                ShortcutRow(
-                    Icons.Filled.Bedtime,
-                    if (s.isThai) "การนอนหลับ" else "Sleep Tracker",
-                    if (s.isThai) "ติดตามการนอนพร้อมคำแนะนำจาก AI" else "Track sleep with AI recommendations"
-                ) { navController.navigate(Screen.SleepTracker.route) }
+                DashboardActionButton(
+                    Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก PDF" else "Export PDF", Modifier.weight(1f)
+                ) { navController.navigate(Screen.PdfExport.route) }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -574,23 +537,22 @@ private fun ChildSwitcherSheet(
     }
 }
 
+/** One cell of the child dashboard's main 4-button grid (Health Log / Stats / Disease Risk / PDF). */
 @Composable
-private fun ShortcutRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
+private fun DashboardActionButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        modifier = modifier, shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))
     ) {
-        Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(100.dp)).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = Primary, modifier = Modifier.size(20.dp))
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = Primary, modifier = Modifier.size(22.dp))
             }
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Text(description, style = MaterialTheme.typography.labelSmall, color = Outline)
-            }
-            Icon(Icons.Filled.ChevronRight, null, tint = Outline, modifier = Modifier.size(20.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }

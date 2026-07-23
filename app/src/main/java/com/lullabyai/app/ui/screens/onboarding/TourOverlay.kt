@@ -79,11 +79,10 @@ private val tourSteps = listOf(
         bodyEn = "Scroll down for the 'Update weight & height' banner to log growth records, and 'Export summary (PDF)' to generate a doctor-ready health report."
     ),
     TourStepInfo(
-        TourStop.SIDEBARS, Screen.ChildSummary.route, Color(0xFF00897B), CardAnchor.START, 0.82f, 110.dp,
-        targetKey = "sidebar_hamburger",
-        titleTh = "เมนูด้านข้าง", titleEn = "Side menu",
-        bodyTh = "แตะไอคอน ☰ ที่ไฮไลต์อยู่มุมบนซ้าย เพื่อเปิดเมนูด้านข้าง สลับไปดูภาพรวม พัฒนาการ สุขภาพ สมุดวัคซีน ความเสี่ยงโรค โภชนาการ ออกกำลังกาย และการนอนได้จากที่เดียว",
-        bodyEn = "Tap the highlighted ☰ icon at the top-left to open the side menu — switch between Overview, Development, Health, Vaccine Book, Disease Risk, Nutrition, Exercise, and Sleep, all from one place."
+        TourStop.SIDEBARS, Screen.ChildSummary.route, Color(0xFF00897B), CardAnchor.CENTER, 0.85f, 110.dp,
+        titleTh = "จุดเข้าถึงหลัก", titleEn = "Main destinations",
+        bodyTh = "เลื่อนลงเพื่อดูปุ่มหลัก 4 ปุ่ม — บันทึกสุขภาพ, ดูสถิติ, ความเสี่ยงโรค และส่งออก PDF — ใช้เข้าถึงทุกหน้าของลูกได้จากที่เดียว",
+        bodyEn = "Scroll down for the 4 main buttons — Health Log, Stats, Disease Risk, and PDF Export — your one place to reach every page for your child."
     ),
     TourStepInfo(
         TourStop.VACCINE, Screen.VaccineBook.route, Color(0xFF3F51B5), CardAnchor.CENTER, 0.85f, 110.dp,
