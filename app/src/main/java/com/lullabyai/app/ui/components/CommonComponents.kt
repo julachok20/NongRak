@@ -32,7 +32,7 @@ import com.lullabyai.app.ui.theme.*
 import kotlinx.coroutines.delay
 
 /** The tabs of the app-wide bottom navigation. CHATBOT is launched from the center floating button, not a bar item. */
-enum class BottomTab { HOME, CHATBOT, CHILD, STATS, SETTINGS }
+enum class BottomTab { HOME, CHATBOT, CHILD, STATS, CONNECT, SETTINGS }
 
 /** Small pill button showing the language you'd switch TO (e.g. shows "EN" while on Thai) — used
  *  on the pre-login screens (Welcome/Login/SignUp) where there's no Settings screen to reach yet. */
@@ -119,7 +119,10 @@ fun AppBottomNav(
     onChatbot: () -> Unit,
     onChild: () -> Unit,
     onStats: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    // Only child-family screens (via ChildBottomNav) pass this — when present it replaces the Stats
+    // slot with Connect, since those screens already offer Stats via the dashboard's button grid.
+    onConnect: (() -> Unit)? = null
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     data class NavItem(val tab: BottomTab, val icon: ImageVector, val label: String, val onClick: () -> Unit)
@@ -128,7 +131,8 @@ fun AppBottomNav(
         NavItem(BottomTab.CHILD, Icons.Filled.ChildCare, s.navChild, onChild)
     )
     val rightItems = listOf(
-        NavItem(BottomTab.STATS, Icons.Filled.BarChart, if (s.isThai) "สถิติ" else "Stats", onStats),
+        if (onConnect != null) NavItem(BottomTab.CONNECT, Icons.Filled.Hub, if (s.isThai) "เชื่อมต่อ" else "Connect", onConnect)
+        else NavItem(BottomTab.STATS, Icons.Filled.BarChart, if (s.isThai) "สถิติ" else "Stats", onStats),
         NavItem(BottomTab.SETTINGS, Icons.Filled.Settings, s.navSettings, onSettings)
     )
 

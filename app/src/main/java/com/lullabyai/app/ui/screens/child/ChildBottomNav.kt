@@ -18,6 +18,9 @@ fun ChildBottomNav(navController: NavController, currentTab: String) {
         onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
         onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
         onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
-        onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+        onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
+        // Stats is reachable from the dashboard's button grid on child screens, so the footer's
+        // Stats slot is replaced with Connect here (design decision — see AppBottomNav's onConnect doc).
+        onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
     )
 }
