@@ -37,7 +37,10 @@ data class MedicalDocument(
     @SerialName("file_name") val fileName: String = "",
     @SerialName("file_path") val filePath: String = "",
     @SerialName("mime_type") val mimeType: String? = null,
-    @SerialName("created_at") val createdAt: String? = null
+    @SerialName("created_at") val createdAt: String? = null,
+    // Set when this document was attached from RecordVisitScreen/VisitDetailsScreen — lets a
+    // doctor-visit pull just its own attachments instead of the child's whole document vault.
+    @SerialName("doctor_visit_id") val doctorVisitId: String? = null
 )
 
 @Serializable
@@ -287,6 +290,34 @@ data class SymptomLog(
     val feeling: String? = null,           // cold | normal | hot
     @SerialName("day_status") val dayStatus: String = "active",   // started | active | recovered
     val notes: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+/** "บันทึกการหาหมอ" — either a future appointment (visitType="scheduled") or a completed visit
+ *  log (visitType="completed"). status distinguishes list-badge state: scheduled | completed |
+ *  follow_up (a completed visit with a next_appointment_date, i.e. needs a follow-up visit). */
+@Serializable
+data class DoctorVisit(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("visit_type") val visitType: String = "scheduled",
+    @SerialName("visit_datetime") val visitDatetime: String = "",
+    @SerialName("facility_name") val facilityName: String? = null,
+    @SerialName("doctor_name") val doctorName: String? = null,
+    @SerialName("doctor_specialty") val doctorSpecialty: String? = null,
+    val reason: String? = null,
+    val symptoms: List<String>? = null,
+    val diagnosis: String? = null,
+    @SerialName("treatment_plan") val treatmentPlan: String? = null,
+    @SerialName("doctor_advice") val doctorAdvice: String? = null,
+    @SerialName("weight_kg") val weightKg: Double? = null,
+    @SerialName("height_cm") val heightCm: Double? = null,
+    @SerialName("temperature_c") val temperatureC: Double? = null,
+    @SerialName("blood_pressure") val bloodPressure: String? = null,
+    @SerialName("next_appointment_date") val nextAppointmentDate: String? = null,
+    @SerialName("preparation_notes") val preparationNotes: String? = null,
+    val reminders: List<String>? = null,
+    val status: String = "scheduled", // scheduled | completed | follow_up
     @SerialName("created_at") val createdAt: String? = null
 )
 

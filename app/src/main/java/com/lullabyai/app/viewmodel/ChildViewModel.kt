@@ -6,6 +6,7 @@ import com.lullabyai.app.data.model.Allergy
 import com.lullabyai.app.data.model.ChronicCondition
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.DevelopmentMilestone
+import com.lullabyai.app.data.model.DoctorVisit
 import com.lullabyai.app.data.model.GrowthRecord
 import com.lullabyai.app.data.model.HealthRecord
 import com.lullabyai.app.data.model.AiTask
@@ -58,6 +59,15 @@ data class ChildUiState(
     // --- Sickness day-tracking (symptom logs under an open health-record "episode") ---
     val symptomLogs: List<com.lullabyai.app.data.model.SymptomLog> = emptyList(),
     val symptomLogSaving: Boolean = false,
+    // --- Doctor visits ("บันทึกการหาหมอ") ---
+    val doctorVisits: List<DoctorVisit> = emptyList(),
+    val doctorVisitsLoading: Boolean = false,
+    val openDoctorVisitId: String? = null,        // visit currently shown on VisitDetailsScreen / edited on RecordVisitScreen
+    val doctorVisitSaving: Boolean = false,
+    val visitDocuments: List<com.lullabyai.app.data.model.MedicalDocument> = emptyList(),
+    val visitDocUploading: Boolean = false,
+    // SymptomPickerScreen -> RecordVisitScreen hand-off, same pattern as openHealthRecordId.
+    val selectedVisitSymptoms: List<String>? = null,
     // --- Sync child (multi-parent access) ---
     val syncSearching: Boolean = false,
     val syncSearchResults: List<com.lullabyai.app.data.model.ChildSyncMatch> = emptyList(),
@@ -74,6 +84,7 @@ data class ChildUiState(
 class ChildViewModel : ViewModel() {
     private val childRepo = ChildRepository()
     private val healthRepo = HealthRepository()
+    private val doctorVisitRepo = com.lullabyai.app.data.repository.DoctorVisitRepository()
     private val medicationRepo = com.lullabyai.app.data.repository.MedicationRepository()
     private val sleepRepo = com.lullabyai.app.data.repository.SleepRepository()
     private val aiRepo = AiRepository()
@@ -1015,6 +1026,117 @@ class ChildViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(symptomLogSaving = false)
             onDone()
         }
+    }
+
+    // --- Doctor visits ("บันทึกการหาหมอ") -------------------------------------------------------
+
+    fun loadDoctorVisits() {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(doctorVisitsLoading = true)
+            doctorVisitRepo.getVisits(childId).onSuccess { _uiState.value = _uiState.value.copy(doctorVisits = it) }
+            _uiState.value = _uiState.value.copy(doctorVisitsLoading = false)
+        }
+    }
+
+    /** Remember which visit VisitDetailsScreen/RecordVisitScreen(edit mode) should open — same
+     *  VM-state pattern as selectHealthRecord (no nav-arg round trip). */
+    fun selectDoctorVisit(visitId: String?) {
+        _uiState.value = _uiState.value.copy(openDoctorVisitId = visitId)
+    }
+
+    /** Save a future appointment (RecordAppointmentScreen). */
+    fun addAppointment(
+        visitDatetime: String, facilityName: String?, doctorName: String?, reason: String?,
+        reminders: List<String>, preparationNotes: String?, onDone: () -> Unit
+    ) {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(doctorVisitSaving = true)
+            doctorVisitRepo.saveVisit(
+                id = null, childId = childId, visitType = "scheduled", visitDatetime = visitDatetime,
+                facilityName = facilityName, doctorName = doctorName, doctorSpecialty = null, reason = reason,
+                symptoms = null, diagnosis = null, treatmentPlan = null, doctorAdvice = null,
+                weightKg = null, heightCm = null, temperatureC = null, bloodPressure = null,
+                nextAppointmentDate = null, preparationNotes = preparationNotes, reminders = reminders,
+                status = "scheduled"
+            ).onSuccess {
+                loadDoctorVisits()
+                notifRepo.notify(
+                    com.lullabyai.app.data.repository.NotifCategory.SCHEDULE,
+                    "นัดหมายแพทย์ใหม่",
+                    facilityName?.let { fn -> if (doctorName != null) "$fn • $doctorName" else fn } ?: (doctorName ?: "")
+                )
+            }
+            _uiState.value = _uiState.value.copy(doctorVisitSaving = false)
+            onDone()
+        }
+    }
+
+    /**
+     * Insert (visitId == null) or update (visitId != null) a completed visit log
+     * (RecordVisitScreen). Also used to silently create a draft row the first time the user
+     * attaches a photo before tapping the final Save button — [onSaved] always receives the row's
+     * id so the caller can keep attaching / finally navigate away.
+     */
+    fun saveDoctorVisit(
+        visitId: String?, visitDatetime: String, facilityName: String?, doctorName: String?,
+        weightKg: Double?, heightCm: Double?, temperatureC: Double?, bloodPressure: String?,
+        symptoms: List<String>, reason: String?, diagnosis: String?, treatmentPlan: String?,
+        nextAppointmentDate: String?, onSaved: (String) -> Unit
+    ) {
+        val childId = _uiState.value.child?.id ?: return
+        val status = if (!nextAppointmentDate.isNullOrBlank()) "follow_up" else "completed"
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(doctorVisitSaving = true)
+            doctorVisitRepo.saveVisit(
+                id = visitId, childId = childId, visitType = "completed", visitDatetime = visitDatetime,
+                facilityName = facilityName, doctorName = doctorName, doctorSpecialty = null, reason = reason,
+                symptoms = symptoms.ifEmpty { null }, diagnosis = diagnosis, treatmentPlan = treatmentPlan, doctorAdvice = null,
+                weightKg = weightKg, heightCm = heightCm, temperatureC = temperatureC, bloodPressure = bloodPressure,
+                nextAppointmentDate = nextAppointmentDate?.takeIf { it.isNotBlank() }, preparationNotes = null,
+                reminders = null, status = status
+            ).onSuccess { visit ->
+                loadDoctorVisits()
+                _uiState.value = _uiState.value.copy(openDoctorVisitId = visit.id)
+                onSaved(visit.id)
+            }
+            _uiState.value = _uiState.value.copy(doctorVisitSaving = false)
+        }
+    }
+
+    fun loadVisitDocuments(visitId: String) {
+        viewModelScope.launch {
+            childRepo.getVisitDocuments(visitId).onSuccess { _uiState.value = _uiState.value.copy(visitDocuments = it) }
+        }
+    }
+
+    /** Attach a photo/PDF (prescription, doctor's note, x-ray) to a doctor visit — same private
+     *  'medical-docs' bucket as the general document vault, just tagged with doctor_visit_id. */
+    fun uploadVisitDocument(visitId: String, name: String, mime: String?, bytes: ByteArray) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            _uiState.value = _uiState.value.copy(visitDocUploading = true)
+            childRepo.uploadMedicalDocument(childId, name, mime, bytes, visitId)
+            childRepo.getVisitDocuments(visitId).onSuccess { _uiState.value = _uiState.value.copy(visitDocuments = it) }
+            _uiState.value = _uiState.value.copy(visitDocUploading = false)
+        }
+    }
+
+    /** SymptomPickerScreen -> RecordVisitScreen result hand-off, same VM-state pattern as
+     *  openHealthRecordId (no nav-arg round trip). RecordVisitScreen consumes + clears it. */
+    fun setSelectedVisitSymptoms(symptoms: List<String>) {
+        _uiState.value = _uiState.value.copy(selectedVisitSymptoms = symptoms)
+    }
+
+    fun clearSelectedVisitSymptoms() {
+        _uiState.value = _uiState.value.copy(selectedVisitSymptoms = null)
+    }
+
+    /** Signs a private 'medical-docs' bucket path for one-off viewing (VisitDetailsScreen opens
+     *  the result via the system image/PDF viewer, same private-bucket pattern as child avatars). */
+    fun signMedicalDocUrl(filePath: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch { onResult(childRepo.signedMedicalDocUrl(filePath).getOrNull()) }
     }
 
     // Maps a Thai age-group label to its month order so an added vaccine sorts into the right category.

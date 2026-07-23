@@ -145,6 +145,12 @@ fun ChildHealthScreen(
                     HealthTile(if (s.isThai) "เอกสารทางการแพทย์" else "Medical Documents", Icons.Filled.Description, Modifier.weight(1f)) { navController.navigate(Screen.MedicalDocumentHistory.route) }
                 }
             }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HealthTile(if (s.isThai) "บันทึกการหาหมอ" else "Doctor Visits", Icons.Filled.LocalHospital, Modifier.weight(1f)) { navController.navigate(Screen.DoctorVisitHistory.route) }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
 
             // Chronic conditions — inline add/delete (no tile in the mockup's 6, so it stays here;
             // delete + re-add covers corrections for a short name field, matching what was asked for).

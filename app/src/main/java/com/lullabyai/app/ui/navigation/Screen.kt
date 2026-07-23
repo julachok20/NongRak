@@ -71,6 +71,7 @@ sealed class Screen(val route: String) {
     object SiblingCompare : Screen("sibling_compare")
     object CameraScan : Screen("camera_scan")
     object VoiceCall : Screen("voice_call")
+    object HealthLog : Screen("health_log")
     object AddGrowthRecord : Screen("add_growth_record")
     object MentalHealthAssessment : Screen("mental_health_assessment")
     object MentalHealthResult : Screen("mental_health_result")
@@ -88,4 +89,10 @@ sealed class Screen(val route: String) {
     object MonthlyReport : Screen("monthly_report")
     object QuickActionSearch : Screen("quick_action_search")
     object RecommendedFood : Screen("recommended_food")
+    // Doctor Appointment Record ("บันทึกการหาหมอ")
+    object DoctorVisitHistory : Screen("doctor_visit_history")
+    object RecordAppointment : Screen("record_appointment")
+    object RecordDoctorVisit : Screen("record_doctor_visit")
+    object SelectSymptomsHistory : Screen("select_symptoms_history")
+    object VisitDetails : Screen("visit_details")
 }

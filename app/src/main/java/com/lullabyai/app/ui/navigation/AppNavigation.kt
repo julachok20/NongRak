@@ -439,6 +439,9 @@ fun AppNavigation(
         composable(Screen.VoiceCall.route) {
             com.lullabyai.app.ui.screens.chat.CallScreen(chatViewModel, childViewModel, isThai = lang == "th") { navController.popBackStack() }
         }
+        composable(Screen.HealthLog.route) {
+            com.lullabyai.app.ui.screens.child.HealthLogScreen(navController, isThai = lang == "th")
+        }
         composable(Screen.QuickActionSearch.route) {
             com.lullabyai.app.ui.screens.search.QuickActionSearchScreen(navController, isThai = lang == "th") { navController.popBackStack() }
         }
@@ -567,6 +570,23 @@ fun AppNavigation(
                 navController = navController,
                 onBack = { navController.popBackStack() }
             )
+        }
+
+        // ---- Doctor Appointment Record ("บันทึกการหาหมอ") ----
+        composable(Screen.DoctorVisitHistory.route) {
+            com.lullabyai.app.ui.screens.child.DoctorVisitHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.RecordAppointment.route) {
+            com.lullabyai.app.ui.screens.child.RecordAppointmentScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.RecordDoctorVisit.route) {
+            com.lullabyai.app.ui.screens.child.RecordVisitScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.SelectSymptomsHistory.route) {
+            com.lullabyai.app.ui.screens.child.SymptomPickerScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.VisitDetails.route) {
+            com.lullabyai.app.ui.screens.child.VisitDetailsScreen(childViewModel, navController) { navController.popBackStack() }
         }
 
         // ---- Nutrition / Calorie / Exercise feature ----

@@ -15,6 +15,9 @@ import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlin.time.Duration.Companion.seconds
+
+private val medicalDocUrlTtl = 3600.seconds
 
 class ChildRepository {
 
@@ -184,8 +187,10 @@ class ChildRepository {
         supabase.from("medical_history").insert(history)
     }
 
-    /** Uploads a medical document to the PRIVATE 'medical-docs' bucket and records its metadata. */
-    suspend fun uploadMedicalDocument(childId: String, fileName: String, mime: String?, bytes: ByteArray): Result<Unit> = runCatching {
+    /** Uploads a medical document to the PRIVATE 'medical-docs' bucket and records its metadata.
+     *  [doctorVisitId] tags the row so RecordVisitScreen/VisitDetailsScreen can pull just its own
+     *  attachments (e.g. a scanned prescription) instead of the child's whole document vault. */
+    suspend fun uploadMedicalDocument(childId: String, fileName: String, mime: String?, bytes: ByteArray, doctorVisitId: String? = null): Result<Unit> = runCatching {
         val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
         val safe = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "document" }
         val path = "$userId/$childId/${System.currentTimeMillis()}_$safe"
@@ -195,6 +200,7 @@ class ChildRepository {
             put("file_name", JsonPrimitive(fileName))
             put("file_path", JsonPrimitive(path))
             put("mime_type", mime?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("doctor_visit_id", doctorVisitId?.let { JsonPrimitive(it) } ?: JsonNull)
         })
     }
 
@@ -203,6 +209,19 @@ class ChildRepository {
             filter { eq("child_id", childId) }
             order("created_at", Order.DESCENDING)
         }.decodeList()
+    }
+
+    /** Documents attached to one doctor visit (VisitDetailsScreen's attachments section). */
+    suspend fun getVisitDocuments(visitId: String): Result<List<com.lullabyai.app.data.model.MedicalDocument>> = runCatching {
+        supabase.from("medical_documents").select {
+            filter { eq("doctor_visit_id", visitId) }
+            order("created_at", Order.DESCENDING)
+        }.decodeList()
+    }
+
+    /** Short-lived signed URL to view/open a private medical-docs bucket file (system viewer). */
+    suspend fun signedMedicalDocUrl(filePath: String): Result<String> = runCatching {
+        supabase.storage.from("medical-docs").createSignedUrl(filePath, medicalDocUrlTtl)
     }
 
     /** Remove a medical document: delete the file from the bucket and its metadata row. */
