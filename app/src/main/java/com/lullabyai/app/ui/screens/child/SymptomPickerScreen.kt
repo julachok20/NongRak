@@ -14,23 +14,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import com.lullabyai.app.data.model.HealthRecord
-import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
 
-/** "ประวัติการเจ็บป่วย" — picks real symptoms off the child's existing illness history
- *  (state.healthRecords: title = main symptom, additionalSymptoms = extra ones), grouped
- *  "กำลังป่วย" (still monitoring) vs older/recovered, and hands the flat selection back to
- *  RecordVisitScreen via ChildViewModel.setSelectedVisitSymptoms (same VM-state hand-off pattern
- *  the rest of this app uses for picker -> form flows, e.g. openHealthRecordId). */
+/** "ประวัติการเจ็บป่วย" picker — a bottom sheet (not a nav destination) so the calling form
+ *  (RecordVisitScreen) never leaves composition and never loses its already-filled-in fields.
+ *  Picks real symptoms off the child's existing illness history (state.healthRecords: title = main
+ *  symptom, additionalSymptoms = extra ones), grouped "กำลังป่วย" (still monitoring) vs older. */
 @Composable
-fun SymptomPickerScreen(childViewModel: ChildViewModel, navController: NavController, onBack: () -> Unit) {
-    val s = LocalStrings.current
+fun SymptomPickerSheet(childViewModel: ChildViewModel, isThai: Boolean, onDismiss: () -> Unit, onConfirm: (List<String>) -> Unit) {
     val state by childViewModel.uiState.collectAsState()
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -52,84 +47,76 @@ fun SymptomPickerScreen(childViewModel: ChildViewModel, navController: NavContro
     val monitoring = filteredGroups.filter { it.record.status == "monitoring" }
     val past = filteredGroups.filter { it.record.status != "monitoring" }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติการเจ็บป่วย" else "Illness History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+            Text(
+                if (isThai) "ประวัติการเจ็บป่วย" else "Illness History",
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp)
             )
-        },
-        bottomBar = {
-            Surface(shadowElevation = 6.dp, color = MaterialTheme.colorScheme.background) {
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        if (s.isThai) "เลือกแล้ว ${selected.size} รายการ" else "${selected.size} selected",
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold
-                    )
-                    Button(
-                        onClick = { childViewModel.setSelectedVisitSymptoms(selected.toList()); onBack() },
-                        enabled = selected.isNotEmpty(), shape = RoundedCornerShape(100.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                    ) { Text(if (s.isThai) "ยืนยันการเลือก" else "Confirm selection", color = Color.White, fontWeight = FontWeight.Bold) }
-                }
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 12.dp)
-        ) {
-            item {
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(if (s.isThai) "ค้นหาอาการ..." else "Search symptoms...", color = Outline) },
-                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = Outline) },
-                    singleLine = true, shape = RoundedCornerShape(100.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
-                )
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(shape = RoundedCornerShape(100.dp), color = Color(0xFFED6C02).copy(0.12f)) {
-                        Text(if (s.isThai) "กำลังป่วย ${monitoring.size}" else "Ongoing ${monitoring.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFFED6C02), fontWeight = FontWeight.Bold)
-                    }
-                    Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)) {
-                        Text(if (s.isThai) "ประวัติเก่า ${past.size}" else "Past ${past.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            if (filteredGroups.isEmpty()) {
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = false).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 item {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                        Text(if (s.isThai) "ไม่พบประวัติการเจ็บป่วย" else "No illness history found", color = Outline)
-                    }
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(if (isThai) "ค้นหาอาการ..." else "Search symptoms...", color = Outline) },
+                        leadingIcon = { Icon(Icons.Filled.Search, null, tint = Outline) },
+                        singleLine = true, shape = RoundedCornerShape(100.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
+                    )
                 }
-            } else {
-                if (monitoring.isNotEmpty()) {
-                    item { GroupHeader(if (s.isThai) "กำลังป่วย" else "Currently sick") }
-                    items(monitoring, key = { "m_${it.record.id}" }) { g ->
-                        RecordSymptomCard(g.record, g.symptoms, selected, s.isThai) { sym, isSel ->
-                            selected = if (isSel) selected + sym else selected - sym
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(shape = RoundedCornerShape(100.dp), color = androidx.compose.ui.graphics.Color(0xFFED6C02).copy(0.12f)) {
+                            Text(if (isThai) "กำลังป่วย ${monitoring.size}" else "Ongoing ${monitoring.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color(0xFFED6C02), fontWeight = FontWeight.Bold)
+                        }
+                        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)) {
+                            Text(if (isThai) "ประวัติเก่า ${past.size}" else "Past ${past.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-                if (past.isNotEmpty()) {
-                    item { GroupHeader(if (s.isThai) "ประวัติที่ผ่านมา" else "Past history") }
-                    items(past, key = { "p_${it.record.id}" }) { g ->
-                        RecordSymptomCard(g.record, g.symptoms, selected, s.isThai) { sym, isSel ->
-                            selected = if (isSel) selected + sym else selected - sym
+                if (filteredGroups.isEmpty()) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                            Text(if (isThai) "ไม่พบประวัติการเจ็บป่วย" else "No illness history found", color = Outline)
+                        }
+                    }
+                } else {
+                    if (monitoring.isNotEmpty()) {
+                        item { GroupHeader(if (isThai) "กำลังป่วย" else "Currently sick") }
+                        items(monitoring, key = { "m_${it.record.id}" }) { g ->
+                            RecordSymptomCard(g.record, g.symptoms, selected, isThai) { sym, isSel ->
+                                selected = if (isSel) selected + sym else selected - sym
+                            }
+                        }
+                    }
+                    if (past.isNotEmpty()) {
+                        item { GroupHeader(if (isThai) "ประวัติที่ผ่านมา" else "Past history") }
+                        items(past, key = { "p_${it.record.id}" }) { g ->
+                            RecordSymptomCard(g.record, g.symptoms, selected, isThai) { sym, isSel ->
+                                selected = if (isSel) selected + sym else selected - sym
+                            }
                         }
                     }
                 }
+                item { Spacer(Modifier.height(4.dp)) }
             }
-            item { Spacer(Modifier.height(8.dp)) }
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    if (isThai) "เลือกแล้ว ${selected.size} รายการ" else "${selected.size} selected",
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold
+                )
+                Button(
+                    onClick = { onConfirm(selected.toList()) },
+                    enabled = selected.isNotEmpty(), shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) { Text(if (isThai) "ยืนยันการเลือก" else "Confirm selection", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold) }
+            }
         }
     }
 }
@@ -151,7 +138,7 @@ private fun RecordSymptomCard(record: HealthRecord, symptoms: List<String>, sele
                 val isSel = sym in selected
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                        .background(if (isSel) Primary.copy(0.08f) else Color.Transparent)
+                        .background(if (isSel) Primary.copy(0.08f) else androidx.compose.ui.graphics.Color.Transparent)
                         .clickable { onToggle(sym, !isSel) }
                         .padding(vertical = 6.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically

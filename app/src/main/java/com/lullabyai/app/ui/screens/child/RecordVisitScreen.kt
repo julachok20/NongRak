@@ -25,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
@@ -40,7 +39,7 @@ import java.time.ZoneId
  *  id to tag against: the first attach silently saves a draft (via [ChildViewModel.saveDoctorVisit])
  *  so state.openDoctorVisitId becomes non-null, same id the final Save button then updates. */
 @Composable
-fun RecordVisitScreen(childViewModel: ChildViewModel, navController: NavController, onBack: () -> Unit) {
+fun RecordVisitScreen(childViewModel: ChildViewModel, onBack: () -> Unit) {
     val s = LocalStrings.current
     val state by childViewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -75,14 +74,7 @@ fun RecordVisitScreen(childViewModel: ChildViewModel, navController: NavControll
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showNextAppointmentPicker by remember { mutableStateOf(false) }
-
-    // Pick-up the SymptomPickerScreen's result (same VM-state hand-off as openHealthRecordId).
-    LaunchedEffect(state.selectedVisitSymptoms) {
-        state.selectedVisitSymptoms?.let { picked ->
-            symptoms = (symptoms + picked)
-            childViewModel.clearSelectedVisitSymptoms()
-        }
-    }
+    var showSymptomPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(record?.id) { record?.let { childViewModel.loadVisitDocuments(it.id) } }
 
@@ -177,7 +169,7 @@ fun RecordVisitScreen(childViewModel: ChildViewModel, navController: NavControll
 
             VisitSectionCard(if (s.isThai) "อาการ" else "Symptoms") {
                 OutlinedButton(
-                    onClick = { navController.navigate(com.lullabyai.app.ui.navigation.Screen.SelectSymptomsHistory.route) },
+                    onClick = { showSymptomPicker = true },
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)
                 ) {
                     Icon(Icons.Filled.ChecklistRtl, null, tint = Primary, modifier = Modifier.size(18.dp))
@@ -311,11 +303,31 @@ fun RecordVisitScreen(childViewModel: ChildViewModel, navController: NavControll
     if (showTimePicker) {
         val now = time ?: LocalTime.now()
         val pickerState = rememberTimePickerState(initialHour = now.hour, initialMinute = now.minute, is24Hour = true)
+        // Numeric input by default -- the dial is fiddly to hit precise minutes on; a toggle lets
+        // whoever prefers the dial switch back.
+        var useDial by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = { TextButton(onClick = { time = LocalTime.of(pickerState.hour, pickerState.minute); showTimePicker = false }) { Text(if (s.isThai) "ตกลง" else "OK") } },
             dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } },
-            text = { TimePicker(state = pickerState) }
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (useDial) TimePicker(state = pickerState) else TimeInput(state = pickerState)
+                    TextButton(onClick = { useDial = !useDial }) {
+                        Icon(if (useDial) Icons.Filled.Keyboard else Icons.Filled.Schedule, null, tint = Primary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (useDial) (if (s.isThai) "พิมพ์เวลาแทน" else "Type time instead") else (if (s.isThai) "ใช้หน้าปัดแทน" else "Use dial instead"), color = Primary)
+                    }
+                }
+            }
+        )
+    }
+
+    if (showSymptomPicker) {
+        SymptomPickerSheet(
+            childViewModel = childViewModel, isThai = s.isThai,
+            onDismiss = { showSymptomPicker = false },
+            onConfirm = { picked -> symptoms = symptoms + picked; showSymptomPicker = false }
         )
     }
 

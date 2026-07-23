@@ -581,10 +581,7 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.child.RecordAppointmentScreen(childViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.RecordDoctorVisit.route) {
-            com.lullabyai.app.ui.screens.child.RecordVisitScreen(childViewModel, navController) { navController.popBackStack() }
-        }
-        composable(Screen.SelectSymptomsHistory.route) {
-            com.lullabyai.app.ui.screens.child.SymptomPickerScreen(childViewModel, navController) { navController.popBackStack() }
+            com.lullabyai.app.ui.screens.child.RecordVisitScreen(childViewModel) { navController.popBackStack() }
         }
         composable(Screen.VisitDetails.route) {
             com.lullabyai.app.ui.screens.child.VisitDetailsScreen(childViewModel, navController) { navController.popBackStack() }

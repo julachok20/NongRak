@@ -93,6 +93,5 @@ sealed class Screen(val route: String) {
     object DoctorVisitHistory : Screen("doctor_visit_history")
     object RecordAppointment : Screen("record_appointment")
     object RecordDoctorVisit : Screen("record_doctor_visit")
-    object SelectSymptomsHistory : Screen("select_symptoms_history")
     object VisitDetails : Screen("visit_details")
 }

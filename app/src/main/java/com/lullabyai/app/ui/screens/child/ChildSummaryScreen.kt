@@ -438,19 +438,30 @@ fun ChildSummaryScreen(
             // the Health Log hub (button 1) or the persistent chatbot FAB, not a flat shortcut list.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 DashboardActionButton(
-                    Icons.Filled.EditNote, if (s.isThai) "บันทึกสุขภาพ" else "Health Log", Modifier.weight(1f)
+                    Icons.Filled.AddCircle, if (s.isThai) "บันทึกสุขภาพ" else "Health Log", Primary, Modifier.weight(1f)
                 ) { navController.navigate(Screen.HealthLog.route) }
                 DashboardActionButton(
-                    Icons.Filled.BarChart, if (s.isThai) "ดูสถิติ" else "Stats", Modifier.weight(1f)
+                    Icons.Filled.BarChart, if (s.isThai) "ดูสถิติ" else "Stats", Primary, Modifier.weight(1f)
                 ) { navController.navigate(Screen.StatisticsInsights.route) }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 DashboardActionButton(
-                    Icons.Filled.MonitorHeart, if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", Modifier.weight(1f)
+                    Icons.Filled.Warning, if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", Color(0xFFED6C02), Modifier.weight(1f)
                 ) { navController.navigate(Screen.DiseaseRisk.route) }
                 DashboardActionButton(
-                    Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก PDF" else "Export PDF", Modifier.weight(1f)
+                    Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก PDF" else "Export PDF", Error, Modifier.weight(1f)
                 ) { navController.navigate(Screen.PdfExport.route) }
+            }
+            // "Quick Action" -- per the provided design, reuses the app's existing universal
+            // quick-access/search screen rather than a new feature.
+            Button(
+                onClick = { navController.navigate(Screen.QuickActionSearch.route) },
+                modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Icon(Icons.Filled.Bolt, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Quick Action", fontWeight = FontWeight.Bold, color = Color.White)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -539,18 +550,19 @@ private fun ChildSwitcherSheet(
 
 /** One cell of the child dashboard's main 4-button grid (Health Log / Stats / Disease Risk / PDF). */
 @Composable
-private fun DashboardActionButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun DashboardActionButton(icon: ImageVector, label: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = modifier, shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp)
     ) {
         Column(
             Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = Primary, modifier = Modifier.size(22.dp))
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(100.dp)).background(tint.copy(0.12f)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
             }
             Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }

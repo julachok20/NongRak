@@ -1097,6 +1097,14 @@ class ChildViewModel : ViewModel() {
                 nextAppointmentDate = nextAppointmentDate?.takeIf { it.isNotBlank() }, preparationNotes = null,
                 reminders = null, status = status
             ).onSuccess { visit ->
+                // Weight/height entered here are the same field as the standalone growth tracker —
+                // keep them in sync so this visit's vitals actually count as "the" growth update
+                // (they used to be stranded on the visit row, invisible to Growth History/WHO charts).
+                if (weightKg != null || heightCm != null) {
+                    addGrowthRecord(
+                        GrowthRecord(weightKg = weightKg, heightCm = heightCm, recordedAt = visitDatetime.take(10), recordType = "doctor_visit")
+                    )
+                }
                 loadDoctorVisits()
                 _uiState.value = _uiState.value.copy(openDoctorVisitId = visit.id)
                 onSaved(visit.id)
