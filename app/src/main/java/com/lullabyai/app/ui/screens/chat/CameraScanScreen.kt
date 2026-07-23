@@ -143,7 +143,7 @@ fun CameraScanScreen(isThai: Boolean, onBack: () -> Unit) {
 /** Bridges CameraX's callback-based capture API to a suspend call. Returns raw JPEG bytes (the
  *  in-memory ImageCapture.OnImageCapturedCallback path already delivers JPEG-encoded planes by
  *  default, so no bitmap decode/re-encode round trip is needed) or null on failure. */
-private suspend fun ImageCapture.captureJpegBytesOrNull(): ByteArray? = suspendCancellableCoroutine { cont ->
+internal suspend fun ImageCapture.captureJpegBytesOrNull(): ByteArray? = suspendCancellableCoroutine { cont ->
     takePicture(
         ContextCompat.getMainExecutor(NongRakApp.instance),
         object : ImageCapture.OnImageCapturedCallback() {

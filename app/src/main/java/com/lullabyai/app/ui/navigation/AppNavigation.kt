@@ -436,6 +436,9 @@ fun AppNavigation(
         composable(Screen.CameraScan.route) {
             com.lullabyai.app.ui.screens.chat.CameraScanScreen(isThai = lang == "th") { navController.popBackStack() }
         }
+        composable(Screen.VoiceCall.route) {
+            com.lullabyai.app.ui.screens.chat.CallScreen(chatViewModel, childViewModel, isThai = lang == "th") { navController.popBackStack() }
+        }
         composable(Screen.QuickActionSearch.route) {
             com.lullabyai.app.ui.screens.search.QuickActionSearchScreen(navController, isThai = lang == "th") { navController.popBackStack() }
         }

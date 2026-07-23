@@ -230,6 +230,9 @@ fun AIChatScreen(
                                 "อ่านคำตอบออกเสียง", tint = if (voiceEnabled) Primary else LocalContentColor.current
                             )
                         }
+                        IconButton(onClick = { onNavigate(Screen.VoiceCall.route) }) {
+                            Icon(Icons.Filled.Call, "โทรคุยกับ AI")
+                        }
                         IconButton(onClick = { onNavigate(Screen.CameraScan.route) }) {
                             Icon(Icons.Filled.CameraAlt, "สแกนรอบตัวลูก")
                         }
