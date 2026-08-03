@@ -18,17 +18,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lullabyai.app.data.model.HealthRecord
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.HealthRecordRules
 import com.lullabyai.app.viewmodel.ChildViewModel
 
 /** "ประวัติการเจ็บป่วย" picker — a bottom sheet (not a nav destination) so the calling form
  *  (RecordVisitScreen) never leaves composition and never loses its already-filled-in fields.
  *  Picks real symptoms off the child's existing illness history (state.healthRecords: title = main
- *  symptom, additionalSymptoms = extra ones), grouped "กำลังป่วย" (still monitoring) vs older. */
+ *  symptom, additionalSymptoms = extra ones), grouped "กำลังป่วย" (still monitoring) vs older.
+ *  Batch Q #7: past entries >1 month hide behind "more"; #9 auto-resolved leave "กำลังป่วย". */
 @Composable
 fun SymptomPickerSheet(childViewModel: ChildViewModel, isThai: Boolean, onDismiss: () -> Unit, onConfirm: (List<String>) -> Unit) {
     val state by childViewModel.uiState.collectAsState()
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(setOf<String>()) }
+    var showOlder by remember { mutableStateOf(false) }
 
     data class Group(val record: HealthRecord, val symptoms: List<String>)
     val allGroups = remember(state.healthRecords) {
@@ -44,8 +47,21 @@ fun SymptomPickerSheet(childViewModel: ChildViewModel, isThai: Boolean, onDismis
             if (matched.isEmpty()) null else g.copy(symptoms = matched)
         }
     }
-    val monitoring = filteredGroups.filter { it.record.status == "monitoring" }
-    val past = filteredGroups.filter { it.record.status != "monitoring" }
+    val monitoring = remember(filteredGroups, state.symptomActivityByRecord) {
+        filteredGroups.filter {
+            HealthRecordRules.displayStatus(it.record, state.symptomActivityByRecord[it.record.id]) ==
+                HealthRecordRules.DisplayStatus.MONITORING
+        }
+    }
+    val pastAll = remember(filteredGroups, state.symptomActivityByRecord) {
+        filteredGroups.filter {
+            HealthRecordRules.displayStatus(it.record, state.symptomActivityByRecord[it.record.id]) !=
+                HealthRecordRules.DisplayStatus.MONITORING
+        }
+    }
+    val pastRecent = remember(pastAll) { pastAll.filterNot { HealthRecordRules.isOlderThanOneMonth(it.record) } }
+    val pastOlder = remember(pastAll) { pastAll.filter { HealthRecordRules.isOlderThanOneMonth(it.record) } }
+    val past = if (showOlder) pastAll else pastRecent
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
@@ -73,7 +89,7 @@ fun SymptomPickerSheet(childViewModel: ChildViewModel, isThai: Boolean, onDismis
                             Text(if (isThai) "กำลังป่วย ${monitoring.size}" else "Ongoing ${monitoring.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color(0xFFED6C02), fontWeight = FontWeight.Bold)
                         }
                         Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)) {
-                            Text(if (isThai) "ประวัติเก่า ${past.size}" else "Past ${past.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(if (isThai) "ประวัติเก่า ${pastAll.size}" else "Past ${pastAll.size}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -97,6 +113,17 @@ fun SymptomPickerSheet(childViewModel: ChildViewModel, isThai: Boolean, onDismis
                         items(past, key = { "p_${it.record.id}" }) { g ->
                             RecordSymptomCard(g.record, g.symptoms, selected, isThai) { sym, isSel ->
                                 selected = if (isSel) selected + sym else selected - sym
+                            }
+                        }
+                    }
+                    if (!showOlder && pastOlder.isNotEmpty()) {
+                        item {
+                            TextButton(onClick = { showOlder = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    if (isThai) "ดูเพิ่มเติม (${pastOlder.size})" else "Show more (${pastOlder.size})",
+                                    color = Primary, fontWeight = FontWeight.Bold
+                                )
+                                Icon(Icons.Filled.ExpandMore, null, tint = Primary)
                             }
                         }
                     }

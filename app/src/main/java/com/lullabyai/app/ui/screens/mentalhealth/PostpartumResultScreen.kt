@@ -49,7 +49,7 @@ fun PostpartumResultScreen(authViewModel: AuthViewModel, navController: androidx
     val result = authState.lastPostpartumResult ?: authState.postpartumHistory.firstOrNull()
 
     Scaffold(
-        topBar = { com.lullabyai.app.ui.components.LullabyTopBar(title = if (isThai) "ผลการประเมิน" else "Your Result", onBack = onBackToDashboard) },
+        topBar = { com.lullabyai.app.ui.components.LullabyTopBar(title = if (isThai) "ผลการประเมิน" else "Your Result", onBack = onBackToDashboard, navController = navController) },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.HOME,

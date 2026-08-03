@@ -1,5 +1,6 @@
 package com.lullabyai.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -14,12 +15,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -27,9 +30,64 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import coil.compose.AsyncImage
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import kotlinx.coroutines.delay
+
+/**
+ * App-wide signed avatar URL for the current user, provided once near the NavHost root
+ * (see AppNavigation.kt) so any header can show the real profile photo without threading
+ * it through every screen's parameter list — mirrors the existing LocalStrings pattern.
+ */
+val LocalAvatarUrl = staticCompositionLocalOf<String?> { null }
+
+/**
+ * The app's NavController, provided once near the NavHost root (see AppNavigation.kt).
+ *
+ * ponytail: exists so tab-switching lives in ONE place instead of being re-implemented in the
+ * 56 screens that render the footer. Those screens still pass their onHome/onChild/... lambdas
+ * and still compile, but when this local is present [AppBottomNav] ignores them and navigates
+ * itself — the only way to get per-tab back-stack save/restore right without editing every call
+ * site. Upgrade path: delete the now-dead lambdas from the call sites in a separate cleanup pass.
+ */
+val LocalNavController = staticCompositionLocalOf<NavController?> { null }
+
+/**
+ * Number of unread *important* notifications (category == "warning"), provided at the NavHost
+ * root so every header's bell can show a red count badge without each screen loading them.
+ */
+val LocalImportantNotificationCount = staticCompositionLocalOf { 0 }
+
+/** Root destination of each footer tab. Re-tapping a tab returns here; switching tabs restores its saved stack. */
+private fun tabRootRoute(tab: BottomTab): String = when (tab) {
+    BottomTab.HOME -> Screen.Dashboard.route
+    BottomTab.CHILD -> Screen.ChildSummary.route
+    BottomTab.CHATBOT -> Screen.AiChat.route
+    BottomTab.CONNECT -> Screen.ConnectServicesSelection.route
+    BottomTab.SETTINGS -> Screen.Settings.route
+    // Stats belongs to the Child tab now, so its root is the Child root.
+    BottomTab.STATS -> Screen.ChildSummary.route
+}
+
+/**
+ * Switch footer tabs, preserving each tab's own back stack.
+ *
+ * Anchors on Dashboard rather than the graph's start destination because the graph starts at
+ * Welcome/Login — popping to that would throw the user out of the signed-in area.
+ */
+private fun NavController.switchToTab(tab: BottomTab, isReselect: Boolean) {
+    navigate(tabRootRoute(tab)) {
+        popUpTo(Screen.Dashboard.route) {
+            saveState = true
+            inclusive = false
+        }
+        launchSingleTop = true
+        // Re-tapping the tab you're already in is an explicit "take me to the top of this
+        // section", so we deliberately do NOT restore that tab's saved inner stack.
+        restoreState = !isReselect
+    }
+}
 
 /** The tabs of the app-wide bottom navigation. CHATBOT is launched from the center floating button, not a bar item. */
 enum class BottomTab { HOME, CHATBOT, CHILD, STATS, CONNECT, SETTINGS }
@@ -125,16 +183,28 @@ fun AppBottomNav(
     onConnect: (() -> Unit)? = null
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
-    data class NavItem(val tab: BottomTab, val icon: ImageVector, val label: String, val onClick: () -> Unit)
+    val nav = LocalNavController.current
+
+    // Stats now lives inside the Child tab, so the bar is the same four tabs everywhere
+    // instead of swapping Stats↔Connect depending on which screen you're on.
+    data class NavItem(val tab: BottomTab, val icon: ImageVector, val label: String, val fallback: () -> Unit)
     val leftItems = listOf(
         NavItem(BottomTab.HOME, Icons.Filled.Home, s.navHome, onHome),
         NavItem(BottomTab.CHILD, Icons.Filled.ChildCare, s.navChild, onChild)
     )
     val rightItems = listOf(
-        if (onConnect != null) NavItem(BottomTab.CONNECT, Icons.Filled.Hub, if (s.isThai) "เชื่อมต่อ" else "Connect", onConnect)
-        else NavItem(BottomTab.STATS, Icons.Filled.BarChart, if (s.isThai) "สถิติ" else "Stats", onStats),
+        NavItem(BottomTab.CONNECT, Icons.Filled.Hub, if (s.isThai) "เชื่อมต่อ" else "Connect", onConnect ?: {}),
         NavItem(BottomTab.SETTINGS, Icons.Filled.Settings, s.navSettings, onSettings)
     )
+
+    // With a NavController in scope we own the tab transition (save/restore per tab, and
+    // re-tap = back to that tab's root). Without one — previews, tests — fall back to the
+    // caller's lambda so nothing breaks.
+    fun go(item: NavItem) {
+        val n = nav
+        if (n != null) n.switchToTab(item.tab, isReselect = item.tab == selected)
+        else if (item.tab != selected) item.fallback()
+    }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         NavigationBar(
@@ -145,20 +215,28 @@ fun AppBottomNav(
             windowInsets = WindowInsets(0),
             modifier = Modifier.navigationBarsPadding()
         ) {
-            leftItems.forEach { item -> BottomNavBarItem(item.tab, selected, item.icon, item.label, item.onClick) }
+            leftItems.forEach { item -> BottomNavBarItem(item.tab, selected, item.icon, item.label) { go(item) } }
             // Reserves the center slot so the floating AI button has room to sit above the bar.
             NavigationBarItem(
                 selected = false,
-                onClick = onChatbot,
+                onClick = {
+                val n = nav
+                if (n != null) n.switchToTab(BottomTab.CHATBOT, isReselect = selected == BottomTab.CHATBOT)
+                else onChatbot()
+            },
                 icon = { Spacer(Modifier.size(24.dp)) },
                 label = { Spacer(Modifier.height(12.dp)) },
                 enabled = false,
                 colors = NavigationBarItemDefaults.colors(disabledIconColor = Color.Transparent, disabledTextColor = Color.Transparent)
             )
-            rightItems.forEach { item -> BottomNavBarItem(item.tab, selected, item.icon, item.label, item.onClick) }
+            rightItems.forEach { item -> BottomNavBarItem(item.tab, selected, item.icon, item.label) { go(item) } }
         }
         FloatingActionButton(
-            onClick = onChatbot,
+            onClick = {
+                val n = nav
+                if (n != null) n.switchToTab(BottomTab.CHATBOT, isReselect = selected == BottomTab.CHATBOT)
+                else onChatbot()
+            },
             shape = CircleShape,
             containerColor = Primary,
             contentColor = Color.White,
@@ -176,7 +254,9 @@ private fun RowScope.BottomNavBarItem(tab: BottomTab, selected: BottomTab, icon:
     val isSelected = tab == selected
     NavigationBarItem(
         selected = isSelected,
-        onClick = { if (!isSelected) onClick() },
+        // Fires even when already selected — re-tapping the active tab is how the user gets
+        // back to that section's main page (#6).
+        onClick = onClick,
         icon = { Icon(icon, label, modifier = Modifier.size(24.dp)) },
         label = { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
         colors = NavigationBarItemDefaults.colors(
@@ -199,7 +279,7 @@ fun ChildSidebarNav(
         Triple("development", Icons.Filled.TrendingUp, "พัฒนาการ"),
         Triple("health", Icons.Filled.FavoriteBorder, "สุขภาพ"),
         Triple("vaccine", Icons.Filled.Vaccines, "สมุดวัคซีน"),
-        Triple("risk", Icons.Filled.Warning, "ความเสี่ยงโรค")
+        Triple("chronic", Icons.Filled.HealthAndSafety, "โรคประจำตัว")
     )
     Column(
         modifier = Modifier
@@ -258,50 +338,92 @@ fun ChildSidebarNav(
     }
 }
 
+/**
+ * Stitch-style AI Insight card — gradient surface, primary border, rounded icon tile,
+ * soft decorative orb. Used wherever designs show an "AI Analysis / AI Insight" panel.
+ * [title] defaults to localized [Strings.aiAnalysis]; [emptyMessage] shows when not loading
+ * and [text] is blank (e.g. not enough log data yet).
+ */
 @Composable
 fun AIInsightCard(
     text: String,
     isLoading: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    emptyMessage: String? = null,
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
+    val heading = title ?: s.aiAnalysis
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Primary.copy(alpha = 0.08f)),
-        shape = RoundedCornerShape(16.dp)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Primary.copy(alpha = 0.20f))
     ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            PrimaryContainer.copy(alpha = 0.35f),
+                            MaterialTheme.colorScheme.surface
+                        )
+                    )
+                )
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 28.dp, y = (-28).dp)
+                    .size(110.dp)
                     .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Primary, PrimaryContainer))),
-                contentAlignment = Alignment.Center
+                    .background(Primary.copy(alpha = 0.06f))
+            )
+            Row(
+                modifier = Modifier.padding(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = s.aiAnalysis,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = Primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(6.dp))
-                if (isLoading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                } else {
-                    // Larger, generously spaced text for easy reading (parent-facing AI advice)
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontSize = 16.sp,
-                        lineHeight = 26.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Primary.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        tint = Primary,
+                        modifier = Modifier.size(24.dp)
                     )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = heading,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    when {
+                        isLoading -> LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Primary
+                        )
+                        text.isNotBlank() -> Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontSize = 16.sp,
+                            lineHeight = 26.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        !emptyMessage.isNullOrBlank() -> Text(
+                            text = emptyMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -365,32 +487,114 @@ fun StatusBadge(status: String, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * The single shared header for the whole app. [navController] drives the standard notification
+ * bell (-> Screen.Notifications) and profile photo (-> Screen.Settings) actions — omit it (or set
+ * [showNotification]/[showProfile] to false) for screens that intentionally skip them, e.g. modal
+ * Save/Edit forms that already occupy the actions slot with their own primary action.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LullabyTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
+    navController: NavController? = null,
+    centerTitle: Boolean = false,
+    showNotification: Boolean = navController != null,
+    showProfile: Boolean = navController != null,
+    /**
+     * Send the bell and avatar to the DOCTOR notifications/settings instead of the parent ones.
+     *
+     * This is why doctor screens used to suppress both icons entirely: the shared bar hardcoded
+     * `Screen.Notifications` / `Screen.Settings`, so tapping either dropped a doctor onto a parent
+     * screen with a parent footer and no way back. Routing by role lets doctor pages carry the
+     * standard back — title — bell — avatar header like everything else.
+     */
+    isDoctor: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    TopAppBar(
-        title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = Primary,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        navigationIcon = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "ย้อนกลับ", tint = MaterialTheme.colorScheme.onSurface)
+    val avatarUrl = LocalAvatarUrl.current
+    val titleSlot: @Composable () -> Unit = {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = Primary,
+            fontWeight = FontWeight.Bold
+        )
+    }
+    val navSlot: @Composable () -> Unit = {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "ย้อนกลับ", tint = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+    }
+    val actionsSlot: @Composable RowScope.() -> Unit = {
+        actions()
+        if (showNotification && navController != null) {
+            val importantCount = LocalImportantNotificationCount.current
+            IconButton(onClick = {
+                navController.navigate(
+                    if (isDoctor) Screen.DoctorNotifications.route else Screen.Notifications.route
+                )
+            }) {
+                // Bigger bell, and it turns red the moment there is anything important waiting,
+                // with a count badge so several important notices are visible at a glance (#8).
+                Box(contentAlignment = Alignment.TopEnd) {
+                    Icon(
+                        Icons.Filled.Notifications,
+                        contentDescription = "การแจ้งเตือน",
+                        tint = if (importantCount > 0) Error else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(30.dp)
+                    )
+                    if (importantCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .offset(x = 6.dp, y = (-4).dp)
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(Error),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (importantCount > 9) "9+" else importantCount.toString(),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
-        },
-        actions = actions,
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-    )
+        }
+        if (showProfile && navController != null) {
+            IconButton(onClick = {
+                navController.navigate(
+                    if (isDoctor) Screen.DoctorSettings.route else Screen.Settings.route
+                )
+            }) {
+                Box(
+                    modifier = Modifier.size(28.dp).clip(CircleShape).background(Primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!avatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = avatarUrl, contentDescription = "โปรไฟล์",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(Icons.Filled.Person, contentDescription = "โปรไฟล์", tint = Primary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+    }
+    val barColors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+    if (centerTitle) {
+        CenterAlignedTopAppBar(title = titleSlot, navigationIcon = navSlot, actions = actionsSlot, colors = barColors)
+    } else {
+        TopAppBar(title = titleSlot, navigationIcon = navSlot, actions = actionsSlot, colors = barColors)
+    }
 }
 
 @Composable

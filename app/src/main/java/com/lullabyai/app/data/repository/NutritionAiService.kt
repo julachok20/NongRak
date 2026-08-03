@@ -203,7 +203,8 @@ object NutritionAiService {
             "Focus on affordable Thai-family staples parents can cook at home (e.g. rice porridge, soft rice, boiled egg, mashed banana/pumpkin, simple vegetable soup, minced pork/rice). " +
             "Do NOT suggest luxury, restaurant, imported, or expensive items (no steak, salmon, cheese boards, fancy desserts, etc.). " +
             "subtitle = one short line on nutrition benefit AND that it is budget-friendly. " +
-            "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\"}]"
+            "tags = short nutrient symbols (e.g. Fe, Ca, A, P) plus optional cook time like \"15 min\" and difficulty like \"easy\". " +
+            "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\",\"tags\":[\"Fe\",\"15 min\",\"easy\"]}]"
         return parseSuggestions(ask(prompt, lang) ?: return emptyList())
     }
 
@@ -217,7 +218,8 @@ object NutritionAiService {
             "Focus on affordable Thai-family staples parents can cook at home. " +
             "Do NOT suggest luxury, restaurant, imported, or expensive items. " +
             "subtitle = one short line naming which of these target nutrients this dish helps with, AND that it is budget-friendly. " +
-            "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\"}]"
+            "tags = short nutrient symbols for the target nutrients (Fe/Ca/A/P) plus optional \"15 min\" and \"easy\". " +
+            "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\",\"tags\":[\"Fe\",\"Ca\",\"15 min\"]}]"
         return parseSuggestions(ask(prompt, lang) ?: return emptyList())
     }
 

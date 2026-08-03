@@ -6,8 +6,8 @@ import io.github.jan.supabase.postgrest.from
 
 /**
  * Transparency + deletion for every table the AI reads for analysis (see
- * ChatRepository.buildChildContext / buildStatsSummary) — a parent-facing "what do you keep, let
- * me remove it" view, distinct from the existing full-account delete in Settings.
+ * ChatRepository.buildChildContext / buildStatsSummary) — used by [AiDataRetentionScreen].
+ * Document Vault (file hub) uses ChildRepository + medical_documents instead.
  */
 class MedicalDataVaultRepository {
 

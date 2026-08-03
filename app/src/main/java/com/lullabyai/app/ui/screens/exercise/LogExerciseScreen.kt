@@ -49,10 +49,10 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isThai) "บันทึกการออกกำลังกาย" else "Log Exercise", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (isThai) "บันทึกการออกกำลังกาย" else "Log Exercise",
+                onBack = onBack,
+                navController = navController
             )
         },
         containerColor = MaterialTheme.colorScheme.background

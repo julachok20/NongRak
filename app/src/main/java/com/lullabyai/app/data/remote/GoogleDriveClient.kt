@@ -4,7 +4,7 @@ import android.accounts.AccountManager
 import com.lullabyai.app.NongRakApp
 import io.github.jan.supabase.auth.auth
 import io.ktor.client.*
-import io.ktor.client.engine.android.*
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -28,7 +28,7 @@ object GoogleDriveClient {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    private val client = HttpClient(Android) {
+    private val client = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 30_000; socketTimeoutMillis = 30_000 }
     }

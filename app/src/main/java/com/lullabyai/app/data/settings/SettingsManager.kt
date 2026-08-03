@@ -31,6 +31,7 @@ class SettingsManager(private val context: Context) {
     private val AI_TIPS = booleanPreferencesKey("ai_tips")
     private val SELECTED_CHILD = stringPreferencesKey("selected_child_id")
     private val HAS_SEEN_TOUR = booleanPreferencesKey("has_seen_first_run_tour")
+    private val HAS_SEEN_DOCTOR_TOUR = booleanPreferencesKey("has_seen_doctor_first_run_tour")
     private val SLEEP_REC_RESPONSE_AT = stringPreferencesKey("sleep_rec_response_at")
 
     /** When the parent last answered (yes or no+reason) the recommended-bedtime prompt — gates
@@ -46,6 +47,13 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setHasSeenTour(value: Boolean) {
         context.dataStore.edit { it[HAS_SEEN_TOUR] = value }
+    }
+
+    /** Whether the doctor has already seen (or skipped) the first sign-up feature tour. */
+    val hasSeenDoctorTour: Flow<Boolean> = context.dataStore.data.map { it[HAS_SEEN_DOCTOR_TOUR] ?: false }
+
+    suspend fun setHasSeenDoctorTour(value: Boolean) {
+        context.dataStore.edit { it[HAS_SEEN_DOCTOR_TOUR] = value }
     }
 
     private val HAS_SEEN_WIDGET_PROMO = booleanPreferencesKey("has_seen_widget_promo")
@@ -106,6 +114,52 @@ class SettingsManager(private val context: Context) {
     private val SERVICE_USAGE = stringPreferencesKey("service_usage")
     private val REMINDED_KEYS = stringPreferencesKey("vaccine_reminded_keys")
     private val MEDICINE_REMINDED_KEYS = stringPreferencesKey("medicine_reminded_keys")
+    private val DEVICE_WARNING_KEYS = stringPreferencesKey("device_warning_keys")
+    private val DOCTOR_VACCINE_INBOX_DISMISSED = stringPreferencesKey("doctor_vaccine_inbox_dismissed")
+    private val DOCTOR_SCHEDULE_NUDGE_DISMISSED = booleanPreferencesKey("doctor_schedule_nudge_dismissed")
+    private val LAST_AUTH_PORTAL = stringPreferencesKey("last_auth_portal")
+    private val portalPrefs by lazy {
+        context.getSharedPreferences("nongrak_portal", Context.MODE_PRIVATE)
+    }
+
+    companion object {
+        const val PORTAL_PARENT = "parent"
+        const val PORTAL_DOCTOR = "doctor"
+        private const val PREFS_LAST_PORTAL = "last_auth_portal"
+    }
+
+    /** Synchronous read for cold-start routing before DataStore hydrates. */
+    fun getLastAuthPortalSync(): String =
+        portalPrefs.getString(PREFS_LAST_PORTAL, PORTAL_PARENT) ?: PORTAL_PARENT
+
+    /** Last portal the user signed into — keeps doctor vs parent on cold start when both roles exist. */
+    suspend fun getLastAuthPortal(): String {
+        val fromStore = context.dataStore.data.first()[LAST_AUTH_PORTAL]
+        if (fromStore != null) return fromStore
+        return getLastAuthPortalSync()
+    }
+
+    suspend fun setLastAuthPortal(portal: String) {
+        portalPrefs.edit().putString(PREFS_LAST_PORTAL, portal).apply()
+        context.dataStore.edit { it[LAST_AUTH_PORTAL] = portal }
+    }
+
+    suspend fun isDoctorScheduleNudgeDismissed(): Boolean =
+        context.dataStore.data.first()[DOCTOR_SCHEDULE_NUDGE_DISMISSED] == true
+
+    suspend fun setDoctorScheduleNudgeDismissed(dismissed: Boolean = true) {
+        context.dataStore.edit { it[DOCTOR_SCHEDULE_NUDGE_DISMISSED] = dismissed }
+    }
+
+    /** Parent dismissed "doctor sent vaccine verification" popups (request id list). */
+    suspend fun getDismissedDoctorVaccineInboxIds(): Set<String> =
+        context.dataStore.data.first()[DOCTOR_VACCINE_INBOX_DISMISSED]?.split("|||")?.filter { it.isNotBlank() }?.toSet()
+            ?: emptySet()
+
+    suspend fun dismissDoctorVaccineInboxId(id: String) {
+        val next = getDismissedDoctorVaccineInboxIds() + id
+        context.dataStore.edit { it[DOCTOR_VACCINE_INBOX_DISMISSED] = next.joinToString("|||") }
+    }
 
     /** Dedupe markers (e.g. "vaccineId:3") so a vaccine reminder fires once per offset, not repeatedly. */
     suspend fun getRemindedKeys(): Set<String> =
@@ -122,6 +176,15 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setMedicineRemindedKeys(keys: Set<String>) {
         context.dataStore.edit { it[MEDICINE_REMINDED_KEYS] = keys.joinToString("|||") }
+    }
+
+    /** Dedupe markers for wearable/IoT warning notifications ("childId:metric:recordedAt"). */
+    suspend fun getDeviceWarningKeys(): Set<String> =
+        context.dataStore.data.first()[DEVICE_WARNING_KEYS]?.split("|||")?.filter { it.isNotBlank() }?.toSet()
+            ?: emptySet()
+
+    suspend fun setDeviceWarningKeys(keys: Set<String>) {
+        context.dataStore.edit { it[DEVICE_WARNING_KEYS] = keys.joinToString("|||") }
     }
 
     /** Recently-opened service keys, newest first (comma-separated). For the dashboard "บริการล่าสุด". */

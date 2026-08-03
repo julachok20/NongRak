@@ -47,7 +47,10 @@ import kotlinx.coroutines.delay
 fun WelcomeScreen(
     onSignUp: () -> Unit,
     onLogin: () -> Unit,
-    settingsViewModel: SettingsViewModel
+    settingsViewModel: SettingsViewModel,
+    // Default no-op keeps this screen wireable today — AppNavigation.kt passes the real
+    // navigation to Screen.DoctorWelcome.route once the doctor flow is hooked up centrally.
+    onDoctorMode: () -> Unit = {}
 ) {
     val s = LocalStrings.current
     val settings by settingsViewModel.settings.collectAsState()
@@ -183,6 +186,16 @@ fun WelcomeScreen(
                         FeatureChip("AI-Powered Insights")
                         FeatureChip("🔒 Secure Data")
                     }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onDoctorMode) {
+                    Text(
+                        text = "คุณเป็นแพทย์ใช่ไหม?",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))

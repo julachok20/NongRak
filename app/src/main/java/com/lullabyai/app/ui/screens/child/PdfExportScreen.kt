@@ -20,6 +20,7 @@ import androidx.core.content.FileProvider
 import android.content.Intent
 import android.widget.Toast
 import androidx.navigation.NavController
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.DoctorReportGenerator
@@ -78,10 +79,10 @@ fun PdfExportScreen(childViewModel: ChildViewModel, navController: NavController
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ส่งออกรายงาน" else "Export Report", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ส่งออกรายงาน" else "Export Report",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {

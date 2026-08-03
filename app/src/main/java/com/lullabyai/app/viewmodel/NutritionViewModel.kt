@@ -9,8 +9,10 @@ import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.model.RecipeContent
 import com.lullabyai.app.data.model.SuggestionItem
 import com.lullabyai.app.data.repository.ChildRepository
+import com.lullabyai.app.data.repository.HealthRepository
 import com.lullabyai.app.data.repository.NutritionAiService
 import com.lullabyai.app.data.repository.NutritionRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -20,6 +22,8 @@ import java.time.Period
 data class NutritionUiState(
     val loading: Boolean = false,
     val child: Child? = null,
+    /** ISO date (yyyy-MM-dd) for food/exercise/summary loads — defaults to today; changeable on Today's Full Food List. */
+    val logDate: String = LocalDate.now().toString(),
     val foods: List<FoodLog> = emptyList(),
     val todayMilkMl: Int = 0,
     val summary: NutritionRepository.DailySummary? = null,
@@ -54,12 +58,14 @@ data class NutritionUiState(
     val exercise: ExerciseContent? = null,
     val exerciseLoading: Boolean = false,
     val currentExerciseName: String? = null,  // the activity name requested (for reliable done-matching)
+    val isChildOwner: Boolean = false,
     val error: String? = null
 )
 
 class NutritionViewModel : ViewModel() {
 
     private val childRepo = ChildRepository()
+    private val healthRepo = HealthRepository()
     private val repo = NutritionRepository()
 
     val weeklyGoalMinutes = 60
@@ -67,12 +73,36 @@ class NutritionViewModel : ViewModel() {
     private val _ui = MutableStateFlow(NutritionUiState())
     val ui: StateFlow<NutritionUiState> = _ui
 
-    private fun ageMonths(child: Child?): Int {
+    fun ageMonths(child: Child? = _ui.value.child): Int {
         val bd = child?.birthdate ?: return 0
         return runCatching {
             val p = Period.between(LocalDate.parse(bd), LocalDate.now())
             p.years * 12 + p.months
         }.getOrDefault(0)
+    }
+
+    /** Short bilingual AI insight line for logging screens (not charts) — derived from today's macros. */
+    fun loggingInsightText(isThai: Boolean): String {
+        val m = _ui.value.macros
+        val needs = deficientNutrients()
+        val labels = mapOf(
+            "protein" to (if (isThai) "โปรตีน" else "protein"),
+            "carbohydrates" to (if (isThai) "คาร์โบไฮเดรต" else "carbs"),
+            "fat" to (if (isThai) "ไขมัน" else "fat"),
+            "calcium" to (if (isThai) "แคลเซียม" else "calcium"),
+            "iron" to (if (isThai) "ธาตุเหล็ก" else "iron")
+        )
+        return when {
+            m == null -> if (isThai) "ยังไม่มีข้อมูลอาหารวันนี้ บันทึกมื้ออาหารเพื่อรับคำแนะนำที่ตรงจุดค่ะ"
+            else "No food logged yet — log meals to get tailored tips."
+            needs.isEmpty() -> if (isThai) "วันนี้ได้รับสารอาหารครบตามเป้าหมายแล้วค่ะ เก่งมาก!"
+            else "Today's logged nutrients look on track for your child's age."
+            else -> {
+                val names = needs.mapNotNull { labels[it] }.joinToString(if (isThai) " และ " else " and ")
+                if (isThai) "วันนี้ลูกน้อยของคุณอาจต้องการ${names}เพิ่มเติม จากมื้อที่บันทึกไว้"
+                else "From today's logs, your child could use more $names."
+            }
+        }
     }
 
     /** Rough age-based recommended daily energy intake (kcal) for 0–3y, per standard guidance. */
@@ -119,7 +149,15 @@ class NutritionViewModel : ViewModel() {
     fun load(lang: String) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(loading = true)
-            val child = childRepo.getSelectedChild().getOrNull()
+            val rawChild = childRepo.getSelectedChild().getOrNull()
+            // Allergy Watch reads `child.allergies` — prefer the structured allergies table so this
+            // card never drifts from Allergy History / Child Summary after add/edit/delete.
+            val child = rawChild?.let { c ->
+                val names = healthRepo.getAllergies(c.id).getOrNull()
+                    ?.map { it.name }?.filter { it.isNotBlank() }?.distinct().orEmpty()
+                val summary = names.joinToString(", ").ifBlank { null }
+                if (summary != c.allergies) c.copy(allergies = summary) else c
+            }
             // If the active child changed, drop the previous child's AI content so it doesn't show stale.
             if (child?.id != _ui.value.child?.id) {
                 suggestionsLang = null
@@ -129,20 +167,22 @@ class NutritionViewModel : ViewModel() {
                     mealSuggestion = null, mealPlan = emptyMap()
                 )
             }
-            val foods = child?.let { repo.getFoodLogs(it.id) } ?: emptyList()
-            val ex = child?.let { repo.getExerciseLogs(it.id) } ?: emptyList()
+            val date = _ui.value.logDate.ifBlank { LocalDate.now().toString() }
+            val foods = child?.let { repo.getFoodLogs(it.id, date) } ?: emptyList()
+            val ex = child?.let { repo.getExerciseLogs(it.id, date) } ?: emptyList()
             val weekly = child?.let { repo.getWeeklyExercise(it.id).sumOf { e -> e.durationMin ?: 0 } } ?: 0
-            val summary = child?.let { repo.getDailySummary(it.id) }
-            val today = LocalDate.now().toString()
+            val summary = child?.let { repo.getDailySummary(it.id, date) }
             val milkMl = child?.let { c ->
-                repo.getMilkLogs(c.id).filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == today }.sumOf { it.volumeMl }
+                repo.getMilkLogs(c.id).filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }.sumOf { it.volumeMl }
             } ?: 0
             val (targetCa, targetFe) = dailyTargetMinerals(child)
+            val isOwner = child?.let { childRepo.isChildOwner(it.id).getOrDefault(false) } ?: false
             _ui.value = _ui.value.copy(
-                loading = false, child = child, foods = foods, todayMilkMl = milkMl,
+                loading = false, child = child, logDate = date, foods = foods, todayMilkMl = milkMl,
                 exerciseLogs = ex, weeklyMinutes = weekly, summary = summary,
                 targetKcal = dailyTargetKcal(child), targetMacros = dailyTargetMacros(child),
-                targetCalciumMg = targetCa, targetIronMg = targetFe
+                targetCalciumMg = targetCa, targetIronMg = targetFe,
+                isChildOwner = isOwner
             )
             ensureSuggestions(lang)
             loadMacros(lang)
@@ -204,12 +244,31 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
+    private suspend fun reloadLogsNow() {
+        val child = _ui.value.child ?: return
+        val date = _ui.value.logDate
+        val foods = repo.getFoodLogs(child.id, date)
+        val ex = repo.getExerciseLogs(child.id, date)
+        val summary = repo.getDailySummary(child.id, date)
+        val milkMl = repo.getMilkLogs(child.id)
+            .filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
+            .sumOf { it.volumeMl }
+        _ui.value = _ui.value.copy(foods = foods, exerciseLogs = ex, summary = summary, todayMilkMl = milkMl)
+    }
+
     private fun reloadLogs() {
+        viewModelScope.launch { reloadLogsNow() }
+    }
+
+    /** Switch the logging day (Today's Full Food List "เปลี่ยนวันที่"). Resets macro cache for the new day. */
+    fun setLogDate(dateIso: String, lang: String) {
+        if (dateIso == _ui.value.logDate) return
+        macrosKey = null
+        microKey = null
         viewModelScope.launch {
-            val child = _ui.value.child ?: return@launch
-            val foods = repo.getFoodLogs(child.id)
-            val summary = repo.getDailySummary(child.id)
-            _ui.value = _ui.value.copy(foods = foods, summary = summary)
+            _ui.value = _ui.value.copy(logDate = dateIso, macros = null, microStatus = null)
+            reloadLogsNow()
+            loadMacros(lang)
         }
     }
 
@@ -232,10 +291,10 @@ class NutritionViewModel : ViewModel() {
             val hour = java.time.LocalTime.now().hour
             val est = NutritionAiService.estimateFood(name.trim(), ageMonths(child), hour, lang, portion.takeIf { it.isNotBlank() })
             val kcal = est?.first?.let { (it * (1f - spillFraction.coerceIn(0f, 1f))).toInt() }
-            repo.addFood(child.id, est?.second ?: "other", name.trim(), kcal)
-            val foods = repo.getFoodLogs(child.id)
-            val summary = repo.getDailySummary(child.id)
-            _ui.value = _ui.value.copy(foods = foods, summary = summary, calculating = false)
+            repo.addFood(child.id, est?.second ?: "other", name.trim(), kcal, _ui.value.logDate)
+            macrosKey = null
+            reloadLogs()
+            _ui.value = _ui.value.copy(calculating = false)
         }
     }
 
@@ -254,10 +313,10 @@ class NutritionViewModel : ViewModel() {
                 return@launch
             }
             val kcal = (est.kcal * (1f - spillFraction.coerceIn(0f, 1f))).toInt()
-            repo.addFood(child.id, est.meal, est.itemName, kcal)
-            val foods = repo.getFoodLogs(child.id)
-            val summary = repo.getDailySummary(child.id)
-            _ui.value = _ui.value.copy(foods = foods, summary = summary, calculating = false)
+            repo.addFood(child.id, est.meal, est.itemName, kcal, _ui.value.logDate)
+            macrosKey = null
+            reloadLogs()
+            _ui.value = _ui.value.copy(calculating = false)
         }
     }
 
@@ -302,10 +361,15 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
+    // Tracks the in-flight typed/photo check so the Cancel button can abort it rather than
+    // just leaving checkLoading spinning forever once the user backs out of the request.
+    private var checkJob: Job? = null
+
     /** Parent calorie-check: estimate kcal + macros + tip for any typed dish. */
     fun runCalorieCheck(food: String, lang: String) {
         if (food.isBlank()) return
-        viewModelScope.launch {
+        checkJob?.cancel()
+        checkJob = viewModelScope.launch {
             _ui.value = _ui.value.copy(checkLoading = true, checkedFood = food.trim())
             val r = NutritionAiService.calorieCheck(food.trim(), lang)
             _ui.value = _ui.value.copy(calorieCheck = r, checkLoading = false)
@@ -314,7 +378,8 @@ class NutritionViewModel : ViewModel() {
 
     /** Same as [runCalorieCheck] but the dish is identified from a camera photo (base64 JPEG). */
     fun runCalorieCheckFromPhoto(imageBytes: ByteArray, lang: String) {
-        viewModelScope.launch {
+        checkJob?.cancel()
+        checkJob = viewModelScope.launch {
             _ui.value = _ui.value.copy(checkLoading = true, checkPhotoFailed = false)
             val imageBase64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
             val r = NutritionAiService.calorieCheckFromPhoto(imageBase64, "image/jpeg", lang)
@@ -326,20 +391,38 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
+    /** Cancel button on the Calorie Check screen — aborts an in-flight photo/AI check and
+     *  resets the loading state so the user lands back on the plain form, nothing saved. */
+    fun cancelCalorieCheck() {
+        checkJob?.cancel()
+        checkJob = null
+        _ui.value = _ui.value.copy(checkLoading = false, checkPhotoFailed = false)
+    }
+
     /** Recompute the summary (picks up newly-logged exercise burned calories). */
     fun refreshSummary() {
         viewModelScope.launch {
             val child = _ui.value.child ?: return@launch
-            _ui.value = _ui.value.copy(summary = repo.getDailySummary(child.id))
+            _ui.value = _ui.value.copy(summary = repo.getDailySummary(child.id, _ui.value.logDate))
         }
     }
 
     fun editFood(id: String, name: String) {
-        viewModelScope.launch { repo.updateFood(id, name.trim()); reloadLogs() }
+        viewModelScope.launch { repo.updateFood(id, name.trim()); macrosKey = null; reloadLogs() }
+    }
+
+    fun editFoodCalories(id: String, calories: Int) {
+        viewModelScope.launch { repo.setFoodCalories(id, calories); macrosKey = null; reloadLogs() }
     }
 
     fun deleteFood(id: String) {
-        viewModelScope.launch { repo.deleteFood(id); reloadLogs() }
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            if (!childRepo.isChildOwner(child.id).getOrDefault(false)) return@launch
+            repo.deleteFood(id)
+            macrosKey = null
+            reloadLogs()
+        }
     }
 
     /** AI-estimate kcal for every logged food, persist, then refresh the summary. */
@@ -351,9 +434,8 @@ class NutritionViewModel : ViewModel() {
             _ui.value = _ui.value.copy(calculating = true)
             val kcal = NutritionAiService.estimateCalories(foods.map { it.itemName }, ageMonths(child), lang)
             kcal.forEachIndexed { i, c -> foods.getOrNull(i)?.let { repo.setFoodCalories(it.id, c) } }
-            val foodsNew = repo.getFoodLogs(child.id)
-            val summary = repo.getDailySummary(child.id)
-            _ui.value = _ui.value.copy(foods = foodsNew, summary = summary, calculating = false)
+            reloadLogsNow()
+            _ui.value = _ui.value.copy(calculating = false)
             onDone()
         }
     }
@@ -367,11 +449,11 @@ class NutritionViewModel : ViewModel() {
         viewModelScope.launch {
             val child = _ui.value.child ?: return@launch
             val burn = NutritionAiService.estimateBurn(activity, durationMin, ageMonths(child), lang)
-            if (date != null) repo.addExercise(child.id, activity, durationMin, burn, date, mood, notes)
-            else repo.addExercise(child.id, activity, durationMin, burn)
-            val ex = repo.getExerciseLogs(child.id)
+            val logDate = date ?: _ui.value.logDate
+            repo.addExercise(child.id, activity, durationMin, burn, logDate, mood, notes)
+            val ex = repo.getExerciseLogs(child.id, _ui.value.logDate)
             val weekly = repo.getWeeklyExercise(child.id).sumOf { it.durationMin ?: 0 }
-            val summary = repo.getDailySummary(child.id)
+            val summary = repo.getDailySummary(child.id, _ui.value.logDate)
             _ui.value = _ui.value.copy(exerciseLogs = ex, weeklyMinutes = weekly, summary = summary)
         }
     }
@@ -380,13 +462,28 @@ class NutritionViewModel : ViewModel() {
     private val recipeCache = mutableMapOf<String, com.lullabyai.app.data.model.RecipeContent>()
     private val exerciseCache = mutableMapOf<String, com.lullabyai.app.data.model.ExerciseContent>()
 
+    /** Stitch calorie-calculator exercise edit popup — rename + duration; re-estimates burn. */
+    fun editExercise(id: String, activity: String, durationMin: Int, lang: String) {
+        if (activity.isBlank() || durationMin <= 0) return
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            val burn = NutritionAiService.estimateBurn(activity.trim(), durationMin, ageMonths(child), lang)
+            repo.updateExercise(id, activity.trim(), durationMin, burn)
+            val ex = repo.getExerciseLogs(child.id, _ui.value.logDate)
+            val weekly = repo.getWeeklyExercise(child.id).sumOf { it.durationMin ?: 0 }
+            val summary = repo.getDailySummary(child.id, _ui.value.logDate)
+            _ui.value = _ui.value.copy(exerciseLogs = ex, weeklyMinutes = weekly, summary = summary)
+        }
+    }
+
     fun deleteExercise(id: String) {
         viewModelScope.launch {
             val child = _ui.value.child ?: return@launch
+            if (!childRepo.isChildOwner(child.id).getOrDefault(false)) return@launch
             repo.deleteExercise(id)
-            val ex = repo.getExerciseLogs(child.id)
+            val ex = repo.getExerciseLogs(child.id, _ui.value.logDate)
             val weekly = repo.getWeeklyExercise(child.id).sumOf { it.durationMin ?: 0 }
-            val summary = repo.getDailySummary(child.id)
+            val summary = repo.getDailySummary(child.id, _ui.value.logDate)
             _ui.value = _ui.value.copy(exerciseLogs = ex, weeklyMinutes = weekly, summary = summary)
         }
     }

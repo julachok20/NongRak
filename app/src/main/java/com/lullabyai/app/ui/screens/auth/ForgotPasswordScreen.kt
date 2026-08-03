@@ -42,28 +42,18 @@ fun ForgotPasswordScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when (state.step) {
-                            ForgotStep.EMAIL -> "ลืมรหัสผ่าน"
-                            ForgotStep.OTP -> "ยืนยันรหัส OTP"
-                            ForgotStep.TEMP_PASSWORD -> "ลืมรหัสผ่าน"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Primary,
-                        fontWeight = FontWeight.Bold
-                    )
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = when (state.step) {
+                    ForgotStep.EMAIL -> "ลืมรหัสผ่าน"
+                    ForgotStep.OTP -> "ยืนยันรหัส OTP"
+                    ForgotStep.TEMP_PASSWORD -> "ลืมรหัสผ่าน"
                 },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        when (state.step) {
-                            ForgotStep.OTP -> viewModel.back()
-                            else -> onBackToLogin()
-                        }
-                    }) { Icon(Icons.Filled.ArrowBack, "ย้อนกลับ", tint = Primary) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                onBack = {
+                    when (state.step) {
+                        ForgotStep.OTP -> viewModel.back()
+                        else -> onBackToLogin()
+                    }
+                }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

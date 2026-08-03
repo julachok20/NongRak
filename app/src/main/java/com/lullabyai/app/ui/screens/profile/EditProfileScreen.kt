@@ -53,7 +53,7 @@ fun EditProfileScreen(
     fun pickImage() = picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
 
     Scaffold(
-        topBar = { LullabyTopBar(title = "แก้ไขโปรไฟล์", onBack = onBack) },
+        topBar = { LullabyTopBar(title = "แก้ไขโปรไฟล์", onBack = onBack, navController = navController) },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.SETTINGS,

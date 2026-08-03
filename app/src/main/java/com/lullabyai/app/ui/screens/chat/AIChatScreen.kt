@@ -52,7 +52,7 @@ private fun resolveNavRoute(key: String): String? {
         "growth" in k || "เติบโต" in k -> Screen.GrowthHistory.route
         "sleep" in k || "นอน" in k -> Screen.SleepTracker.route
         "exercise" in k || "ออกกำลัง" in k -> Screen.Exercise.route
-        "disease" in k || "risk" in k || "ความเสี่ยง" in k -> Screen.DiseaseRisk.route
+        "disease" in k || "risk" in k || "chronic" in k || "ความเสี่ยง" in k || "โรคประจำตัว" in k -> Screen.ChronicRegistry.route
         "health" in k || "สุขภาพ" in k -> Screen.ChildHealth.route
         "setting" in k || "ตั้งค่า" in k -> Screen.Settings.route
         "stat" in k || "สถิติ" in k -> Screen.StatisticsInsights.route
@@ -85,19 +85,27 @@ fun AIChatScreen(
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var selectedIsDocument by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val aiVoice = rememberAiVoice()
+    val isThai = com.lullabyai.app.ui.localization.LocalStrings.current.isThai
+    val tts = com.lullabyai.app.util.rememberTtsSpeaker()
     var voiceEnabled by remember { mutableStateOf(false) }
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
+    // Welcome (empty) state — the Stitch page — shows until the first real turn exists.
+    val showWelcome = chatState.messages.none { it.id != "welcome" }
 
-    // Image OR document (PDF) picker — "like in Gemini", per the request: the model can read an
-    // attached file, not just photos. Images are downscaled to JPEG at send time; PDFs are sent
-    // as raw bytes (see sendCurrent below) since downscaling only makes sense for images.
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    // Images via system photo picker (Play policy — no READ_MEDIA_IMAGES). PDFs via OpenDocument.
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            selectedImageUri = uri
+            selectedIsDocument = false
+        }
+    }
+    val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             selectedImageUri = uri
             selectedIsDocument = context.contentResolver.getType(uri) == "application/pdf"
         }
     }
+    var attachMenuOpen by remember { mutableStateOf(false) }
     // Speech-to-text via Google's recognizer dialog (Thai), result fills the input field.
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
@@ -138,7 +146,7 @@ fun AIChatScreen(
         val latest = chatState.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
         if (latest != null && latest.id != lastSpokenMessageId) {
             lastSpokenMessageId = latest.id
-            aiVoice.speak(latest.content)
+            tts.speak(latest.content, isThai, chatState.mode.speechRate, chatState.mode.speechPitch)
         }
     }
 
@@ -213,17 +221,16 @@ fun AIChatScreen(
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AiAvatarView(isSpeaking = aiVoice.isSpeaking, modifier = Modifier.size(28.dp))
+                            AiAvatarView(isSpeaking = tts.isSpeaking, modifier = Modifier.size(28.dp))
                             Text("คุยกับ AI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
                     },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
-                    },
+                    // ponytail: no navigationIcon — chat is a footer tab (centre AI button), the
+                    // footer is how users leave it, so a back arrow has nothing to go back to.
                     actions = {
                         IconButton(onClick = {
                             voiceEnabled = !voiceEnabled
-                            if (!voiceEnabled) aiVoice.stop()
+                            if (!voiceEnabled) tts.stop()
                         }) {
                             Icon(
                                 if (voiceEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
@@ -232,9 +239,6 @@ fun AIChatScreen(
                         }
                         IconButton(onClick = { onNavigate(Screen.VoiceCall.route) }) {
                             Icon(Icons.Filled.Call, "โทรคุยกับ AI")
-                        }
-                        IconButton(onClick = { onNavigate(Screen.CameraScan.route) }) {
-                            Icon(Icons.Filled.CameraAlt, "สแกนรอบตัวลูก")
                         }
                         IconButton(onClick = { chatViewModel.newChat() }) {
                             Icon(Icons.Filled.AddComment, "แชทใหม่")
@@ -248,6 +252,30 @@ fun AIChatScreen(
             },
             bottomBar = {
                 Column {
+                    // Device has no Thai voice data — say so instead of failing silently.
+                    if (voiceEnabled && isThai && !tts.thaiVoiceAvailable) {
+                        Surface(color = Error.copy(0.08f)) {
+                            Text(
+                                "อุปกรณ์นี้ยังไม่มีเสียงพูดภาษาไทย ติดตั้งได้ที่ ตั้งค่า > ภาษาและการป้อนข้อมูล > เสียงพูด",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                    // Mode selector once the conversation has started (on the welcome page it lives
+                    // inside the "Call with me" card, per Stitch's layout).
+                    if (!showWelcome) {
+                        Surface(color = MaterialTheme.colorScheme.surface) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                ChatModeChips(
+                                    mode = chatState.mode,
+                                    onSelect = { chatViewModel.setMode(it) },
+                                    isThai = isThai
+                                )
+                            }
+                        }
+                    }
                     // Selected image/document preview (above the input) with a remove button.
                     selectedImageUri?.let { uri ->
                         Surface(color = MaterialTheme.colorScheme.surface) {
@@ -295,12 +323,31 @@ fun AIChatScreen(
                                 )
                             )
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                // Attach (image or PDF document — "like in Gemini")
-                                IconButton(
-                                    onClick = { imagePicker.launch(arrayOf("image/*", "application/pdf")) },
-                                    modifier = Modifier.size(52.dp)
-                                ) {
-                                    Icon(Icons.Filled.AttachFile, "แนบรูปภาพหรือเอกสาร", tint = Primary, modifier = Modifier.size(26.dp))
+                                Box {
+                                    IconButton(
+                                        onClick = { attachMenuOpen = true },
+                                        modifier = Modifier.size(52.dp)
+                                    ) {
+                                        Icon(Icons.Filled.AttachFile, "แนบรูปภาพหรือเอกสาร", tint = Primary, modifier = Modifier.size(26.dp))
+                                    }
+                                    DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text(if (isThai) "รูปภาพ" else "Photo") },
+                                            onClick = {
+                                                attachMenuOpen = false
+                                                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                            },
+                                            leadingIcon = { Icon(Icons.Filled.Image, null) }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(if (isThai) "เอกสาร PDF" else "PDF document") },
+                                            onClick = {
+                                                attachMenuOpen = false
+                                                documentPicker.launch(arrayOf("application/pdf"))
+                                            },
+                                            leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) }
+                                        )
+                                    }
                                 }
                                 // Mic (speech → text)
                                 IconButton(onClick = { startSpeech() }, modifier = Modifier.size(52.dp)) {
@@ -336,7 +383,20 @@ fun AIChatScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                items(chatState.messages) { message ->
+                if (showWelcome) {
+                    item {
+                        ChatWelcomeState(
+                            isThai = isThai,
+                            relationship = chatState.parentRelationship,
+                            isSpeaking = tts.isSpeaking,
+                            mode = chatState.mode,
+                            onModeChange = { chatViewModel.setMode(it) },
+                            onStartCall = { onNavigate(Screen.VoiceCall.route) },
+                            onSuggestion = { chatViewModel.sendMessage(it, childState.child) }
+                        )
+                    }
+                }
+                items(if (showWelcome) emptyList<UiChatMessage>() else chatState.messages) { message ->
                     ChatBubble(
                         message = message,
                         onConfirmAction = {

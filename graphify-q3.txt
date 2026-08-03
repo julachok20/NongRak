@@ -1,0 +1,684 @@
+﻿Traversal: BFS depth=2 | Start: ['DoctorPatientDriveHelper', 'DoctorRepository', 'DriveFileMeta', 'GoogleDriveClient', 'SyncChildProfileScreen()'] | 249 nodes found
+
+NODE .put() [src=app/src/main/java/com/lullabyai/app/data/offline/OfflineCache.kt loc=L24 community=.put]
+NODE LullabyTopBar() [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L497 community=LullabyTopBar]
+NODE DoctorRepository [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L37 community=DoctorRepository]
+NODE String [src= loc= community=DoctorRepository]
+NODE .error() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L245 community=AuthRepository]
+NODE Result [src= loc= community=DoctorRepository]
+NODE AccessRequestViewModel [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L52 community=AccessRequestViewModel]
+NODE AppBottomNav() [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L173 community=LullabyTopBar]
+NODE PrimaryButton() [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L600 community=LullabyTopBar]
+NODE onDone() [src=app/src/main/java/com/lullabyai/app/util/TtsSpeaker.kt loc=L53 community=ChildViewModel]
+NODE PediaConnectLinkRepository [src=app/src/main/java/com/lullabyai/app/data/repository/PediaConnectLinkRepository.kt loc=L20 community=PediaConnectLinkRepository]
+NODE ProSleepHubScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/sleep/ProSleepHubScreen.kt loc=L53 community=ProSleepHubScreen]
+NODE ChildScreenScaffold() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/ChildScreenScaffold.kt loc=L18 community=ChildScreenScaffold]
+NODE WhoGrowthDetailScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/growth/WhoGrowthDetailScreens.kt loc=L57 community=WhoGrowthDetailScreen]
+NODE SyncChildProfileScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/SyncChildProfileScreen.kt loc=L42 community=SyncChildProfileScreen]
+NODE .requestAppointment() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L416 community=DoctorRepository]
+NODE CommonComponents.kt [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L1 community=LullabyTopBar]
+NODE GoogleDriveClient [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L27 community=GoogleDriveClient]
+NODE DoctorAppointmentSlot [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L153 community=DoctorRepository]
+NODE DoctorSettingsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorSettingsScreen.kt loc=L38 community=SettingsViewModel]
+NODE List [src= loc= community=DoctorRepository]
+NODE QuickLogHubScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/stats/QuickLogHubScreen.kt loc=L49 community=QuickLogHubScreen]
+NODE DoctorPatientDriveHelper [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L45 community=DoctorPatientDriveHelper]
+NODE DocumentVaultBody() [src=app/src/main/java/com/lullabyai/app/ui/screens/settings/MedicalDataVaultScreen.kt loc=L86 community=LullabyTopBar]
+NODE DoctorSignUpScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorSignUpScreen.kt loc=L55 community=DoctorSignUpScreen]
+NODE HealthEliminationInsightsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/stats/HealthEliminationInsightsScreen.kt loc=L35 community=HealthEliminationInsightsScreen]
+NODE NutritionInsightsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/stats/NutritionInsightsScreen.kt loc=L35 community=NutritionInsightsScreen]
+NODE Appointment [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L165 community=DoctorRepository]
+NODE DoctorSpecialDatesScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorSpecialDatesScreen.kt loc=L59 community=DoctorSpecialDatesScreen]
+NODE PendingAccessRequestsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PendingAccessRequestsScreen.kt loc=L134 community=AccessPermissionBottomNav]
+NODE .searchBookableDoctors() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L122 community=DoctorRepository]
+NODE String [src= loc= community=GoogleDriveClient]
+NODE SignUpScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/auth/SignUpScreen.kt loc=L32 community=SignUpScreen]
+NODE PendingAccessRequestDialog() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PendingAccessRequestsScreen.kt loc=L34 community=AccessPermissionBottomNav]
+NODE WasteRecordScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/WasteRecordScreen.kt loc=L50 community=WasteRecordScreen]
+NODE DoctorEditProfileScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorEditProfileScreen.kt loc=L38 community=DoctorEditProfileScreen]
+NODE OnboardingStep3Screen() [src=app/src/main/java/com/lullabyai/app/ui/screens/onboarding/OnboardingStep3Screen.kt loc=L27 community=OnboardingStep3Screen]
+NODE SleepActivityInsightsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/stats/SleepActivityInsightsScreen.kt loc=L39 community=HealthEliminationInsightsScreen]
+NODE PermissionSettingsDetailScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PermissionSettingsDetailScreen.kt loc=L29 community=PermissionSettingsDetailScreen]
+NODE GrowthHistoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/growth/GrowthHistoryScreen.kt loc=L66 community=GrowthHistoryScreen]
+NODE .getBookableSlotsForParent() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L272 community=DoctorRepository]
+NODE AccessPermissionBottomNav() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/AccessCommon.kt loc=L81 community=AccessPermissionBottomNav]
+NODE RoleEditorSheet() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/RoleManagementScreen.kt loc=L343 community=PermissionSettingsDetailScreen]
+NODE String [src= loc= community=LullabyTopBar]
+NODE OnboardingStep1Screen() [src=app/src/main/java/com/lullabyai/app/ui/screens/onboarding/OnboardingStep1Screen.kt loc=L24 community=OnboardingStep3Screen]
+NODE .uploadPatientRecord() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L86 community=DoctorPatientDriveHelper]
+NODE ChildAiSummaryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/ChildAiSummaryScreen.kt loc=L39 community=ChildAiSummaryScreen]
+NODE .getAvailability() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L228 community=DoctorRepository]
+NODE ChildDiaryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/diary/ChildDiaryScreen.kt loc=L37 community=ChildDiaryScreen]
+NODE DoctorRepository.kt [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L1 community=DoctorRepository]
+NODE String [src= loc= community=DoctorPatientDriveHelper]
+NODE RoleManagementScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/RoleManagementScreen.kt loc=L36 community=PermissionSettingsDetailScreen]
+NODE OnboardingStep2Screen() [src=app/src/main/java/com/lullabyai/app/ui/screens/onboarding/OnboardingStep2Screen.kt loc=L22 community=OnboardingStep3Screen]
+NODE AddMemoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/diary/AddMemoryScreen.kt loc=L40 community=AddMemoryScreen]
+NODE RecordSleepHistoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/sleep/RecordSleepHistoryScreen.kt loc=L40 community=RecordSleepHistoryScreen]
+NODE MonthlyReportScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/stats/MonthlyReportScreen.kt loc=L35 community=LullabyTopBar]
+NODE BirthDatePickerField() [src=app/src/main/java/com/lullabyai/app/ui/components/BirthDatePickerField.kt loc=L46 community=OnboardingStep3Screen]
+NODE SiblingCompareScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/growth/SiblingCompareScreen.kt loc=L36 community=SiblingCompareScreen]
+NODE .saveSymptomLog() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1337 community=ChildViewModel]
+NODE BottomTab [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L93 community=LullabyTopBar]
+NODE ShareAccessQrScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/ShareAccessQrScreen.kt loc=L36 community=AccessPermissionBottomNav]
+NODE .searchDoctors() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L94 community=DoctorRepository]
+NODE Int [src= loc= community=DoctorRepository]
+NODE DoctorWeeklyHoursSection() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorWeeklyHoursScreen.kt loc=L77 community=DoctorViewModel]
+NODE ChildBottomNav() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/ChildBottomNav.kt loc=L13 community=ChildBottomNav]
+NODE MilkRecordScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/nutrition/MilkRecordScreen.kt loc=L43 community=MilkRecordScreen]
+NODE LoginScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/auth/LoginScreen.kt loc=L49 community=LullabyTopBar]
+NODE .writeToDrive() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L117 community=GoogleDriveClient]
+NODE .setAvailability() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L235 community=DoctorRepository]
+NODE RewindMemoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/diary/RewindMemoryScreen.kt loc=L39 community=RewindMemoryScreen]
+NODE DoctorWeeklyHoursScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorWeeklyHoursScreen.kt loc=L46 community=DoctorViewModel]
+NODE .saveHealthRecord() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1270 community=ChildViewModel]
+NODE Boolean [src= loc= community=LullabyTopBar]
+NODE hasRemainingCapacity() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L60 community=DoctorRepository]
+NODE ChangePasswordScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/settings/ChangePasswordScreen.kt loc=L32 community=ChangePasswordScreen]
+NODE Profile [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L106 community=DoctorAvatar]
+NODE .listPatientRecords() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L99 community=DoctorPatientDriveHelper]
+NODE .addMemory() [src=app/src/main/java/com/lullabyai/app/viewmodel/DiaryViewModel.kt loc=L114 community=DiaryViewModel]
+NODE formatBirthDateDisplay() [src=app/src/main/java/com/lullabyai/app/ui/components/BirthDatePickerField.kt loc=L36 community=OnboardingStep3Screen]
+NODE AddUserAccessActivityScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/AddUserAccessActivityScreen.kt loc=L29 community=AccessPermissionBottomNav]
+NODE .appointmentCountsBySlotId() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L280 community=DoctorRepository]
+NODE Boolean [src= loc= community=DoctorRepository]
+NODE .ensureLoaded() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L104 community=GoogleDriveClient]
+NODE DevelopmentHistoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/DevelopmentHistoryScreen.kt loc=L39 community=AgeGroupCard]
+NODE AddHealthRecordScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/AddHealthRecordScreen.kt loc=L45 community=AddHealthRecordScreen]
+NODE .purgeUnbookedSlotsOnClosedWeekdays() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L213 community=DoctorRepository]
+NODE .downloadPatientRecord() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L128 community=DoctorPatientDriveHelper]
+NODE .getSlots() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L261 community=DoctorRepository]
+NODE AllergyHistoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/AllergyHistoryScreen.kt loc=L45 community=AllergyHistoryScreen]
+NODE .upcomingOpenClinicDates() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L189 community=DoctorRepository]
+NODE .createSlotsBatch() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L307 community=DoctorRepository]
+NODE TtsSpeaker.kt [src=app/src/main/java/com/lullabyai/app/util/TtsSpeaker.kt loc=L1 community=TtsSpeaker]
+NODE DoctorAboutNongRakScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorAboutNongRakScreen.kt loc=L26 community=DoctorAboutNongRakScreen]
+NODE .saveCache() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L61 community=GoogleDriveClient]
+NODE AddGrowthRecordScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/growth/AddGrowthRecordScreen.kt loc=L40 community=GrowthRecord]
+NODE .setAvailability() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorViewModel.kt loc=L79 community=DoctorViewModel]
+NODE .getSlot() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L401 community=DoctorRepository]
+NODE .createSlot() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L301 community=DoctorRepository]
+NODE LastSetupScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/onboarding/LastSetupScreen.kt loc=L25 community=OnboardingViewModel]
+NODE requestSummary() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PendingAccessRequestsScreen.kt loc=L265 community=AccessPermissionBottomNav]
+NODE .updateChildInfo() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L796 community=GrowthRecord]
+NODE EditProfileScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/profile/EditProfileScreen.kt loc=L33 community=LullabyTopBar]
+NODE .slotPayload() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L323 community=DoctorRepository]
+NODE .addMedicationSchedule() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L948 community=ChildViewModel]
+NODE VaccineVerificationRequest [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L178 community=DoctorRepository]
+NODE DoctorProfile [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L130 community=DoctorRepository]
+NODE PermissionAccessScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PermissionAccessScreen.kt loc=L30 community=AccessPermissionBottomNav]
+NODE .getToken() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L146 community=DoctorPatientDriveHelper]
+NODE formatAccessTime() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/AccessCommon.kt loc=L51 community=AccessPermissionBottomNav]
+NODE WelcomeScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/welcome/WelcomeScreen.kt loc=L46 community=SettingsViewModel]
+NODE .getAppointmentsForDoctor() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L370 community=DoctorRepository]
+NODE DoctorTimeAppointmentHubScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorTimeAppointmentHubScreen.kt loc=L42 community=DoctorTimeAppointmentHubScreen]
+NODE DoctorSignInScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorSignInScreen.kt loc=L50 community=LullabyTopBar]
+NODE SyncChildScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/onboarding/SyncChildScreen.kt loc=L29 community=OnboardingStep3Screen]
+NODE .isDoctorListedForParentBooking() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L145 community=DoctorRepository]
+NODE isFutureSlot() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L52 community=DoctorRepository]
+NODE SpecialMemoriesGalleryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/diary/SpecialMemoriesGalleryScreen.kt loc=L37 community=LullabyTopBar]
+NODE .resolveClinicScheduleForDate() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L161 community=DoctorRepository]
+NODE DoctorHelpFaqScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorHelpFaqScreen.kt loc=L29 community=DoctorHelpFaqScreen]
+NODE MedicalDataVaultScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/settings/MedicalDataVaultScreen.kt loc=L69 community=LullabyTopBar]
+NODE .sendVaccineVerificationToParent() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L523 community=DoctorRepository]
+NODE .addAppointment() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1580 community=ChildViewModel]
+NODE .listPatientDetailFiles() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L578 community=DoctorRepository]
+NODE .calculateCalories() [src=app/src/main/java/com/lullabyai/app/viewmodel/NutritionViewModel.kt loc=L420 community=NutritionViewModel]
+NODE ChildSyncRequest [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L225 community=AccessPermissionBottomNav]
+NODE .resolveVaccineVerification() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L513 community=DoctorRepository]
+NODE .check() [src=core/common/src/main/java/com/lullabyai/app/util/PasswordStrength.kt loc=L17 community=.check]
+NODE .updateAppointmentStatus() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L460 community=DoctorRepository]
+NODE .getAppointmentsForChild() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L363 community=DoctorRepository]
+NODE switchToTab() [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L79 community=LullabyTopBar]
+NODE .pendingBookingsForDoctor() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L409 community=DoctorRepository]
+NODE .deleteSlot() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L351 community=DoctorRepository]
+NODE BottomNavBarItem() [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L252 community=LullabyTopBar]
+NODE AiDataRetentionScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/settings/AiDataRetentionScreen.kt loc=L26 community=.deleteCategory]
+NODE slotStartInstant() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L44 community=DoctorRepository]
+NODE .requestVaccineVerification() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L504 community=DoctorRepository]
+NODE String [src= loc= community=TtsSpeaker]
+NODE .setSlotStatus() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L355 community=DoctorRepository]
+NODE methodLabel() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PendingAccessRequestsScreen.kt loc=L272 community=AccessPermissionBottomNav]
+NODE .getVaccineVerifications() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L494 community=DoctorRepository]
+NODE .uploadVaccineCertificate() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1784 community=ChildViewModel]
+NODE Modifier [src= loc= community=LullabyTopBar]
+NODE .getPatientChildIds() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L478 community=DoctorRepository]
+NODE .resolve() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L186 community=AccessRequestViewModel]
+NODE .incrementSlotBookedCount() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L294 community=DoctorRepository]
+NODE AccessCommon.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/access/AccessCommon.kt loc=L1 community=AccessPermissionBottomNav]
+NODE .upsertDoctorProfile() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L72 community=DoctorRepository]
+NODE .loadPending() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L144 community=AccessRequestViewModel]
+NODE PendingAccessRequestsScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PendingAccessRequestsScreen.kt loc=L1 community=AccessPermissionBottomNav]
+NODE String [src= loc= community=AccessPermissionBottomNav]
+NODE .findFileId() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L131 community=GoogleDriveClient]
+NODE Unit [src= loc= community=DoctorRepository]
+NODE .applyScannedVaccines() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1830 community=ChildViewModel]
+NODE MedicalDisclaimerScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/onboarding/MedicalDisclaimerScreen.kt loc=L28 community=KeyPoint]
+NODE .getToken() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L77 community=GoogleDriveClient]
+NODE .uploadPatientDetailRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L548 community=DoctorRepository]
+NODE .isAppointmentDelayedInQueue() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L382 community=DoctorRepository]
+NODE .updateSleepSchedule() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1032 community=ChildViewModel]
+NODE AccessRequestViewModel.kt [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L1 community=AccessRequestViewModel]
+NODE .submitMentalHealthAssessment() [src=app/src/main/java/com/lullabyai/app/viewmodel/AuthViewModel.kt loc=L283 community=.submitMentalHealthAssessment]
+NODE .getAppointment() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L377 community=DoctorRepository]
+NODE .sendRequest() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L126 community=AccessRequestViewModel]
+NODE tabRootRoute() [src=app/src/main/java/com/lullabyai/app/ui/components/CommonComponents.kt loc=L63 community=LullabyTopBar]
+NODE .getDoctorProfile() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L66 community=DoctorRepository]
+NODE AccessRequestUiState [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L27 community=AccessRequestViewModel]
+NODE VaccineBookScanScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScanScreen.kt loc=L47 community=LullabyTopBar]
+NODE effectiveBookedCount() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L57 community=DoctorRepository]
+NODE ClinicDaySchedule [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L28 community=DoctorManageSlotsViewModel]
+NODE RequestDetailRow() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/PendingAccessRequestsScreen.kt loc=L255 community=AccessPermissionBottomNav]
+NODE .setQualityStars() [src=app/src/main/java/com/lullabyai/app/viewmodel/SleepMonitorViewModel.kt loc=L100 community=SleepMonitorViewModel]
+NODE .submitPostpartumCheckIn() [src=app/src/main/java/com/lullabyai/app/viewmodel/AuthViewModel.kt loc=L304 community=.submitMentalHealthAssessment]
+NODE .buildJson() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L178 community=GoogleDriveClient]
+NODE .fetchBookableDoctorIdsViaRpc() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L133 community=DoctorRepository]
+NODE .addSleepSchedule() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1017 community=ChildViewModel]
+NODE SyncChildProfileScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/access/SyncChildProfileScreen.kt loc=L1 community=SyncChildProfileScreen]
+NODE .cancel() [src=app/src/main/java/com/lullabyai/app/viewmodel/AppointmentDetailsViewModel.kt loc=L52 community=AppointmentDetailsViewModel]
+NODE .parseContent() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L188 community=GoogleDriveClient]
+NODE .deleteUnbookedSlotsForDay() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L339 community=DoctorRepository]
+NODE .downloadPatientDetail() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L581 community=DoctorRepository]
+NODE Boolean [src= loc= community=AccessPermissionBottomNav]
+NODE .updateFile() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L205 community=DoctorPatientDriveHelper]
+NODE .noTokenMessage() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L136 community=DoctorPatientDriveHelper]
+NODE .getProfileFullName() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L155 community=DoctorRepository]
+NODE .approveWithHn() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorManualRegisterViewModel.kt loc=L61 community=DoctorManualRegisterViewModel]
+NODE .isDriveAvailable() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L84 community=DoctorPatientDriveHelper]
+NODE DoctorLoginScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorLoginScreen.kt loc=L33 community=LullabyTopBar]
+NODE .createFile() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L150 community=GoogleDriveClient]
+NODE .downloadFile() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L180 community=DoctorPatientDriveHelper]
+NODE PatientDetailRecord [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L59 community=DoctorPatientDriveHelper]
+NODE DoctorAvailability [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L143 community=DoctorRepository]
+NODE syncFieldColors() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/SyncChildProfileScreen.kt loc=L435 community=SyncChildProfileScreen]
+NODE .createFile() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L187 community=DoctorPatientDriveHelper]
+NODE .uploadAvatar() [src=app/src/main/java/com/lullabyai/app/viewmodel/AuthViewModel.kt loc=L146 community=AuthViewModel]
+NODE .updateFile() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L164 community=GoogleDriveClient]
+NODE .getCached() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L53 community=GoogleDriveClient]
+NODE AccessQrScannerDialog() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/AccessQrScanner.kt loc=L34 community=SyncChildProfileScreen]
+NODE .findFileId() [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L168 community=DoctorPatientDriveHelper]
+NODE .downloadFile() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L143 community=GoogleDriveClient]
+NODE Result [src= loc= community=DoctorPatientDriveHelper]
+NODE Quadruple [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L599 community=DoctorRepository]
+NODE SyncOrDivider() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/SyncChildProfileScreen.kt loc=L420 community=SyncChildProfileScreen]
+NODE DoctorPatientDriveHelper.kt [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L1 community=DoctorPatientDriveHelper]
+NODE CacheEntry [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L46 community=GoogleDriveClient]
+NODE SyncFieldLabel() [src=app/src/main/java/com/lullabyai/app/ui/screens/access/SyncChildProfileScreen.kt loc=L410 community=SyncChildProfileScreen]
+NODE .submitScannedQr() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L121 community=AccessRequestViewModel]
+NODE Set [src= loc= community=DoctorRepository]
+NODE LocalDate [src= loc= community=DoctorRepository]
+NODE .showPopup() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L181 community=AccessRequestViewModel]
+NODE GoogleDriveClient.kt [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L1 community=GoogleDriveClient]
+NODE Unit [src= loc= community=LullabyTopBar]
+NODE .isPatientDriveAvailable() [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L546 community=DoctorRepository]
+NODE .cancelSignup() [src=app/src/main/java/com/lullabyai/app/viewmodel/AuthViewModel.kt loc=L119 community=AuthViewModel]
+NODE Pair [src= loc= community=DoctorRepository]
+NODE .pruneExpired() [src=app/src/main/java/com/lullabyai/app/data/remote/GoogleDriveClient.kt loc=L201 community=GoogleDriveClient]
+NODE BirthDatePickerField.kt [src=app/src/main/java/com/lullabyai/app/ui/components/BirthDatePickerField.kt loc=L1 community=OnboardingStep3Screen]
+NODE .setBirthdate() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L68 community=AccessRequestViewModel]
+NODE .search() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L82 community=AccessRequestViewModel]
+NODE String [src= loc= community=OnboardingStep3Screen]
+NODE .setChildQuery() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L65 community=AccessRequestViewModel]
+NODE Boolean [src= loc= community=DoctorPatientDriveHelper]
+NODE .setRole() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L63 community=AccessRequestViewModel]
+NODE .stopWatching() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L176 community=AccessRequestViewModel]
+NODE .onCleared() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L210 community=AccessRequestViewModel]
+NODE Boolean [src= loc= community=OnboardingStep3Screen]
+NODE .selectMatch() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L76 community=AccessRequestViewModel]
+NODE .setAccessCode() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L72 community=AccessRequestViewModel]
+NODE .submit() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L108 community=AccessRequestViewModel]
+NODE .startWatching() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L167 community=AccessRequestViewModel]
+NODE DriveFileMeta [src=app/src/main/java/com/lullabyai/app/data/remote/DoctorPatientDriveHelper.kt loc=L76 community=DoctorPatientDriveHelper]
+NODE NavController [src= loc= community=AccessPermissionBottomNav]
+NODE ViewModel [src= loc= community=AccessRequestViewModel]
+NODE BookableDoctorIdRow [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L593 community=DoctorRepository]
+NODE TextFieldColors [src= loc= community=SyncChildProfileScreen]
+NODE Boolean [src= loc= community=SyncChildProfileScreen]
+NODE Job [src= loc= community=AccessRequestViewModel]
+NODE NavController [src= loc= community=SyncChildProfileScreen]
+NODE List [src= loc= community=DoctorPatientDriveHelper]
+NODE .clearRequestSent() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L135 community=AccessRequestViewModel]
+NODE Boolean [src= loc= community=SyncChildProfileScreen]
+NODE StateFlow [src= loc= community=AccessRequestViewModel]
+NODE .clearError() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L139 community=AccessRequestViewModel]
+NODE DoctorSpecialDateRow [src=app/src/main/java/com/lullabyai/app/data/repository/DoctorRepository.kt loc=L585 community=DoctorRepository]
+NODE Map [src= loc= community=DoctorRepository]
+NODE String [src= loc= community=SyncChildProfileScreen]
+NODE .dismissPopup() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L183 community=AccessRequestViewModel]
+NODE NavController [src= loc= community=LullabyTopBar]
+NODE Modifier [src= loc= community=OnboardingStep3Screen]
+NODE Double [src= loc= community=DoctorRepository]
+NODE AccessQrScanner.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/access/AccessQrScanner.kt loc=L1 community=SyncChildProfileScreen]
+EDGE GoogleDriveClient --contains [EXTRACTED]--> GoogleDriveClient.kt
+EDGE GoogleDriveClient --method [EXTRACTED]--> .buildJson()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .createFile()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .downloadFile()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .ensureLoaded()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .findFileId()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .getCached()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .getToken()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .parseContent()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .pruneExpired()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .saveCache()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .updateFile()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .writeToDrive()
+EDGE GoogleDriveClient --references [EXTRACTED context=field]--> String
+EDGE DoctorPatientDriveHelper --contains [EXTRACTED]--> DoctorPatientDriveHelper.kt
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .createFile()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .downloadFile()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .downloadPatientRecord()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .findFileId()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .getToken()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .isDriveAvailable()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .listPatientRecords()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .noTokenMessage()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .updateFile()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .uploadPatientRecord()
+EDGE DoctorPatientDriveHelper --references [EXTRACTED context=generic_arg]--> .downloadPatientDetail()
+EDGE DoctorPatientDriveHelper --references [EXTRACTED context=generic_arg]--> .listPatientDetailFiles()
+EDGE DriveFileMeta --contains [EXTRACTED]--> DoctorPatientDriveHelper.kt
+EDGE DriveFileMeta --references [EXTRACTED context=generic_arg]--> .listPatientRecords()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> BirthDatePickerField()
+EDGE SyncChildProfileScreen() --references [EXTRACTED context=parameter_type]--> BottomTab
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> AppBottomNav()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> LullabyTopBar()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> PrimaryButton()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> AccessPermissionBottomNav()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> AccessQrScannerDialog()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> PendingAccessRequestDialog()
+EDGE SyncChildProfileScreen() --contains [EXTRACTED]--> SyncChildProfileScreen.kt
+EDGE SyncChildProfileScreen() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE SyncChildProfileScreen() --calls [EXTRACTED context=call]--> syncFieldColors()
+EDGE SyncChildProfileScreen() --calls [EXTRACTED context=call]--> SyncFieldLabel()
+EDGE SyncChildProfileScreen() --calls [EXTRACTED context=call]--> SyncOrDivider()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> onDone()
+EDGE SyncChildProfileScreen() --references [EXTRACTED context=parameter_type]--> AccessRequestViewModel
+EDGE DoctorRepository --contains [EXTRACTED]--> DoctorRepository.kt
+EDGE DoctorRepository --method [EXTRACTED]--> .appointmentCountsBySlotId()
+EDGE DoctorRepository --method [EXTRACTED]--> .createSlot()
+EDGE DoctorRepository --method [EXTRACTED]--> .createSlotsBatch()
+EDGE DoctorRepository --method [EXTRACTED]--> .deleteSlot()
+EDGE DoctorRepository --method [EXTRACTED]--> .deleteUnbookedSlotsForDay()
+EDGE DoctorRepository --method [EXTRACTED]--> .downloadPatientDetail()
+EDGE DoctorRepository --method [EXTRACTED]--> .fetchBookableDoctorIdsViaRpc()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAppointment()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAppointmentsForChild()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAppointmentsForDoctor()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAvailability()
+EDGE DoctorRepository --method [EXTRACTED]--> .getBookableSlotsForParent()
+EDGE DoctorRepository --method [EXTRACTED]--> .getDoctorProfile()
+EDGE DoctorRepository --method [EXTRACTED]--> .getPatientChildIds()
+EDGE DoctorRepository --method [EXTRACTED]--> .getProfileFullName()
+EDGE DoctorRepository --method [EXTRACTED]--> .getSlot()
+EDGE DoctorRepository --method [EXTRACTED]--> .getSlots()
+EDGE DoctorRepository --method [EXTRACTED]--> .getVaccineVerifications()
+EDGE DoctorRepository --method [EXTRACTED]--> .incrementSlotBookedCount()
+EDGE DoctorRepository --method [EXTRACTED]--> .isAppointmentDelayedInQueue()
+EDGE DoctorRepository --method [EXTRACTED]--> .isDoctorListedForParentBooking()
+EDGE DoctorRepository --method [EXTRACTED]--> .isPatientDriveAvailable()
+EDGE DoctorRepository --method [EXTRACTED]--> .listPatientDetailFiles()
+EDGE DoctorRepository --method [EXTRACTED]--> .pendingBookingsForDoctor()
+EDGE DoctorRepository --method [EXTRACTED]--> .purgeUnbookedSlotsOnClosedWeekdays()
+EDGE DoctorRepository --method [EXTRACTED]--> .requestAppointment()
+EDGE DoctorRepository --method [EXTRACTED]--> .requestVaccineVerification()
+EDGE DoctorRepository --method [EXTRACTED]--> .resolveClinicScheduleForDate()
+EDGE DoctorRepository --method [EXTRACTED]--> .resolveVaccineVerification()
+EDGE DoctorRepository --method [EXTRACTED]--> .searchBookableDoctors()
+EDGE DoctorRepository --method [EXTRACTED]--> .searchDoctors()
+EDGE DoctorRepository --method [EXTRACTED]--> .sendVaccineVerificationToParent()
+EDGE DoctorRepository --method [EXTRACTED]--> .setAvailability()
+EDGE DoctorRepository --method [EXTRACTED]--> .setSlotStatus()
+EDGE DoctorRepository --method [EXTRACTED]--> .slotPayload()
+EDGE DoctorRepository --method [EXTRACTED]--> .upcomingOpenClinicDates()
+EDGE DoctorRepository --method [EXTRACTED]--> .updateAppointmentStatus()
+EDGE DoctorRepository --method [EXTRACTED]--> .uploadPatientDetailRecord()
+EDGE DoctorRepository --method [EXTRACTED]--> .upsertDoctorProfile()
+EDGE .sendVaccineVerificationToParent() --calls [INFERRED context=call]--> .put()
+EDGE .sendVaccineVerificationToParent() --references [EXTRACTED context=parameter_type]--> String
+EDGE .sendVaccineVerificationToParent() --references [EXTRACTED context=return_type]--> Result
+EDGE .sendVaccineVerificationToParent() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .updateFile() --references [EXTRACTED context=parameter_type]--> String
+EDGE .saveCache() --calls [EXTRACTED context=call]--> CacheEntry
+EDGE .setAvailability() --calls [INFERRED context=call]--> .put()
+EDGE .setAvailability() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .setAvailability() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .setAvailability() --references [EXTRACTED context=parameter_type]--> String
+EDGE .setAvailability() --references [EXTRACTED context=return_type]--> Result
+EDGE .setAvailability() --references [EXTRACTED context=generic_arg]--> DoctorAvailability
+EDGE .listPatientDetailFiles() --references [EXTRACTED context=parameter_type]--> String
+EDGE .listPatientDetailFiles() --references [EXTRACTED context=return_type]--> Result
+EDGE .listPatientDetailFiles() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getSlot() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getSlot() --references [EXTRACTED context=return_type]--> Result
+EDGE .getSlot() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE GoogleDriveClient.kt --contains [EXTRACTED]--> CacheEntry
+EDGE BirthDatePickerField() --contains [EXTRACTED]--> BirthDatePickerField.kt
+EDGE BirthDatePickerField() --calls [EXTRACTED context=call]--> formatBirthDateDisplay()
+EDGE BirthDatePickerField() --references [EXTRACTED context=parameter_type]--> String
+EDGE BirthDatePickerField() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE BirthDatePickerField() --references [EXTRACTED context=parameter_type]--> Modifier
+EDGE BirthDatePickerField() --calls [INFERRED context=call]--> OnboardingStep1Screen()
+EDGE BirthDatePickerField() --calls [INFERRED context=call]--> SyncChildScreen()
+EDGE .noTokenMessage() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .noTokenMessage() --references [EXTRACTED context=return_type]--> String
+EDGE .getProfileFullName() --references [EXTRACTED context=generic_arg]--> String
+EDGE .getProfileFullName() --references [EXTRACTED context=return_type]--> Result
+EDGE .searchBookableDoctors() --references [EXTRACTED context=parameter_type]--> String
+EDGE .searchBookableDoctors() --references [EXTRACTED context=return_type]--> Result
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> List
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> Pair
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> Profile
+EDGE .uploadPatientRecord() --references [EXTRACTED context=parameter_type]--> PatientDetailRecord
+EDGE .uploadPatientRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadPatientRecord() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadPatientRecord() --calls [INFERRED context=call]--> .error()
+EDGE .listPatientRecords() --references [EXTRACTED context=return_type]--> Result
+EDGE .listPatientRecords() --references [EXTRACTED context=parameter_type]--> String
+EDGE .listPatientRecords() --references [EXTRACTED context=generic_arg]--> List
+EDGE .listPatientRecords() --calls [INFERRED context=call]--> .error()
+EDGE .isDriveAvailable() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .createSlot() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .createSlot() --references [EXTRACTED context=parameter_type]--> String
+EDGE .createSlot() --references [EXTRACTED context=return_type]--> Result
+EDGE .createSlot() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE .isPatientDriveAvailable() --references [EXTRACTED context=return_type]--> Boolean
+EDGE AppBottomNav() --contains [EXTRACTED]--> CommonComponents.kt
+EDGE AppBottomNav() --calls [EXTRACTED context=call]--> switchToTab()
+EDGE AppBottomNav() --calls [EXTRACTED context=call]--> BottomNavBarItem()
+EDGE AppBottomNav() --references [EXTRACTED context=parameter_type]--> Unit
+EDGE AppBottomNav() --calls [INFERRED context=call]--> AddHealthRecordScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> AllergyHistoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ChildBottomNav()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> DevelopmentHistoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ChildDiaryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> RewindMemoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> SpecialMemoriesGalleryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> WhoGrowthDetailScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ChangePasswordScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> DocumentVaultBody()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ProSleepHubScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> RecordSleepHistoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> HealthEliminationInsightsScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> MonthlyReportScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> NutritionInsightsScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> QuickLogHubScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> SleepActivityInsightsScreen()
+EDGE .uploadPatientDetailRecord() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadPatientDetailRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadPatientDetailRecord() --references [EXTRACTED context=parameter_type]--> Double
+EDGE .resolveVaccineVerification() --calls [INFERRED context=call]--> .put()
+EDGE .resolveVaccineVerification() --references [EXTRACTED context=parameter_type]--> String
+EDGE .resolveVaccineVerification() --references [EXTRACTED context=return_type]--> Result
+EDGE .resolveVaccineVerification() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .downloadFile() --references [EXTRACTED context=return_type]--> String
+EDGE .slotPayload() --calls [INFERRED context=call]--> .put()
+EDGE .slotPayload() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .slotPayload() --references [EXTRACTED context=parameter_type]--> String
+EDGE .isAppointmentDelayedInQueue() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .isAppointmentDelayedInQueue() --references [EXTRACTED context=parameter_type]--> Appointment
+EDGE .updateAppointmentStatus() --calls [INFERRED context=call]--> .put()
+EDGE .updateAppointmentStatus() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateAppointmentStatus() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateAppointmentStatus() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE PrimaryButton() --contains [EXTRACTED]--> CommonComponents.kt
+EDGE PrimaryButton() --references [EXTRACTED context=parameter_type]--> String
+EDGE PrimaryButton() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE PrimaryButton() --references [EXTRACTED context=parameter_type]--> Modifier
+EDGE PrimaryButton() --calls [INFERRED context=call]--> AddUserAccessActivityScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> PermissionSettingsDetailScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> RoleEditorSheet()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> ShareAccessQrScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> LoginScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> SignUpScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorEditProfileScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorSignInScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorSignUpScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorWeeklyHoursSection()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> LastSetupScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> MedicalDisclaimerScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> OnboardingStep1Screen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> OnboardingStep2Screen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> OnboardingStep3Screen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> SyncChildScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> EditProfileScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> WelcomeScreen()
+EDGE syncFieldColors() --references [EXTRACTED context=return_type]--> TextFieldColors
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=generic_arg]--> Int
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=generic_arg]--> String
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=parameter_type]--> Set
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=return_type]--> Map
+EDGE .createFile() --references [EXTRACTED context=return_type]--> String
+EDGE .getAvailability() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAvailability() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAvailability() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAvailability() --references [EXTRACTED context=generic_arg]--> DoctorAvailability
+EDGE PendingAccessRequestDialog() --calls [INFERRED context=call]--> formatAccessTime()
+EDGE PendingAccessRequestDialog() --contains [EXTRACTED]--> PendingAccessRequestsScreen.kt
+EDGE PendingAccessRequestDialog() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE PendingAccessRequestDialog() --references [EXTRACTED context=parameter_type]--> String
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> methodLabel()
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> RequestDetailRow()
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> requestSummary()
+EDGE PendingAccessRequestDialog() --references [EXTRACTED context=parameter_type]--> ChildSyncRequest
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> PendingAccessRequestsScreen()
+EDGE .getAppointment() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAppointment() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAppointment() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .getToken() --references [EXTRACTED context=return_type]--> String
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=parameter_type]--> String
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=return_type]--> Result
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=generic_arg]--> List
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE BottomTab --contains [EXTRACTED]--> CommonComponents.kt
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> tabRootRoute()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> switchToTab()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> BottomNavBarItem()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> DocumentVaultBody()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> MedicalDataVaultScreen()
+EDGE AccessQrScannerDialog() --contains [EXTRACTED]--> AccessQrScanner.kt
+EDGE AccessQrScannerDialog() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .findFileId() --references [EXTRACTED context=return_type]--> String
+EDGE .getDoctorProfile() --references [EXTRACTED context=return_type]--> Result
+EDGE .getDoctorProfile() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getDoctorProfile() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> BookableDoctorIdRow
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> ClinicDaySchedule
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> DoctorSpecialDateRow
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> effectiveBookedCount()
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> hasRemainingCapacity()
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> isFutureSlot()
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> Quadruple
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> slotStartInstant()
+EDGE .deleteSlot() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteSlot() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteSlot() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE AccessRequestViewModel --references [EXTRACTED context=parameter_type]--> PendingAccessRequestsScreen()
+EDGE AccessRequestViewModel --contains [EXTRACTED]--> AccessRequestViewModel.kt
+EDGE AccessRequestViewModel --references [EXTRACTED context=generic_arg]--> AccessRequestUiState
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .clearError()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .clearRequestSent()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .dismissPopup()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .loadPending()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .onCleared()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .resolve()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .search()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .selectMatch()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .sendRequest()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setAccessCode()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setBirthdate()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setChildQuery()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setRole()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .showPopup()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .startWatching()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .stopWatching()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .submit()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .submitScannedQr()
+EDGE AccessRequestViewModel --references [EXTRACTED context=field]--> Job
+EDGE AccessRequestViewModel --references [EXTRACTED context=field]--> StateFlow
+EDGE AccessRequestViewModel --inherits [EXTRACTED]--> ViewModel
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .purgeUnbookedSlotsOnClosedWeekdays() --references [EXTRACTED context=parameter_type]--> String
+EDGE .purgeUnbookedSlotsOnClosedWeekdays() --references [EXTRACTED context=return_type]--> Result
+EDGE .purgeUnbookedSlotsOnClosedWeekdays() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .requestVaccineVerification() --calls [INFERRED context=call]--> .put()
+EDGE .requestVaccineVerification() --references [EXTRACTED context=parameter_type]--> String
+EDGE .requestVaccineVerification() --references [EXTRACTED context=return_type]--> Result
+EDGE .requestVaccineVerification() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .setSlotStatus() --calls [INFERRED context=call]--> .put()
+EDGE .setSlotStatus() --references [EXTRACTED context=parameter_type]--> String
+EDGE .setSlotStatus() --references [EXTRACTED context=return_type]--> Result
+EDGE .setSlotStatus() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE SyncOrDivider() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE DoctorPatientDriveHelper.kt --contains [EXTRACTED]--> PatientDetailRecord
+EDGE .downloadPatientRecord() --references [EXTRACTED context=generic_arg]--> PatientDetailRecord
+EDGE .downloadPatientRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .downloadPatientRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .downloadPatientRecord() --calls [INFERRED context=call]--> .error()
+EDGE .getVaccineVerifications() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getVaccineVerifications() --references [EXTRACTED context=return_type]--> Result
+EDGE .getVaccineVerifications() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getVaccineVerifications() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .getSlots() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getSlots() --references [EXTRACTED context=return_type]--> Result
+EDGE .getSlots() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getSlots() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE SyncFieldLabel() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getPatientChildIds() --references [EXTRACTED context=generic_arg]--> String
+EDGE .getPatientChildIds() --references [EXTRACTED context=return_type]--> Result
+EDGE .getPatientChildIds() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getPatientChildIds() --calls [INFERRED context=call]--> PediaConnectLinkRepository
+EDGE .searchDoctors() --references [EXTRACTED context=parameter_type]--> String
+EDGE .searchDoctors() --references [EXTRACTED context=return_type]--> Result
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> List
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> Pair
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> Profile
+EDGE .incrementSlotBookedCount() --calls [INFERRED context=call]--> .put()
+EDGE .incrementSlotBookedCount() --references [EXTRACTED context=parameter_type]--> String
+EDGE .buildJson() --calls [INFERRED context=call]--> .put()
+EDGE .upsertDoctorProfile() --calls [INFERRED context=call]--> .put()
+EDGE .upsertDoctorProfile() --references [EXTRACTED context=parameter_type]--> String
+EDGE .upsertDoctorProfile() --references [EXTRACTED context=return_type]--> Result
+EDGE .upsertDoctorProfile() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=parameter_type]--> String
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=return_type]--> Result
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=generic_arg]--> List
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=generic_arg]--> LocalDate
+EDGE .fetchBookableDoctorIdsViaRpc() --references [EXTRACTED context=generic_arg]--> String
+EDGE .fetchBookableDoctorIdsViaRpc() --references [EXTRACTED context=return_type]--> Set
+EDGE .isDoctorListedForParentBooking() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .isDoctorListedForParentBooking() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getBookableSlotsForParent() --calls [EXTRACTED context=call]--> isFutureSlot()
+EDGE .getBookableSlotsForParent() --calls [EXTRACTED context=call]--> hasRemainingCapacity()
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=return_type]--> Result
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE .requestAppointment() --calls [INFERRED context=call]--> .put()
+EDGE .requestAppointment() --calls [EXTRACTED context=call]--> slotStartInstant()
+EDGE .requestAppointment() --calls [EXTRACTED context=call]--> isFutureSlot()
+EDGE .requestAppointment() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .requestAppointment() --calls [EXTRACTED context=call]--> hasRemainingCapacity()
+EDGE .requestAppointment() --references [EXTRACTED context=parameter_type]--> String
+EDGE .requestAppointment() --references [EXTRACTED context=return_type]--> Result
+EDGE .requestAppointment() --calls [INFERRED context=call]--> PediaConnectLinkRepository
+EDGE .requestAppointment() --calls [INFERRED context=call]--> .error()
+EDGE .requestAppointment() --calls [INFERRED context=call]--> .check()
+EDGE .requestAppointment() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .createSlotsBatch() --references [EXTRACTED context=generic_arg]--> Int
+EDGE .createSlotsBatch() --references [EXTRACTED context=generic_arg]--> String
+EDGE .createSlotsBatch() --references [EXTRACTED context=return_type]--> Result
+EDGE .createSlotsBatch() --references [EXTRACTED context=parameter_type]--> List
+EDGE .createSlotsBatch() --references [EXTRACTED context=generic_arg]--> Quadruple
+EDGE AccessPermissionBottomNav() --contains [EXTRACTED]--> AccessCommon.kt
+EDGE AccessPermissionBottomNav() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> ChildBottomNav()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> AddUserAccessActivityScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> PendingAccessRequestsScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> PermissionAccessScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> PermissionSettingsDetailScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> RoleManagementScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> ShareAccessQrScreen()
+EDGE .parseContent() --calls [EXTRACTED context=call]--> CacheEntry
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=generic_arg]--> ClinicDaySchedule
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=parameter_type]--> String
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=return_type]--> Result
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=parameter_type]--> LocalDate
+EDGE LullabyTopBar() --contains [EXTRACTED]--> CommonComponents.kt
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> String
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> Unit
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AddUserAccessActivityScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> PendingAccessRequestsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> PermissionAccessScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> PermissionSettingsDetailScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> RoleManagementScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ShareAccessQrScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ChildAiSummaryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ChildScreenScaffold()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> VaccineBookScanScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> WasteRecordScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AddMemoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ChildDiaryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> RewindMemoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> SpecialMemoriesGalleryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorAboutNongRakScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorEditProfileScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorHelpFaqScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorLoginScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSettingsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSignInScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSignUpScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSpecialDatesScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorTimeAppointmentHubScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorWeeklyHoursScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AddGrowthRecordScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> GrowthHistoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> SiblingCompareScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> WhoGrowthDetailScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> MilkRecordScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> EditProfileScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AiDataRetentionScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DocumentVaultBody()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ProSleepHubScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> RecordSleepHistoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> HealthEliminationInsightsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> MonthlyReportScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> NutritionInsightsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> SleepActivityInsightsScreen()
+EDGE .deleteUnbookedSlotsForDay() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteUnbookedSlotsForDay() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteUnbookedSlotsForDay() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .downloadPatientDetail() --references [EXTRACTED context=parameter_type]--> String
+EDGE .downloadPatientDetail() --references [EXTRACTED context=return_type]--> Result
+EDGE onDone() --contains [EXTRACTED]--> TtsSpeaker.kt
+EDGE onDone() --references [EXTRACTED context=parameter_type]--> String
+EDGE onDone() --calls [INFERRED context=call]--> .cancel()
+EDGE onDone() --calls [INFERRED context=call]--> .cancelSignup()
+EDGE onDone() --calls [INFERRED context=call]--> .submitMentalHealthAssessment()
+EDGE onDone() --calls [INFERRED context=call]--> .submitPostpartumCheckIn()
+EDGE onDone() --calls [INFERRED context=call]--> .uploadAvatar()
+EDGE onDone() --calls [INFERRED context=call]--> .addAppointment()
+EDGE onDone() --calls [INFERRED context=call]--> .addMedicationSchedule()
+EDGE onDone() --calls [INFERRED context=call]--> .addSleepSchedule()
+EDGE onDone() --calls [INFERRED context=call]--> .applyScannedVaccines()
+EDGE onDone() --calls [INFERRED context=call]--> .saveHealthRecord()
+EDGE onDone() --calls [INFERRED context=call]--> .saveSymptomLog()
+EDGE onDone() --calls [INFERRED context=call]--> .updateChildInfo()
+EDGE onDone() --calls [INFERRED context=call]--> .updateSleepSchedule()
+EDGE onDone() --calls [INFERRED context=call]--> .uploadVaccineCertificate()
+EDGE onDone() --calls [INFERRED context=call]--> .addMemory()
+EDGE onDone() --calls [INFERRED context=call]--> .approveWithHn()
+EDGE onDone() --calls [INFERRED context=call]--> .setAvailability()
+EDGE onDone() --calls [INFERRED context=call]--> .calculateCalories()
+EDGE onDone() --calls [INFERRED context=call]--> .setQualityStars()

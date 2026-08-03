@@ -13,11 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.WasteRecord
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.components.AppBottomNav
 import com.lullabyai.app.ui.components.BottomTab
 import com.lullabyai.app.ui.components.EmptyChartState
@@ -84,10 +84,10 @@ fun HealthEliminationInsightsScreen(childViewModel: ChildViewModel, chatViewMode
     }
 
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "สถิติสุขภาพและการขับถ่าย" else "Health & Elimination Statistics", onBack = { navController.popBackStack() }) },
+        topBar = { LullabyTopBar(title = if (isThai) "สถิติสุขภาพและการขับถ่าย" else "Health & Elimination Statistics", onBack = { navController.popBackStack() }, navController = navController) },
         bottomBar = {
             AppBottomNav(
-                selected = BottomTab.STATS,
+                selected = BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
@@ -179,18 +179,15 @@ fun HealthEliminationInsightsScreen(childViewModel: ChildViewModel, chatViewMode
             }
 
             item {
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Filled.Lightbulb, null, tint = Primary, modifier = Modifier.size(18.dp))
-                        if (stoolRecords.isEmpty() && illnessLast30d.isEmpty()) {
-                            Text(if (isThai) "ยังไม่มีข้อมูลเพียงพอสำหรับคำแนะนำ" else "Not enough data yet for advice", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else if (chatState.eliminationInsight != null) {
-                            Text("\"${chatState.eliminationInsight}\"", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurface)
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                        }
-                    }
-                }
+                val hasData = stoolRecords.isNotEmpty() || illnessLast30d.isNotEmpty()
+                AIInsightCard(
+                    text = chatState.eliminationInsight.orEmpty(),
+                    isLoading = hasData && chatState.eliminationInsight == null,
+                    title = if (isThai) "คำแนะนำจาก NongRak AI" else "NongRak AI Insight",
+                    emptyMessage = if (!hasData) {
+                        if (isThai) "ยังไม่มีข้อมูลเพียงพอสำหรับคำแนะนำ" else "Not enough data yet for advice"
+                    } else null
+                )
             }
 
             item { Spacer(Modifier.height(8.dp)) }

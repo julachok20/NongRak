@@ -29,6 +29,8 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.ui.components.NoChildDataCard
 import com.lullabyai.app.ui.navigation.Screen
+import com.lullabyai.app.ui.screens.onboarding.ParentTourSteps
+import com.lullabyai.app.ui.screens.onboarding.tourAnchor
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
@@ -65,18 +67,22 @@ fun ChildSummaryScreen(
     chatViewModel: ChatViewModel,
     navController: NavController,
     onboardingViewModel: OnboardingViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    parentTourStep: Int? = null,
+    isTourMode: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val childState by childViewModel.uiState.collectAsState()
     val chatState by chatViewModel.uiState.collectAsState()
-    val child = childState.child
+    val tourPreview = isTourMode && !childState.isLoading && childState.children.isEmpty()
+    val child = if (tourPreview) com.lullabyai.app.ui.screens.onboarding.TourSampleData.child else childState.child
     var childToDelete by remember { mutableStateOf<com.lullabyai.app.data.model.Child?>(null) }
-    val milestones = childState.milestones
+    val milestones = if (tourPreview) com.lullabyai.app.ui.screens.onboarding.TourSampleData.sampleMilestones else childState.milestones
     val devPercent = if (milestones.isNotEmpty()) milestones.count { it.isAchieved } * 100 / milestones.size else 0
     val categories = remember(milestones) { milestones.map { it.category }.distinct().take(2) }
 
-    LaunchedEffect(child) {
+    LaunchedEffect(child, tourPreview) {
+        if (tourPreview) return@LaunchedEffect
         child?.let {
             chatViewModel.loadChildInfoSummary(it, s.isThai)
             chatViewModel.loadChildInfoCardSummary(it, s.isThai)
@@ -88,13 +94,15 @@ fun ChildSummaryScreen(
     // isLoading stuck at its true default forever if this screen is ever reached directly. Guarded
     // so it doesn't re-fetch on every tab switch once data is already loaded.
     LaunchedEffect(Unit) {
-        if (childState.children.isEmpty() && childState.child == null) childViewModel.loadChild()
+        if (!tourPreview && childState.children.isEmpty() && childState.child == null) childViewModel.loadChild()
     }
 
-    // AI daily question — same banner/dialog as Dashboard (ChildViewModel.uiState.dailyQuestion is
-    // shared, loadDailyQuestion is idempotent) so it also surfaces here on Child Info.
+    // AI daily question — skip during tour preview (no real child yet).
     val context = LocalContext.current
-    LaunchedEffect(child?.id) { child?.let { childViewModel.loadDailyQuestion(context, s.isThai) } }
+    LaunchedEffect(child?.id, tourPreview) {
+        if (tourPreview) return@LaunchedEffect
+        child?.let { childViewModel.loadDailyQuestion(context, s.isThai) }
+    }
     var showDailyQuestionDialog by remember { mutableStateOf(false) }
     if (showDailyQuestionDialog) {
         childState.dailyQuestion?.let { question ->
@@ -116,7 +124,8 @@ fun ChildSummaryScreen(
         }
     }
 
-    ChildScreenScaffold(title = if (s.isThai) "ข้อมูลของเด็ก" else "Child Info", currentTab = "overview", navController = navController) { padding ->
+    // showBack = false: this is the CHILD tab ROOT, so the footer is the way out (#6).
+    ChildScreenScaffold(title = if (s.isThai) "ข้อมูลของเด็ก" else "Child Info", currentTab = "overview", navController = navController, showBack = false) { padding ->
         if (childState.isLoading && childState.children.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Primary)
@@ -125,13 +134,23 @@ fun ChildSummaryScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
             com.lullabyai.app.ui.components.ChildLoadErrorCard(s.isThai) { childViewModel.loadChild() }
         }
-        } else if (childState.children.isEmpty() && !childState.isLoading) {
+        } else if (!tourPreview && childState.children.isEmpty() && !childState.isLoading) {
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
             NoChildDataCard(s.isThai) { navController.navigate(Screen.AddChildChoice.route) }
         }
         } else {
+        val scrollState = rememberScrollState()
+        LaunchedEffect(parentTourStep) {
+            when (parentTourStep) {
+                ParentTourSteps.STEP_CHILD_SWITCH -> scrollState.animateScrollTo(0)
+                ParentTourSteps.STEP_CHILD_ACTIONS -> {
+                    kotlinx.coroutines.delay(350)
+                    scrollState.animateScrollTo(scrollState.maxValue)
+                }
+            }
+        }
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(Modifier.height(4.dp))
@@ -161,11 +180,13 @@ fun ChildSummaryScreen(
             }
 
             childState.dailyQuestion?.let {
-                com.lullabyai.app.ui.components.DailyQuestionBanner(
-                    isThai = s.isThai,
-                    onClick = { showDailyQuestionDialog = true },
-                    onDismiss = { childViewModel.dismissDailyQuestion() }
-                )
+                if (!tourPreview) {
+                    com.lullabyai.app.ui.components.DailyQuestionBanner(
+                        isThai = s.isThai,
+                        onClick = { showDailyQuestionDialog = true },
+                        onDismiss = { childViewModel.dismissDailyQuestion() }
+                    )
+                }
             }
 
             // Profile card (row)
@@ -183,9 +204,15 @@ fun ChildSummaryScreen(
                         var showSwitcherSheet by remember { mutableStateOf(false) }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { showSwitcherSheet = true }
+                            modifier = Modifier
+                                .clickable { showSwitcherSheet = true }
+                                .tourAnchor("parent_child_switch")
                         ) {
-                            Text(child?.name ?: (if (s.isThai) "ลูกของคุณ" else "Your child"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (tourPreview) com.lullabyai.app.ui.screens.onboarding.TourSampleData.displayName(s.isThai)
+                                else child?.name ?: (if (s.isThai) "ลูกของคุณ" else "Your child"),
+                                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold
+                            )
                             Spacer(Modifier.width(4.dp))
                             Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
                                 Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -197,59 +224,23 @@ fun ChildSummaryScreen(
                         if (showSwitcherSheet) {
                             ChildSwitcherSheet(
                                 isThai = s.isThai,
-                                children = childState.children,
+                                children = if (tourPreview) listOf(com.lullabyai.app.ui.screens.onboarding.TourSampleData.child) else childState.children,
                                 activeChildId = child?.id,
                                 childAvatarSignedUrl = childState.childAvatarSignedUrl,
+                                ownedChildIds = childState.ownedChildIds,
                                 onSelect = { c -> showSwitcherSheet = false; childViewModel.selectChild(c.id) },
                                 onDelete = { c -> showSwitcherSheet = false; childToDelete = c },
                                 onAddChild = { showSwitcherSheet = false; navController.navigate(Screen.AddChildChoice.route) },
-                                onInvite = { c -> showSwitcherSheet = false; childViewModel.generateInviteCode(c.id) },
                                 onDismiss = { showSwitcherSheet = false }
                             )
                         }
 
-                        childState.inviteCode?.let { code ->
-                            val context = LocalContext.current
-                            val forChildName = childState.inviteCodeChildName
-                            AlertDialog(
-                                onDismissRequest = { childViewModel.clearSyncState() },
-                                title = {
-                                    Text(
-                                        if (forChildName != null) (if (s.isThai) "รหัสเชิญสำหรับ $forChildName" else "Invite code for $forChildName")
-                                        else (if (s.isThai) "รหัสเชิญ" else "Invite code")
-                                    )
-                                },
-                                text = {
-                                    Column {
-                                        Text(
-                                            if (forChildName != null) {
-                                                if (s.isThai) "รหัสนี้ใช้เชื่อมข้อมูลของ \"$forChildName\" เท่านั้น เด็กแต่ละคนมีรหัสของตัวเอง — ส่งให้ผู้ปกครองอีกท่านเพื่อเชื่อมข้อมูลลูกคนนี้ (ใช้ได้ 7 วัน)"
-                                                else "This code syncs \"$forChildName\" only — each child has its own code. Share it with the other parent to sync this child (valid 7 days)"
-                                            } else {
-                                                if (s.isThai) "ส่งรหัสนี้ให้ผู้ปกครองอีกท่านเพื่อเชื่อมข้อมูลลูก (ใช้ได้ 7 วัน)"
-                                                else "Share this code with the other parent to sync this child (valid 7 days)"
-                                            },
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                        Spacer(Modifier.height(12.dp))
-                                        Text(code, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Primary)
-                                    }
-                                },
-                                confirmButton = {
-                                    TextButton(onClick = {
-                                        val send = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, code)
-                                        }
-                                        context.startActivity(Intent.createChooser(send, null))
-                                    }) { Text(if (s.isThai) "แชร์" else "Share") }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { childViewModel.clearSyncState() }) { Text(if (s.isThai) "ปิด" else "Close") }
-                                }
-                            )
-                        }
-                        Text((if (s.isThai) "อายุ " else "Age ") + "${childViewModel.calculateAge(s.isThai)} (" + genderLabel(child?.gender, s.isThai) + ")", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            (if (s.isThai) "อายุ " else "Age ") +
+                                (if (tourPreview) com.lullabyai.app.ui.screens.onboarding.TourSampleData.ageLabel(s.isThai) else childViewModel.calculateAge(s.isThai)) +
+                                " (" + genderLabel(child?.gender, s.isThai) + ")",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Text((if (s.isThai) "วันเกิด " else "Born ") + formatDate(child?.birthdate, s.isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
                     }
                 }
@@ -285,7 +276,7 @@ fun ChildSummaryScreen(
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val ageMonths = childViewModel.getAgeMonths()
+                val ageMonths = if (tourPreview) com.lullabyai.app.ui.screens.onboarding.TourSampleData.ageMonths() else childViewModel.getAgeMonths()
                 val weightStatus = com.lullabyai.app.util.GrowthReference.weightStatus(child?.weightKg, ageMonths)
                 val heightStatus = com.lullabyai.app.util.GrowthReference.heightStatus(child?.heightCm, ageMonths)
                 GrowthStatCard(
@@ -298,6 +289,27 @@ fun ChildSummaryScreen(
                     (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
                     Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline, icon = Icons.Filled.Straighten
                 ) { navController.navigate(Screen.GrowthHistory.route) }
+            }
+
+            // Stitch "Child Summary with Suggestion Button" — the suggestion CTA sits between the
+            // growth indicators and the AI Analysis card, and opens AI Suggestions & Guidance (#11).
+            Card(
+                onClick = { navController.navigate(AI_GUIDANCE_ROUTE) },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Primary),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Text(
+                        if (s.isThai) "ดูคำแนะนำจาก AI" else "View AI suggestions",
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                        color = Color.White, modifier = Modifier.weight(1f)
+                    )
+                    Icon(Icons.Filled.ChevronRight, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(20.dp))
+                }
             }
 
             // AI Analysis card — headline synthesized from the development percentage (no separate
@@ -356,24 +368,9 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Update weight/height banner -> dedicated add-record form (per 27.Growth mockup).
-            Card(
-                onClick = { navController.navigate(Screen.GrowthHistory.route) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = Primary.copy(0.05f)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(0.1f))
-            ) {
-                Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.AddTask, null, tint = Primary, modifier = Modifier.size(24.dp))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(if (s.isThai) "อัปเดตน้ำหนักและส่วนสูง" else "Update weight & height", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                        Text(if (s.isThai) "เพื่อให้ AI วิเคราะห์สุขภาพได้อย่างแม่นยำที่สุด" else "So AI can analyze health more accurately", style = MaterialTheme.typography.labelSmall, color = Outline)
-                    }
-                    Icon(Icons.Filled.ChevronRight, null, tint = Primary.copy(0.4f), modifier = Modifier.size(20.dp))
-                }
-            }
+            // The "อัปเดตน้ำหนักและส่วนสูง" banner that used to sit here is not in the Stitch
+            // "Child Summary with Suggestion Button" design and GrowthHistory is already reachable
+            // from both growth stat cards and the "ประวัติการบันทึก" chip — dropped, not orphaned.
 
             if (childState.allergies.isNotEmpty()) {
                 // Extra-large radius (mockup gives this card a bigger radius than the rest of the
@@ -433,9 +430,17 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Main 4-button grid — the app's primary navigation now that the sidebar is gone.
-            // Vaccine/Development/Sleep/Nutrition/Exercise/Chat all still reachable, just via
-            // the Health Log hub (button 1) or the persistent chatbot FAB, not a flat shortcut list.
+            // Stitch "Child Summary with Diary Dashboard Link" — single 7-cell action grid in
+            // design order (Health Log, Stats, Memory book, Export PDF, Document vault, Quick log,
+            // Access), all linked to real destinations. Reconciled 2026-07-26: the design has no
+            // separate "Chronic" tile here (chronic conditions get their own card above) and no
+            // standalone "Quick Action" button — both dropped from this grid. ChronicRegistry stays
+            // reachable via QuickActionSearch/AI chat/tour; QuickActionSearch stays reachable via
+            // Quick Log hub, so no destination is orphaned by trimming this grid to match the design.
+            Column(
+                Modifier.fillMaxWidth().tourAnchor("parent_child_actions"),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 DashboardActionButton(
                     Icons.Filled.AddCircle, if (s.isThai) "บันทึกสุขภาพ" else "Health Log", Primary, Modifier.weight(1f)
@@ -446,22 +451,38 @@ fun ChildSummaryScreen(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 DashboardActionButton(
-                    Icons.Filled.Warning, if (s.isThai) "ความเสี่ยงโรค" else "Disease Risk", Color(0xFFED6C02), Modifier.weight(1f)
-                ) { navController.navigate(Screen.DiseaseRisk.route) }
+                    Icons.Filled.MenuBook,
+                    if (s.isThai) "สมุดแห่งความทรงจำ" else "Memory book",
+                    Color(0xFFFFC107),
+                    Modifier.weight(1f)
+                ) { navController.navigate(Screen.ChildDiary.route) }
                 DashboardActionButton(
                     Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก PDF" else "Export PDF", Error, Modifier.weight(1f)
                 ) { navController.navigate(Screen.PdfExport.route) }
             }
-            // "Quick Action" -- per the provided design, reuses the app's existing universal
-            // quick-access/search screen rather than a new feature.
-            Button(
-                onClick = { navController.navigate(Screen.QuickActionSearch.route) },
-                modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
-            ) {
-                Icon(Icons.Filled.Bolt, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Quick Action", fontWeight = FontWeight.Bold, color = Color.White)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DashboardActionButton(
+                    Icons.Filled.FolderOpen,
+                    if (s.isThai) "คลังเอกสาร" else "Document vault",
+                    Color(0xFF43A047),
+                    Modifier.weight(1f)
+                ) { navController.navigate(Screen.MedicalDataVault.route) }
+                DashboardActionButton(
+                    Icons.Filled.Bolt,
+                    if (s.isThai) "บันทึกด่วน" else "Quick log",
+                    PrimaryContainer,
+                    Modifier.weight(1f)
+                ) { navController.navigate(Screen.QuickLogHub.route) }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DashboardActionButton(
+                    Icons.Filled.LockPerson,
+                    if (s.isThai) "สิทธิ์การเข้าถึง" else "Access",
+                    Secondary,
+                    Modifier.weight(1f)
+                ) { navController.navigate(Screen.PermissionAccess.route) }
+                Spacer(Modifier.weight(1f))
+            }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -490,10 +511,10 @@ private fun ChildSwitcherSheet(
     children: List<com.lullabyai.app.data.model.Child>,
     activeChildId: String?,
     childAvatarSignedUrl: String?,
+    ownedChildIds: Set<String>,
     onSelect: (com.lullabyai.app.data.model.Child) -> Unit,
     onDelete: (com.lullabyai.app.data.model.Child) -> Unit,
     onAddChild: () -> Unit,
-    onInvite: (com.lullabyai.app.data.model.Child) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -524,11 +545,10 @@ private fun ChildSwitcherSheet(
                                     style = MaterialTheme.typography.labelSmall, color = if (isActive) Primary else Outline, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
-                            IconButton(onClick = { onInvite(c) }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.SyncAlt, if (isThai) "เชิญผู้ปกครอง" else "Invite parent", tint = Primary, modifier = Modifier.size(18.dp))
-                            }
-                            IconButton(onClick = { onDelete(c) }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.DeleteOutline, if (isThai) "ลบเด็ก" else "Delete child", tint = Error, modifier = Modifier.size(18.dp))
+                            if (c.id in ownedChildIds) {
+                                IconButton(onClick = { onDelete(c) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.DeleteOutline, if (isThai) "ลบเด็ก" else "Delete child", tint = Error, modifier = Modifier.size(18.dp))
+                                }
                             }
                             if (isActive) Icon(Icons.Filled.CheckCircle, null, tint = Primary, modifier = Modifier.size(24.dp))
                         }

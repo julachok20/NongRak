@@ -16,6 +16,13 @@ object MentalHealthCatalog {
     data class Option(val labelTh: String, val labelEn: String, val score: Int)
     data class Question(val textTh: String, val textEn: String, val options: List<Option>)
 
+    /** EPDS max = 10 items × 0–3. Stitch mock showed /100; product decision #16 locks display to /30. */
+    const val MAX_SCORE = 30
+
+    /** EPDS-style cutoffs on the 0–30 scale (not a 0–100 percentage). */
+    const val MODERATE_THRESHOLD = 13
+    const val HIGH_THRESHOLD = 20
+
     /** Item 10 (self-harm) index — any score > 0 here triggers an immediate safety message. */
     const val SELF_HARM_INDEX = 9
 
@@ -83,8 +90,8 @@ object MentalHealthCatalog {
     )
 
     fun riskTier(totalScore: Int): String = when {
-        totalScore >= 20 -> "high"
-        totalScore >= 13 -> "moderate"
+        totalScore >= HIGH_THRESHOLD -> "high"
+        totalScore >= MODERATE_THRESHOLD -> "moderate"
         else -> "low"
     }
 
@@ -93,4 +100,13 @@ object MentalHealthCatalog {
         "moderate" -> if (isThai) "ความเสี่ยงปานกลาง" else "Moderate risk"
         else -> if (isThai) "ความเสี่ยงต่ำ" else "Low risk"
     }
+
+    /** Denominator caption under the score ring — EPDS /30 (never /100). */
+    fun scoreDenominatorLabel(isThai: Boolean): String =
+        if (isThai) "จาก $MAX_SCORE คะแนน" else "out of $MAX_SCORE"
+
+    /** Short bilingual legend for the 0–30 EPDS cutoffs shown on the result screen. */
+    fun thresholdLegend(isThai: Boolean): String =
+        if (isThai) "เกณฑ์ EPDS (เต็ม $MAX_SCORE): ต่ำ 0–${MODERATE_THRESHOLD - 1} · ปานกลาง $MODERATE_THRESHOLD–${HIGH_THRESHOLD - 1} · สูง $HIGH_THRESHOLD–$MAX_SCORE"
+        else "EPDS cutoffs (max $MAX_SCORE): low 0–${MODERATE_THRESHOLD - 1} · moderate $MODERATE_THRESHOLD–${HIGH_THRESHOLD - 1} · high $HIGH_THRESHOLD–$MAX_SCORE"
 }

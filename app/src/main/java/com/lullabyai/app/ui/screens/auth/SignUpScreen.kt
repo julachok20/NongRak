@@ -25,6 +25,7 @@ import com.lullabyai.app.data.settings.AppLanguage
 import com.lullabyai.app.ui.components.HCaptchaVerifyButton
 import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
+import com.lullabyai.app.ui.components.rememberGoogleSignInAction
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.SettingsViewModel
@@ -40,9 +41,16 @@ fun SignUpScreen(
     val uiState by authViewModel.uiState.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val isThai = settings.language == AppLanguage.TH
+    val googleSignIn = rememberGoogleSignInAction(
+        authViewModel = authViewModel,
+        isThai = isThai,
+        onSuccess = onSignUpSuccess
+    )
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var phoneError by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -123,6 +131,23 @@ fun SignUpScreen(
                             colors = fieldColors()
                         )
                     }
+                    LabeledField(if (s.isThai) "เบอร์โทรศัพท์" else "Phone number") {
+                        OutlinedTextField(
+                            value = phone, onValueChange = { phone = it; phoneError = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("0812345678", color = Outline) },
+                            leadingIcon = { Icon(Icons.Filled.Phone, null, tint = Outline) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            isError = phoneError,
+                            singleLine = true, shape = RoundedCornerShape(12.dp),
+                            colors = fieldColors()
+                        )
+                        if (phoneError) Text(
+                            if (s.isThai) "เบอร์โทรศัพท์ไม่ถูกต้อง กรุณากรอกเป็นตัวเลข เช่น 0812345678 หรือ +66812345678"
+                            else "That phone number doesn't look right. Use a Thai number, e.g. 0812345678 or +66812345678",
+                            color = Error, style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     LabeledField(s.password) {
                         OutlinedTextField(
                             value = password, onValueChange = { password = it; passwordMismatch = false },
@@ -192,14 +217,18 @@ fun SignUpScreen(
                             // instead of leaving the button silently disabled.
                             formError = null
                             passwordMismatch = false
+                            phoneError = false
                             attemptCount++
                             val elapsed = System.currentTimeMillis() - screenOpenedAtMs
                             if (!bypassed && (elapsed < CAPTCHA_FAST_SUBMIT_THRESHOLD_MS || attemptCount >= CAPTCHA_RETRY_BURST_THRESHOLD)) {
                                 captchaRequired = true
                             }
+                            val normalizedPhone = com.lullabyai.app.data.repository.ThaiPhone.normalize(phone)
                             when {
-                                fullName.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
+                                fullName.isBlank() || email.isBlank() || phone.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
                                     formError = "กรุณากรอกข้อมูลให้ครบทุกช่อง"
+                                normalizedPhone == null ->
+                                    phoneError = true
                                 password.length < 8 ->
                                     formError = "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"
                                 password != confirmPassword ->
@@ -209,7 +238,14 @@ fun SignUpScreen(
                                 captchaRequired && !bypassed && captchaToken == null ->
                                     formError = "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนสมัครสมาชิก"
                                 else ->
-                                    authViewModel.signUp(email, password, fullName, captchaToken, onSignUpSuccess)
+                                    // phone passed NAMED and pre-normalized. It defaults to null in
+                                    // signUp(), so omitting it still compiled but silently threw the
+                                    // number away — the field would have looked like it worked.
+                                    authViewModel.signUp(
+                                        email, password, fullName, captchaToken,
+                                        phone = normalizedPhone,
+                                        onSuccess = onSignUpSuccess
+                                    )
                             }
                         },
                         isLoading = uiState.isLoading,
@@ -225,7 +261,7 @@ fun SignUpScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { authViewModel.signInWithGoogle(context, onSignUpSuccess) },
+                            onClick = googleSignIn,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(100.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)

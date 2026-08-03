@@ -14,7 +14,13 @@ import com.lullabyai.app.data.model.VaccineRecord
 import com.lullabyai.app.data.repository.AiRepository
 import com.lullabyai.app.data.repository.ChildRepository
 import com.lullabyai.app.data.repository.HealthRepository
+import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.util.DoctorReportGenerator
+import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -30,6 +36,20 @@ data class ChildUiState(
     val vaccines: List<VaccineRecord> = emptyList(),
     val growthRecords: List<GrowthRecord> = emptyList(),
     val healthRecords: List<HealthRecord> = emptyList(),
+    /** Latest symptom-log date per health_record_id — feeds Batch Q #9 auto-resolve. */
+    val symptomActivityByRecord: Map<String, String> = emptyMap(),
+    /** Latest symptom write timestamp per episode — feeds F3 10-min edit lock. */
+    val symptomUpdateByRecord: Map<String, String> = emptyMap(),
+    // Stitch AIInsightCard text for HEALTH-UX owned list screens
+    val healthHistoryInsight: String? = null,
+    val healthHistoryInsightLoading: Boolean = false,
+    val sicknessFollowUpInsight: String? = null,
+    val sicknessFollowUpInsightLoading: Boolean = false,
+    val medicationHistoryInsight: String? = null,
+    val medicationHistoryInsightLoading: Boolean = false,
+    val doctorVisitHistoryInsight: String? = null,
+    val doctorVisitHistoryInsightLoading: Boolean = false,
+    val symptomLogPhotoSignedUrl: String? = null,
     val allergies: List<Allergy> = emptyList(),
     val chronicConditions: List<ChronicCondition> = emptyList(),
     val milestones: List<DevelopmentMilestone> = emptyList(),
@@ -76,12 +96,52 @@ data class ChildUiState(
     val inviteCode: String? = null,
     val inviteCodeChildName: String? = null,   // which child the shown code belongs to — each child gets its own code
     val pendingSyncRequests: List<com.lullabyai.app.data.model.ChildSyncRequest> = emptyList(),
+    /** One-shot popup when a doctor sends vaccine verification to this account. */
+    val doctorVaccineInboxPopup: DoctorVaccineInboxItem? = null,
     // --- AI daily question (Dashboard popup, capped 3/day via SettingsManager) ---
     val dailyQuestion: String? = null,
+    // --- Stitch "AI Suggestions & Guidance" (#11) ---
+    val aiGuidance: AiGuidance? = null,
+    val aiGuidanceLoading: Boolean = false,
+    /** Active child: creator or member role `owner` — may delete child data. */
+    val isChildOwner: Boolean = false,
+    /** Child ids this account may delete (for multi-child switcher). */
+    val ownedChildIds: Set<String> = emptySet(),
     val error: String? = null
 )
 
+/** Parent inbox item — doctor pushed vaccine verification (not a parent-initiated request). */
+data class DoctorVaccineInboxItem(
+    val requestId: String,
+    val childId: String,
+    val childName: String,
+    val vaccineName: String,
+    val message: String?
+)
+
+/** One suggestion card on the AI Suggestions & Guidance screen.
+ *  [iconKey] is one of nutrition | social | motor | sleep | health — the screen maps it to an icon. */
+data class AiGuidanceCard(
+    val iconKey: String,
+    val title: String,
+    val category: String,
+    val body: String
+)
+
+/** Parsed payload for the AI Suggestions & Guidance screen. Not persisted — regenerated per visit. */
+data class AiGuidance(
+    val headline: String,
+    val summary: String,
+    val cards: List<AiGuidanceCard>,
+    val tip: String?,
+    val insight: String?
+)
+
 class ChildViewModel : ViewModel() {
+    companion object {
+        const val OWNER_ONLY_DELETE_ERROR = "owner_only_delete"
+    }
+
     private val childRepo = ChildRepository()
     private val healthRepo = HealthRepository()
     private val doctorVisitRepo = com.lullabyai.app.data.repository.DoctorVisitRepository()
@@ -90,6 +150,7 @@ class ChildViewModel : ViewModel() {
     private val aiRepo = AiRepository()
     private val chatRepo = com.lullabyai.app.data.repository.ChatRepository()
     private val notifRepo = com.lullabyai.app.data.repository.NotificationRepository()
+    private val doctorRepo = com.lullabyai.app.data.repository.DoctorRepository()
 
     private val _uiState = MutableStateFlow(ChildUiState())
     val uiState: StateFlow<ChildUiState> = _uiState
@@ -112,13 +173,61 @@ class ChildViewModel : ViewModel() {
             val children = childrenResult.getOrDefault(emptyList())
             childRepo.getSelectedChild()
                 .onSuccess { child ->
-                    val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(child?.avatarUrl)
-                    _uiState.value = _uiState.value.copy(children = children, child = child, childAvatarSignedUrl = signed, isLoading = false, error = null)
-                    child?.let { loadAllData(it.id) }
+                    val ownerFlags = resolveOwnerFlags(children)
+                    if (child == null) {
+                        _uiState.value = clearedChildDataState(
+                            children = children,
+                            ownedChildIds = ownerFlags,
+                            isLoading = false
+                        )
+                        return@launch
+                    }
+                    val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(child.avatarUrl)
+                    _uiState.value = _uiState.value.copy(
+                        children = children,
+                        child = child,
+                        childAvatarSignedUrl = signed,
+                        isLoading = false,
+                        error = null,
+                        ownedChildIds = ownerFlags,
+                        isChildOwner = child.id in ownerFlags
+                    )
+                    loadAllData(child.id)
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
         }
     }
+
+    /** Wipe per-child cached data so stale vaccines/notifications from a prior session can't show
+     *  when this account currently has zero children (or the selected child was removed). */
+    private fun clearedChildDataState(
+        children: List<Child>,
+        ownedChildIds: Set<String>,
+        isLoading: Boolean
+    ) = _uiState.value.copy(
+        children = children,
+        child = null,
+        childAvatarSignedUrl = null,
+        isLoading = isLoading,
+        error = null,
+        ownedChildIds = ownedChildIds,
+        isChildOwner = false,
+        vaccines = emptyList(),
+        growthRecords = emptyList(),
+        healthRecords = emptyList(),
+        symptomActivityByRecord = emptyMap(),
+        symptomUpdateByRecord = emptyMap(),
+        allergies = emptyList(),
+        chronicConditions = emptyList(),
+        milestones = emptyList(),
+        medicalDocuments = emptyList(),
+        sleepLogs = emptyList(),
+        sleepSchedules = emptyList(),
+        doctorVisits = emptyList(),
+        dailyQuestion = null,
+        pendingSyncRequests = emptyList(),
+        doctorVaccineInboxPopup = null
+    )
 
     // --- Sync child (multi-parent access) ---------------------------------------------------
 
@@ -131,17 +240,17 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    fun requestSyncBySearch(childId: String) {
+    fun requestSyncBySearch(childId: String, role: String? = null) {
         viewModelScope.launch {
-            childRepo.requestSyncBySearch(childId)
+            childRepo.requestSyncBySearch(childId, role)
                 .onSuccess { _uiState.value = _uiState.value.copy(syncRequestSent = true, syncError = null) }
                 .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
         }
     }
 
-    fun requestSyncByCode(code: String) {
+    fun requestSyncByCode(code: String, role: String? = null, method: String = "code") {
         viewModelScope.launch {
-            childRepo.requestSyncByCode(code)
+            childRepo.requestSyncByCode(code, role = role, method = method)
                 .onSuccess { _uiState.value = _uiState.value.copy(syncRequestSent = true, syncError = null) }
                 .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
         }
@@ -174,6 +283,136 @@ class ChildViewModel : ViewModel() {
     fun confirmSyncRequest(requestId: String, approve: Boolean) {
         viewModelScope.launch {
             childRepo.confirmSyncRequest(requestId, approve).onSuccess { loadPendingSyncRequests() }
+        }
+    }
+
+    // --- Realtime sync (co-parent devices + post-approval membership) -----------------------
+
+    private var childDataWatchJob: Job? = null
+    private var membershipWatchJob: Job? = null
+
+    /** Watch for newly granted membership (QR/code sync approved) and reload the children list. */
+    fun startMembershipWatch() {
+        if (membershipWatchJob?.isActive == true) return
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        membershipWatchJob = viewModelScope.launch {
+            launch {
+                while (true) {
+                    delay(5_000)
+                    loadChild()
+                }
+            }
+            runCatching {
+                childRepo.watchMembershipGranted(uid).collect { loadChild() }
+            }
+        }
+    }
+
+    /** Reload shared child data whenever another device writes to Supabase for this child. */
+    fun startChildDataWatch(childId: String) {
+        if (childDataWatchJob?.isActive == true && watchedChildId == childId) return
+        childDataWatchJob?.cancel()
+        watchedChildId = childId
+        childDataWatchJob = viewModelScope.launch {
+            childRepo.watchChildDataChanges(childId).collect { loadAllData(childId) }
+        }
+    }
+
+    fun stopRealtimeSync() {
+        childDataWatchJob?.cancel()
+        membershipWatchJob?.cancel()
+        watchedChildId = null
+    }
+
+    private var watchedChildId: String? = null
+
+    private suspend fun resolveOwnerFlags(children: List<Child>): Set<String> = coroutineScope {
+        children.map { child ->
+            async {
+                if (childRepo.isChildOwner(child.id).getOrDefault(false)) child.id else null
+            }
+        }.mapNotNull { it.await() }.toSet()
+    }
+
+    private suspend fun ensureChildOwner(childId: String? = _uiState.value.child?.id): Boolean {
+        val id = childId?.takeIf { it.isNotBlank() } ?: return false
+        if (id in _uiState.value.ownedChildIds) return true
+        if (!childRepo.isChildOwner(id).getOrDefault(false)) {
+            _uiState.value = _uiState.value.copy(error = OWNER_ONLY_DELETE_ERROR)
+            return false
+        }
+        val owned = _uiState.value.ownedChildIds + id
+        _uiState.value = _uiState.value.copy(
+            ownedChildIds = owned,
+            isChildOwner = _uiState.value.child?.id == id
+        )
+        return true
+    }
+
+    /** Owner or member with `book_doctor` capability may open Pedia Connect / book appointments. */
+    suspend fun canAccessDoctorConnect(childId: String?): Boolean {
+        val id = childId?.takeIf { it.isNotBlank() }
+            ?: childRepo.getSelectedChild().getOrNull()?.id
+            ?: return false
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return false
+        val child = _uiState.value.children.find { it.id == id }
+            ?: childRepo.getChildById(id).getOrNull()
+            ?: return false
+        if (child.userId == uid) return true
+        val member = childRepo.getMyMembership(id).getOrNull() ?: return false
+        return member.role == "owner" ||
+            member.canBookDoctor ||
+            "book_doctor" in member.capabilities
+    }
+
+    override fun onCleared() {
+        stopRealtimeSync()
+        super.onCleared()
+    }
+
+    /** Doctor → parent vaccine verification deliveries (popup on home). */
+    fun loadDoctorVaccineInbox(context: android.content.Context) {
+        viewModelScope.launch {
+            val children = _uiState.value.children.ifEmpty { childRepo.getChildren().getOrDefault(emptyList()) }
+            if (children.isEmpty()) return@launch
+            val settings = com.lullabyai.app.data.settings.SettingsManager(context)
+            val dismissed = settings.getDismissedDoctorVaccineInboxIds()
+            if (_uiState.value.doctorVaccineInboxPopup != null) return@launch
+            for (child in children) {
+                val requests = doctorRepo.getVaccineVerifications(childId = child.id).getOrDefault(emptyList())
+                val vaccines = healthRepo.getVaccineRecords(child.id).getOrDefault(emptyList())
+                val hit = requests.firstOrNull { req ->
+                    req.status == "verified" &&
+                        req.notes?.startsWith("doctor_sent:", ignoreCase = true) == true &&
+                        req.id !in dismissed
+                } ?: continue
+                val record = vaccines.find { it.id == hit.vaccineRecordId }
+                // Only popup when the certificate PDF is actually on file — avoids "verified"
+                // notifications from doctor-side actions that never uploaded a cert.
+                if (record?.certificateUrl.isNullOrBlank()) continue
+                val message = hit.notes?.removePrefix("doctor_sent:")?.trim()
+                _uiState.value = _uiState.value.copy(
+                    doctorVaccineInboxPopup = DoctorVaccineInboxItem(
+                        requestId = hit.id,
+                        childId = child.id,
+                        childName = child.name,
+                        vaccineName = record?.vaccineName ?: "-",
+                        message = message?.takeIf { it.isNotBlank() }
+                    )
+                )
+                return@launch
+            }
+        }
+    }
+
+    fun dismissDoctorVaccineInbox(context: android.content.Context, openVaccineBook: Boolean = false) {
+        val popup = _uiState.value.doctorVaccineInboxPopup ?: return
+        viewModelScope.launch {
+            com.lullabyai.app.data.settings.SettingsManager(context).dismissDoctorVaccineInboxId(popup.requestId)
+            _uiState.value = _uiState.value.copy(doctorVaccineInboxPopup = null)
+            if (openVaccineBook) {
+                // Vaccine list reload happens when parent opens the book screen.
+            }
         }
     }
 
@@ -289,7 +528,14 @@ class ChildViewModel : ViewModel() {
                 // in every export, not just whatever happened in the last 3-6 months.
                 val vacRows = st.vaccines.filter { it.status == "completed" }
                     .sortedBy { it.ageOrder ?: 0 }
-                    .map { DoctorReportGenerator.Vac(it.ageGroup ?: "", it.vaccineName, d10(it.dateGiven), "", it.notes ?: it.description ?: "") }
+                    .map {
+                        DoctorReportGenerator.Vac(
+                            it.ageGroup ?: "", it.vaccineName, d10(it.dateGiven), "",
+                            it.notes ?: it.description ?: "",
+                            fromMophBook = it.source == "moph_book",
+                            certified = !it.certificateUrl.isNullOrBlank()
+                        )
+                    }
 
                 // §3 development — one status row per official domain (mapped from milestone categories).
                 val domainCats = listOf("gross_motor", "fine_motor", "communication", "social", "self_help")
@@ -410,6 +656,7 @@ class ChildViewModel : ViewModel() {
     /** Delete a child (after the user confirms). Falls back to another child, or none if it was the last. */
     fun deleteChild(childId: String) {
         viewModelScope.launch {
+            if (!ensureChildOwner(childId)) return@launch
             childRepo.deleteChild(childId)
             // If the deleted child was active, clear the selection so the next load picks another.
             if (com.lullabyai.app.data.settings.ChildSelection.current() == childId) {
@@ -419,7 +666,10 @@ class ChildViewModel : ViewModel() {
             milestonesEnsuredChildId = null
             _uiState.value = _uiState.value.copy(
                 child = null, vaccines = emptyList(), growthRecords = emptyList(),
-                healthRecords = emptyList(), allergies = emptyList(), milestones = emptyList(),
+                healthRecords = emptyList(), symptomActivityByRecord = emptyMap(), symptomUpdateByRecord = emptyMap(),
+                healthHistoryInsight = null, sicknessFollowUpInsight = null,
+                medicationHistoryInsight = null, doctorVisitHistoryInsight = null,
+                allergies = emptyList(), milestones = emptyList(),
                 aiTasks = emptyList(), childAvatarSignedUrl = null
             )
             loadChild()
@@ -436,8 +686,12 @@ class ChildViewModel : ViewModel() {
         // Clear the previous child's data so stale info never shows during the switch.
         _uiState.value = _uiState.value.copy(
             child = null, vaccines = emptyList(), growthRecords = emptyList(),
-            healthRecords = emptyList(), allergies = emptyList(), milestones = emptyList(),
-            aiTasks = emptyList(), childAvatarSignedUrl = null
+            healthRecords = emptyList(), symptomActivityByRecord = emptyMap(), symptomUpdateByRecord = emptyMap(),
+            healthHistoryInsight = null, sicknessFollowUpInsight = null,
+            medicationHistoryInsight = null, doctorVisitHistoryInsight = null,
+            allergies = emptyList(), milestones = emptyList(),
+            aiTasks = emptyList(), childAvatarSignedUrl = null,
+            isChildOwner = childId in _uiState.value.ownedChildIds
         )
         loadChild()
     }
@@ -446,33 +700,58 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch {
             // Recompute statuses against today's date first so the recommended vaccine stays current
             healthRepo.refreshVaccineStatuses(childId)
-            healthRepo.getVaccineRecords(childId).onSuccess {
-                _uiState.value = _uiState.value.copy(vaccines = it)
-            }
-        }
-        viewModelScope.launch {
-            healthRepo.getGrowthRecords(childId).onSuccess {
-                _uiState.value = _uiState.value.copy(growthRecords = it)
-            }
-        }
-        viewModelScope.launch {
-            healthRepo.getHealthRecords(childId).onSuccess {
-                _uiState.value = _uiState.value.copy(healthRecords = it)
-            }
-        }
-        viewModelScope.launch {
-            childRepo.getMilestones(childId).onSuccess {
-                _uiState.value = _uiState.value.copy(milestones = it)
-            }
-        }
-        viewModelScope.launch {
-            healthRepo.getAllergies(childId).onSuccess {
-                _uiState.value = _uiState.value.copy(allergies = it)
-            }
-        }
-        viewModelScope.launch {
-            healthRepo.getChronicConditions(childId).onSuccess {
-                _uiState.value = _uiState.value.copy(chronicConditions = it)
+            coroutineScope {
+                val vaccinesDef = async { healthRepo.getVaccineRecords(childId).getOrNull() }
+                val growthDef = async { healthRepo.getGrowthRecords(childId).getOrNull() }
+                val healthDef = async {
+                    healthRepo.getHealthRecords(childId).getOrNull()?.let { records ->
+                        Triple(
+                            records,
+                            healthRepo.getLatestSymptomActivityByRecord(childId).getOrDefault(emptyMap()),
+                            healthRepo.getLatestSymptomUpdateByRecord(childId).getOrDefault(emptyMap())
+                        )
+                    }
+                }
+                val milestonesDef = async { childRepo.getMilestones(childId).getOrNull() }
+                val allergiesDef = async { healthRepo.getAllergies(childId).getOrNull() }
+                val chronicDef = async { healthRepo.getChronicConditions(childId).getOrNull() }
+
+                val vaccines = vaccinesDef.await()
+                val growth = growthDef.await()
+                val healthBundle = healthDef.await()
+                val milestones = milestonesDef.await()
+                val allergyList = allergiesDef.await()
+                val chronic = chronicDef.await()
+
+                val cur = _uiState.value.child
+                val allergySummary = allergyList
+                    ?.map { it.name }
+                    ?.filter { it.isNotBlank() }
+                    ?.distinct()
+                    ?.joinToString(", ")
+                    ?.ifBlank { null }
+                val childWithAllergies = if (cur != null && allergyList != null) {
+                    cur.copy(allergies = allergySummary)
+                } else {
+                    cur
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    vaccines = vaccines ?: _uiState.value.vaccines,
+                    growthRecords = growth ?: _uiState.value.growthRecords,
+                    healthRecords = healthBundle?.first ?: _uiState.value.healthRecords,
+                    symptomActivityByRecord = healthBundle?.second ?: _uiState.value.symptomActivityByRecord,
+                    symptomUpdateByRecord = healthBundle?.third ?: _uiState.value.symptomUpdateByRecord,
+                    milestones = milestones ?: _uiState.value.milestones,
+                    allergies = allergyList ?: _uiState.value.allergies,
+                    chronicConditions = chronic ?: _uiState.value.chronicConditions,
+                    child = childWithAllergies
+                )
+
+                growth?.let { healChildVitalsFromGrowth(childId, it) }
+                if (cur != null && allergyList != null && cur.allergies != allergySummary) {
+                    childRepo.syncAllergySummary(childId, allergyList.map { it.name })
+                }
             }
         }
     }
@@ -480,8 +759,37 @@ class ChildViewModel : ViewModel() {
     private fun reloadAllergies() {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
-            healthRepo.getAllergies(childId).onSuccess { _uiState.value = _uiState.value.copy(allergies = it) }
+            healthRepo.getAllergies(childId).onSuccess { list ->
+                val summary = list.map { it.name }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    .ifBlank { null }
+                val cur = _uiState.value.child
+                _uiState.value = _uiState.value.copy(
+                    allergies = list,
+                    child = cur?.copy(allergies = summary)
+                )
+            }
         }
+    }
+
+    /** If growth history has a newer reading than the children-row cache, push it onto the child
+     *  so Summary / Health / Edit Child / Nutrition all show the same vitals as Growth History. */
+    private suspend fun healChildVitalsFromGrowth(childId: String, records: List<GrowthRecord>) {
+        val latest = records.maxByOrNull { it.recordedAt ?: "" } ?: return
+        val cur = _uiState.value.child ?: return
+        if (cur.id != childId) return
+        val newWeight = latest.weightKg
+        val newHeight = latest.heightCm
+        if (newWeight == null && newHeight == null) return
+        val weightDiffers = newWeight != null && newWeight != cur.weightKg
+        val heightDiffers = newHeight != null && newHeight != cur.heightCm
+        if (!weightDiffers && !heightDiffers) return
+        childRepo.updateVitals(childId, newWeight, newHeight)
+        _uiState.value = _uiState.value.copy(
+            child = cur.copy(
+                weightKg = newWeight ?: cur.weightKg,
+                heightCm = newHeight ?: cur.heightCm
+            )
+        )
     }
 
     // Loaded on-demand (not part of the eager child-load cascade) — avoids an extra network call
@@ -517,7 +825,16 @@ class ChildViewModel : ViewModel() {
         val childId = _uiState.value.child?.id ?: return
         viewModelScope.launch {
             childRepo.setNoKnownAllergies(childId, value).onSuccess {
-                _uiState.value = _uiState.value.copy(child = _uiState.value.child?.copy(noKnownAllergies = value))
+                // Also patch the `children` list, not just the singular `child` — Dashboard's
+                // missing-info nudge reads from `children` (per-child cards), so leaving only
+                // `child` updated meant the nudge kept showing after confirming "no allergies"
+                // until the next full reload.
+                _uiState.value = _uiState.value.let { s ->
+                    s.copy(
+                        child = s.child?.copy(noKnownAllergies = value),
+                        children = s.children.map { if (it.id == childId) it.copy(noKnownAllergies = value) else it }
+                    )
+                }
             }
         }
     }
@@ -530,6 +847,7 @@ class ChildViewModel : ViewModel() {
 
     fun deleteAllergy(id: String) {
         viewModelScope.launch {
+            if (!ensureChildOwner()) return@launch
             healthRepo.deleteAllergy(id).onSuccess { reloadAllergies() }
         }
     }
@@ -541,6 +859,9 @@ class ChildViewModel : ViewModel() {
         }
     }
 
+    /** Public refresh for Chronic Registry screen after its own CRUD (#14). */
+    fun refreshChronicConditionsFromRegistry() = reloadChronicConditions()
+
     fun addChronicCondition(name: String, notes: String?) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
@@ -550,6 +871,7 @@ class ChildViewModel : ViewModel() {
 
     fun deleteChronicCondition(id: String) {
         viewModelScope.launch {
+            if (!ensureChildOwner()) return@launch
             healthRepo.deleteChronicCondition(id).onSuccess { reloadChronicConditions() }
         }
     }
@@ -627,6 +949,7 @@ class ChildViewModel : ViewModel() {
     ) {
         viewModelScope.launch {
             val current = _uiState.value.child ?: return@launch
+            val vitalsChanged = weightKg != current.weightKg || heightCm != current.heightCm
             val updated = current.copy(
                 name = name,
                 birthdate = birthdate,
@@ -637,6 +960,18 @@ class ChildViewModel : ViewModel() {
             childRepo.updateChild(updated)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(child = updated)
+                    // Edit Child is another vitals entry point — mirror into growth_records so
+                    // Growth History / WHO charts / doctor-visit sync stay single-source.
+                    if (vitalsChanged && (weightKg != null || heightCm != null)) {
+                        addGrowthRecord(
+                            GrowthRecord(
+                                weightKg = weightKg,
+                                heightCm = heightCm,
+                                recordedAt = java.time.LocalDate.now().toString(),
+                                recordType = "profile_edit"
+                            )
+                        )
+                    }
                     notifRepo.notify(
                         com.lullabyai.app.data.repository.NotifCategory.NORMAL,
                         "อัปเดตข้อมูลลูกแล้ว",
@@ -695,12 +1030,27 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    /** Upload a medical document (PDF/JPG/PNG) for the current child to the private bucket. */
-    fun uploadMedicalDocument(name: String, mime: String?, bytes: ByteArray) {
-        viewModelScope.launch {
+    // Tracks the in-flight Document Vault upload so the user can cancel it explicitly instead
+    // of just watching the FAB spin with no way out.
+    private var docUploadJob: Job? = null
+
+    /** Upload a medical document for a specific child (e.g. Pedia Connect registration before that child is selected globally). */
+    suspend fun uploadMedicalDocumentForChild(
+        childId: String,
+        name: String,
+        mime: String?,
+        bytes: ByteArray,
+        category: String = "other"
+    ): Result<Unit> = childRepo.uploadMedicalDocument(childId, name, mime, bytes, category = category)
+
+    /** Upload a medical document (PDF/JPG/PNG) for the current child to the private bucket.
+     *  [category] = identity | certs | lab | other (Document Vault chips). */
+    fun uploadMedicalDocument(name: String, mime: String?, bytes: ByteArray, category: String = "other") {
+        docUploadJob?.cancel()
+        docUploadJob = viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             _uiState.value = _uiState.value.copy(docUploading = true)
-            childRepo.uploadMedicalDocument(childId, name, mime, bytes)
+            childRepo.uploadMedicalDocument(childId, name, mime, bytes, category = category)
             childRepo.getMedicalDocuments(childId).onSuccess {
                 _uiState.value = _uiState.value.copy(medicalDocuments = it)
             }
@@ -708,9 +1058,34 @@ class ChildViewModel : ViewModel() {
         }
     }
 
+    /** Cancel button on the Document Vault upload FAB — aborts an in-flight upload. */
+    fun cancelMedicalDocumentUpload() {
+        docUploadJob?.cancel()
+        docUploadJob = null
+        _uiState.value = _uiState.value.copy(docUploading = false)
+    }
+
+    /** Signed URL for open/view, or onFailure null. */
+    fun openMedicalDocument(filePath: String, onResult: (String?) -> Unit) {
+        signMedicalDocUrl(filePath, onResult)
+    }
+
+    /** Open a stored ใบรับรองวัคซีน (private medical-docs path on the vaccine row). */
+    fun openVaccineCertificate(filePath: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            onResult(healthRepo.signedVaccineCertificateUrl(filePath).getOrNull())
+        }
+    }
+
+    /** Download bytes from private storage (caller writes to Downloads / shares). */
+    fun downloadMedicalDocumentBytes(filePath: String, onResult: (ByteArray?) -> Unit) {
+        viewModelScope.launch { onResult(childRepo.downloadMedicalDocumentBytes(filePath).getOrNull()) }
+    }
+
     /** Remove an uploaded medical document for the current child. */
     fun deleteMedicalDocument(id: String, filePath: String) {
         viewModelScope.launch {
+            if (!ensureChildOwner()) return@launch
             childRepo.deleteMedicalDocument(id, filePath)
             val childId = _uiState.value.child?.id ?: return@launch
             childRepo.getMedicalDocuments(childId).onSuccess {
@@ -752,7 +1127,11 @@ class ChildViewModel : ViewModel() {
     }
 
     fun deleteMedicationSchedule(id: String) {
-        viewModelScope.launch { medicationRepo.deleteSchedule(id); loadMedications() }
+        viewModelScope.launch {
+            if (!ensureChildOwner()) return@launch
+            medicationRepo.deleteSchedule(id)
+            loadMedications()
+        }
     }
 
     /** Load the current child's sleep sessions + recurring schedules. */
@@ -794,7 +1173,11 @@ class ChildViewModel : ViewModel() {
     }
 
     fun deleteSleepLog(id: String) {
-        viewModelScope.launch { sleepRepo.deleteLog(id); loadSleep() }
+        viewModelScope.launch {
+            if (!ensureChildOwner()) return@launch
+            sleepRepo.deleteLog(id)
+            loadSleep()
+        }
     }
 
     fun addSleepSchedule(label: String, sleepType: String, startTime: String, endTime: String, daysOfWeek: String, onDone: () -> Unit = {}) {
@@ -812,9 +1195,27 @@ class ChildViewModel : ViewModel() {
         }
     }
 
+    fun updateSleepSchedule(id: String, label: String, sleepType: String, startTime: String, endTime: String, daysOfWeek: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(sleepSaving = true)
+            sleepRepo.updateSchedule(id, label, sleepType, startTime, endTime, daysOfWeek)
+            loadSleep()
+            // Re-arm from the reloaded row: the old reminder is keyed to the previous times.
+            com.lullabyai.app.util.SleepReminderScheduler.cancel(id)
+            _uiState.value.sleepSchedules.find { it.id == id }
+                ?.let { com.lullabyai.app.util.SleepReminderScheduler.scheduleNext(it) }
+            _uiState.value = _uiState.value.copy(sleepSaving = false)
+            onDone()
+        }
+    }
+
     fun deleteSleepSchedule(id: String) {
         com.lullabyai.app.util.SleepReminderScheduler.cancel(id)
-        viewModelScope.launch { sleepRepo.deleteSchedule(id); loadSleep() }
+        viewModelScope.launch {
+            if (!ensureChildOwner()) return@launch
+            sleepRepo.deleteSchedule(id)
+            loadSleep()
+        }
     }
 
     /** Rough age-based recommended total daily sleep (hours) for 0-3y, per standard pediatric guidance. */
@@ -862,8 +1263,19 @@ class ChildViewModel : ViewModel() {
             val toSave = record.copy(childId = childId)
             healthRepo.addGrowthRecord(toSave)
                 .onSuccess {
+                    // HealthRepository already mirrored vitals onto `children` — refresh both the
+                    // history list and the in-memory child so Summary/Health hubs update immediately.
                     healthRepo.getGrowthRecords(childId).onSuccess {
                         _uiState.value = _uiState.value.copy(growthRecords = it)
+                    }
+                    val cur = _uiState.value.child
+                    if (cur != null && (toSave.weightKg != null || toSave.heightCm != null)) {
+                        _uiState.value = _uiState.value.copy(
+                            child = cur.copy(
+                                weightKg = toSave.weightKg ?: cur.weightKg,
+                                heightCm = toSave.heightCm ?: cur.heightCm
+                            )
+                        )
                     }
                 }
                 // Likely offline — queue it instead of silently losing what the parent just typed;
@@ -875,22 +1287,60 @@ class ChildViewModel : ViewModel() {
     fun deleteGrowthRecord(id: String) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
+            if (!ensureChildOwner(childId)) return@launch
             healthRepo.deleteGrowthRecord(id).onSuccess {
-                healthRepo.getGrowthRecords(childId).onSuccess {
-                    _uiState.value = _uiState.value.copy(growthRecords = it)
+                healthRepo.getGrowthRecords(childId).onSuccess { records ->
+                    _uiState.value = _uiState.value.copy(growthRecords = records)
+                    // Re-point the child vitals cache at the newest remaining reading (or leave as-is
+                    // if the history is now empty — parent can re-enter via Edit Child / Add Growth).
+                    val latest = records.maxByOrNull { it.recordedAt ?: "" }
+                    val cur = _uiState.value.child
+                    if (cur != null && latest != null && (latest.weightKg != null || latest.heightCm != null)) {
+                        childRepo.updateVitals(childId, latest.weightKg, latest.heightCm)
+                        _uiState.value = _uiState.value.copy(
+                            child = cur.copy(
+                                weightKg = latest.weightKg ?: cur.weightKg,
+                                heightCm = latest.heightCm ?: cur.heightCm
+                            )
+                        )
+                    }
                 }
             }
         }
     }
 
-    fun addHealthRecord(record: HealthRecord) {
+    /** Reloads health records + per-episode last symptom activity (Batch Q #9) + F3 timestamps. */
+    private suspend fun refreshHealthRecords(childId: String) {
+        healthRepo.getHealthRecords(childId).onSuccess { records ->
+            val activity = healthRepo.getLatestSymptomActivityByRecord(childId).getOrDefault(emptyMap())
+            val updates = healthRepo.getLatestSymptomUpdateByRecord(childId).getOrDefault(emptyMap())
+            _uiState.value = _uiState.value.copy(
+                healthRecords = records,
+                symptomActivityByRecord = activity,
+                symptomUpdateByRecord = updates
+            )
+        }
+    }
+
+    /** F3 helper — lock clocks from last symptom write for this episode. */
+    fun isHealthRecordEditLocked(record: HealthRecord): Boolean =
+        com.lullabyai.app.util.HealthRecordRules.isEditLocked(
+            record, _uiState.value.symptomUpdateByRecord[record.id] ?: record.symptomsUpdatedAt
+        )
+
+    fun addHealthRecord(record: HealthRecord, photoBytes: ByteArray? = null, onDone: (() -> Unit)? = null) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
-            healthRepo.addHealthRecord(record.copy(childId = childId)).onSuccess {
-                healthRepo.getHealthRecords(childId).onSuccess {
-                    _uiState.value = _uiState.value.copy(healthRecords = it)
+            healthRepo.addHealthRecord(record.copy(childId = childId)).onSuccess { saved ->
+                if (photoBytes != null) {
+                    healthRepo.uploadHealthPhoto(childId, saved.id, photoBytes).onSuccess { path ->
+                        healthRepo.updateHealthRecord(
+                            saved.id, saved.title, saved.description,
+                            saved.additionalSymptoms ?: emptyList(), path, saved.temperature
+                        )
+                    }
                 }
-                // High temperature → warning notification, otherwise normal
+                refreshHealthRecords(childId)
                 val temp = record.temperature
                 if (temp != null && temp >= 37.5) {
                     notifRepo.notify(
@@ -905,6 +1355,7 @@ class ChildViewModel : ViewModel() {
                         record.title
                     )
                 }
+                onDone?.invoke()
             }
         }
     }
@@ -912,7 +1363,12 @@ class ChildViewModel : ViewModel() {
     /** Remember which record the detail screen should open (the app passes selection via VM state,
      *  not nav args — same pattern as RecipeDetail/ExerciseInstruction). */
     fun selectHealthRecord(recordId: String) {
-        _uiState.value = _uiState.value.copy(openHealthRecordId = recordId)
+        val changed = _uiState.value.openHealthRecordId != recordId
+        _uiState.value = _uiState.value.copy(
+            openHealthRecordId = recordId,
+            sicknessFollowUpInsight = if (changed) null else _uiState.value.sicknessFollowUpInsight,
+            sicknessFollowUpInsightLoading = if (changed) false else _uiState.value.sicknessFollowUpInsightLoading
+        )
     }
 
     /**
@@ -948,11 +1404,18 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    /** Upload/replace the photo on a health record, persist its path, and refresh the list + preview. */
+    /** Upload/replace the photo on a health record, persist its path, and refresh the list + preview.
+     *  Blocked after the Batch Q #8 10-minute edit lock. */
     fun uploadHealthPhoto(recordId: String, bytes: ByteArray) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val record = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
+            if (isHealthRecordEditLocked(record)) {
+                _uiState.value = _uiState.value.copy(
+                    error = "บันทึกนี้ล็อกแล้ว — แก้ไขได้ภายใน 10 นาทีหลังอัปเดตอาการ / This record is locked (10-min window from last symptom update)"
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(healthPhotoUploading = true, error = null)
             healthRepo.uploadHealthPhoto(childId, recordId, bytes)
                 .onSuccess { path ->
@@ -961,9 +1424,7 @@ class ChildViewModel : ViewModel() {
                         record.additionalSymptoms ?: emptyList(), path, record.temperature
                     )
                     val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(path)
-                    healthRepo.getHealthRecords(childId).onSuccess {
-                        _uiState.value = _uiState.value.copy(healthRecords = it)
-                    }
+                    refreshHealthRecords(childId)
                     _uiState.value = _uiState.value.copy(healthPhotoSignedUrl = signed, healthPhotoUploading = false)
                 }
                 .onFailure {
@@ -975,7 +1436,8 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    /** Save edits to a health record from the detail screen, then refresh the list. */
+    /** Save edits to a health record from the detail screen, then refresh the list.
+     *  No-ops (with error) once Batch Q #8's 10-minute lock applies. */
     fun saveHealthRecord(
         recordId: String, title: String, description: String?,
         additionalSymptoms: List<String>, temperature: Double?, onDone: () -> Unit
@@ -983,34 +1445,107 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId }
+            if (current != null && isHealthRecordEditLocked(current)) {
+                _uiState.value = _uiState.value.copy(
+                    error = "บันทึกนี้ล็อกแล้ว — แก้ไขได้ภายใน 10 นาทีหลังอัปเดตอาการ / This record is locked (10-min window from last symptom update)"
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(healthDetailSaving = true)
             healthRepo.updateHealthRecord(
                 recordId, title, description, additionalSymptoms, current?.photoUrl, temperature
             ).onSuccess {
-                healthRepo.getHealthRecords(childId).onSuccess {
-                    _uiState.value = _uiState.value.copy(healthRecords = it)
-                }
+                refreshHealthRecords(childId)
             }
             _uiState.value = _uiState.value.copy(healthDetailSaving = false)
             onDone()
         }
     }
 
-    /** Toggle a health record between "monitoring" and "recovered" — feeds HealthHistoryScreen's badge. */
+    /** Toggle a health record between "monitoring" and "recovered" — feeds HealthHistoryScreen's badge.
+     *  Allowed even after the edit lock (status is not a content edit). */
     fun toggleHealthRecordStatus(recordId: String) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
             val next = if (current.status == "recovered") "monitoring" else "recovered"
             healthRepo.updateHealthStatus(recordId, next).onSuccess {
-                healthRepo.getHealthRecords(childId).onSuccess { _uiState.value = _uiState.value.copy(healthRecords = it) }
+                refreshHealthRecords(childId)
+            }
+        }
+    }
+
+    /** Batch Q #8 — tick / untick "unused". Always allowed after the 10-min content lock. */
+    fun setHealthRecordUnused(recordId: String, unused: Boolean) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch
+            val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
+            val next = when {
+                unused -> "unused"
+                current.status == "unused" -> "monitoring"
+                else -> current.status
+            }
+            if (next == current.status) return@launch
+            healthRepo.updateHealthStatus(recordId, next).onSuccess {
+                refreshHealthRecords(childId)
             }
         }
     }
 
     fun loadSymptomLogs(healthRecordId: String) {
         viewModelScope.launch {
-            healthRepo.getSymptomLogs(healthRecordId).onSuccess { _uiState.value = _uiState.value.copy(symptomLogs = it) }
+            healthRepo.getSymptomLogs(healthRecordId).onSuccess { logs ->
+                _uiState.value = _uiState.value.copy(symptomLogs = logs, symptomLogPhotoSignedUrl = null)
+            }
+        }
+    }
+
+    /**
+     * Upsert a day-log (multi-day + editable current symptom). Blocked by F3 once the
+     * episode's last symptom write is older than 10 minutes — except when editing a log
+     * that is itself still inside its own 10-min window.
+     */
+    fun saveSymptomLog(
+        healthRecordId: String,
+        logDate: String,
+        symptoms: Map<String, String>,
+        temperature: Double?,
+        feeling: String?,
+        dayStatus: String,
+        notes: String?,
+        painLevel: Int?,
+        photoUrl: String?,
+        existingId: String?,
+        temperatureUnit: String = "C",
+        onDone: () -> Unit
+    ) {
+        val childId = _uiState.value.child?.id ?: return
+        viewModelScope.launch {
+            // F3: editing a prior entry locks 10 min after *that* entry's last write.
+            // Creating a brand-new timeline entry is always allowed (existingId == null).
+            val existing = existingId?.let { id -> _uiState.value.symptomLogs.firstOrNull { it.id == id } }
+            if (existing != null && com.lullabyai.app.util.HealthRecordRules.isSymptomLogEditLocked(existing)) {
+                _uiState.value = _uiState.value.copy(
+                    error = "รายการนี้ล็อกแล้ว — แก้ไขได้ภายใน 10 นาทีหลังอัปเดต / This entry is locked (10-min window)",
+                    symptomLogSaving = false
+                )
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(symptomLogSaving = true, error = null)
+            healthRepo.upsertSymptomLog(
+                healthRecordId, childId, logDate, symptoms, temperature, feeling,
+                dayStatus, notes, painLevel, photoUrl, existingId, temperatureUnit
+            ).onSuccess {
+                healthRepo.getSymptomLogs(healthRecordId).onSuccess { logs ->
+                    val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(it.photoUrl)
+                    _uiState.value = _uiState.value.copy(symptomLogs = logs, symptomLogPhotoSignedUrl = signed)
+                }
+                refreshHealthRecords(childId)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(error = it.message)
+            }
+            _uiState.value = _uiState.value.copy(symptomLogSaving = false)
+            onDone()
         }
     }
 
@@ -1018,14 +1553,181 @@ class ChildViewModel : ViewModel() {
         healthRecordId: String, symptoms: Map<String, String>, temperature: Double?,
         feeling: String?, dayStatus: String, notes: String?, onDone: () -> Unit
     ) {
-        val childId = _uiState.value.child?.id ?: return
+        saveSymptomLog(
+            healthRecordId, java.time.LocalDate.now().toString(), symptoms, temperature,
+            feeling, dayStatus, notes, null, null, null, onDone = onDone
+        )
+    }
+
+    fun uploadSymptomLogPhoto(bytes: ByteArray, onReady: (String) -> Unit) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(symptomLogSaving = true)
-            healthRepo.addSymptomLog(healthRecordId, childId, symptoms, temperature, feeling, dayStatus, notes)
-                .onSuccess { healthRepo.getSymptomLogs(healthRecordId).onSuccess { logs -> _uiState.value = _uiState.value.copy(symptomLogs = logs) } }
-            _uiState.value = _uiState.value.copy(symptomLogSaving = false)
-            onDone()
+            val childId = _uiState.value.child?.id ?: return@launch
+            val key = "${System.currentTimeMillis()}"
+            healthRepo.uploadSymptomLogPhoto(childId, key, bytes).onSuccess { path ->
+                val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(path)
+                _uiState.value = _uiState.value.copy(symptomLogPhotoSignedUrl = signed)
+                onReady(path)
+            }
         }
+    }
+
+    fun loadHealthHistoryInsight(isThai: Boolean) {
+        val child = _uiState.value.child ?: return
+        if (_uiState.value.healthHistoryInsight != null || _uiState.value.healthHistoryInsightLoading) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(healthHistoryInsightLoading = true)
+            val recent = _uiState.value.healthRecords.take(8).joinToString("; ") {
+                "${it.title}(${it.status})"
+            }.ifBlank { if (isThai) "ยังไม่มีบันทึก" else "no records yet" }
+            val prompt = if (isThai)
+                "เด็กชื่อ ${child.name} มีประวัติสุขภาพล่าสุด: $recent สรุปแนวโน้มสุขภาพสั้นๆ 2-3 ประโยค เป็นภาษาพูดอบอุ่น ไม่ใช้สัญลักษณ์หรืออิโมจิ"
+            else
+                "Child ${child.name} recent health history: $recent. Give a warm 2-3 sentence health trend summary for the parent. No symbols or emoji."
+            val text = com.lullabyai.app.data.remote.ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 400)
+            _uiState.value = _uiState.value.copy(healthHistoryInsight = text, healthHistoryInsightLoading = false)
+        }
+    }
+
+    fun loadSicknessFollowUpInsight(isThai: Boolean) {
+        val child = _uiState.value.child ?: return
+        val record = _uiState.value.healthRecords.firstOrNull { it.id == _uiState.value.openHealthRecordId } ?: return
+        if (_uiState.value.sicknessFollowUpInsight != null || _uiState.value.sicknessFollowUpInsightLoading) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(sicknessFollowUpInsightLoading = true)
+            val logs = _uiState.value.symptomLogs.take(5).joinToString("; ") { log ->
+                val sym = log.symptoms.filterValues { it != "none" }.entries.joinToString(",") { "${it.key}:${it.value}" }
+                "${log.logDate}:$sym"
+            }.ifBlank { if (isThai) "ยังไม่มีบันทึกรายวัน" else "no day logs yet" }
+            val prompt = if (isThai)
+                "เด็กชื่อ ${child.name} กำลังติดตามอาการ \"${record.title}\" บันทึกรายวัน: $logs สรุปแนวโน้มการหายป่วยสั้นๆ 2-3 ประโยค อบอุ่น ไม่ใช้สัญลักษณ์หรืออิโมจิ"
+            else
+                "Child ${child.name} is tracking \"${record.title}\". Day logs: $logs. Brief 2-3 sentence recovery trend for the parent. Warm, no symbols or emoji."
+            val text = com.lullabyai.app.data.remote.ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 400)
+            _uiState.value = _uiState.value.copy(sicknessFollowUpInsight = text, sicknessFollowUpInsightLoading = false)
+        }
+    }
+
+    fun loadMedicationHistoryInsight(isThai: Boolean) {
+        val child = _uiState.value.child ?: return
+        if (_uiState.value.medicationHistoryInsight != null || _uiState.value.medicationHistoryInsightLoading) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(medicationHistoryInsightLoading = true)
+            val meds = _uiState.value.medicationSchedules.take(6).joinToString(", ") { it.medicineName }
+                .ifBlank { if (isThai) "ยังไม่มีตารางยา" else "no schedules yet" }
+            val prompt = if (isThai)
+                "เด็กชื่อ ${child.name} มียาในตาราง: $meds ให้คำแนะนำสั้นๆ 2 ประโยคเรื่องการให้ยาอย่างสม่ำเสมอ อบอุ่น ไม่ใช้สัญลักษณ์หรืออิโมจิ"
+            else
+                "Child ${child.name} medication schedules: $meds. Two short sentences of adherence tips for the parent. Warm, no symbols or emoji."
+            val text = com.lullabyai.app.data.remote.ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 300)
+            _uiState.value = _uiState.value.copy(medicationHistoryInsight = text, medicationHistoryInsightLoading = false)
+        }
+    }
+
+    fun loadDoctorVisitHistoryInsight(isThai: Boolean) {
+        val child = _uiState.value.child ?: return
+        if (_uiState.value.doctorVisitHistoryInsight != null || _uiState.value.doctorVisitHistoryInsightLoading) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(doctorVisitHistoryInsightLoading = true)
+            val visits = _uiState.value.doctorVisits.take(5).joinToString("; ") {
+                listOfNotNull(it.visitDatetime.take(10).ifBlank { null }, it.facilityName, it.diagnosis ?: it.reason).joinToString(" ")
+            }.ifBlank { if (isThai) "ยังไม่มีประวัติพบแพทย์" else "no visits yet" }
+            val prompt = if (isThai)
+                "เด็กชื่อ ${child.name} ประวัติพบแพทย์: $visits สรุปสั้นๆ 2 ประโยคสำหรับผู้ปกครอง อบอุ่น ไม่ใช้สัญลักษณ์หรืออิโมจิ"
+            else
+                "Child ${child.name} doctor visits: $visits. Two short parent-facing summary sentences. Warm, no symbols or emoji."
+            val text = com.lullabyai.app.data.remote.ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 300)
+            _uiState.value = _uiState.value.copy(doctorVisitHistoryInsight = text, doctorVisitHistoryInsightLoading = false)
+        }
+    }
+
+    /**
+     * #11 — content for the Stitch "AI Suggestions & Guidance" screen. Reuses the app's existing
+     * AI chain (ClaudeClient.generateContent, same as every other insight on this VM); the only
+     * difference is that this one asks for a line-delimited reply so the three suggestion cards,
+     * the tip and the weekly insight can be split out. Parsing is deliberately lenient — a missing
+     * or malformed line just drops that piece instead of failing the whole screen.
+     */
+    fun loadAiGuidance(isThai: Boolean, force: Boolean = false) {
+        val child = _uiState.value.child ?: return
+        if (!force && (_uiState.value.aiGuidance != null || _uiState.value.aiGuidanceLoading)) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(aiGuidanceLoading = true)
+            val st = _uiState.value
+            val months = getAgeMonths()
+            val devPercent = if (st.milestones.isNotEmpty())
+                st.milestones.count { it.isAchieved } * 100 / st.milestones.size else 0
+            val facts = listOfNotNull(
+                "age_months=$months",
+                child.weightKg?.let { "weight_kg=$it" },
+                child.heightCm?.let { "height_cm=$it" },
+                "milestones_achieved_percent=$devPercent",
+                avgSleepHours()?.let { "avg_sleep_hours=%.1f".format(it) },
+                st.allergies.takeIf { it.isNotEmpty() }?.let { "allergies=" + it.joinToString(",") { a -> a.name } },
+                st.chronicConditions.takeIf { it.isNotEmpty() }?.let { "chronic=" + it.joinToString(",") { c -> c.name } },
+                st.healthRecords.take(5).takeIf { it.isNotEmpty() }
+                    ?.let { "recent_health=" + it.joinToString(",") { r -> "${r.title}(${r.status})" } }
+            ).joinToString("; ")
+
+            val format = """
+                HEADLINE|<warm short headline>
+                SUMMARY|<2-3 sentences about this week>
+                CARD|<one of: nutrition, social, motor, sleep, health>|<short title>|<category label>|<1-2 sentence suggestion>
+                CARD|...
+                CARD|...
+                TIP|<one short practical tip>
+                INSIGHT|<one short behavioural insight>
+            """.trimIndent()
+            val prompt = if (isThai)
+                "ข้อมูลเด็กชื่อ ${child.name}: $facts\n" +
+                "เขียนคำแนะนำสำหรับผู้ปกครองเป็นภาษาไทย น้ำเสียงอบอุ่นให้กำลังใจ ห้ามใช้อิโมจิหรือสัญลักษณ์ " +
+                "ต้องมี CARD สามบรรทัดเท่านั้น อ้างอิงข้อมูลจริงด้านบน อย่าแต่งตัวเลขขึ้นมาใหม่ " +
+                "ตอบตามรูปแบบนี้เท่านั้น บรรทัดละหนึ่งรายการ ไม่ต้องมีข้อความอื่น:\n$format"
+            else
+                "Child ${child.name}: $facts\n" +
+                "Write parent-facing guidance in English, warm and encouraging, no emoji or symbols. " +
+                "Exactly three CARD lines. Ground everything in the facts above; do not invent numbers. " +
+                "Reply in this format only, one item per line, nothing else:\n$format"
+
+            val text = com.lullabyai.app.data.remote.ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 900)
+            _uiState.value = _uiState.value.copy(
+                aiGuidance = text?.let { parseAiGuidance(it, isThai) },
+                aiGuidanceLoading = false
+            )
+        }
+    }
+
+    /** Mean nightly sleep (hours) over completed "main" sessions in the last 7 days. Null = no data. */
+    fun avgSleepHours(): Double? {
+        val cutoff = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS)
+        val durations = _uiState.value.sleepLogs.mapNotNull { log ->
+            if (log.sleepType != "main") return@mapNotNull null
+            val start = com.lullabyai.app.util.TimeUtils.parseInstant(log.startTime) ?: return@mapNotNull null
+            val end = com.lullabyai.app.util.TimeUtils.parseInstant(log.endTime) ?: return@mapNotNull null
+            if (start.isBefore(cutoff)) return@mapNotNull null
+            val minutes = java.time.temporal.ChronoUnit.MINUTES.between(start, end)
+            if (minutes <= 0) null else minutes / 60.0
+        }
+        return if (durations.isEmpty()) null else durations.average()
+    }
+
+    private fun parseAiGuidance(raw: String, isThai: Boolean): AiGuidance {
+        val lines = raw.lines().map { it.trim() }.filter { it.isNotBlank() }
+        fun field(tag: String) = lines.firstOrNull { it.startsWith("$tag|", true) }
+            ?.substringAfter('|')?.trim()?.takeIf { it.isNotBlank() }
+        val cards = lines.filter { it.startsWith("CARD|", true) }.mapNotNull { line ->
+            val p = line.split('|').drop(1).map { it.trim() }
+            if (p.size < 4) null
+            else AiGuidanceCard(iconKey = p[0].lowercase(), title = p[1], category = p[2], body = p[3])
+        }
+        // If the model ignored the format entirely, still show its prose rather than an empty screen.
+        val fallback = lines.filterNot { it.contains('|') }.joinToString(" ")
+        return AiGuidance(
+            headline = field("HEADLINE") ?: (if (isThai) "คำแนะนำสำหรับวันนี้" else "Guidance for today"),
+            summary = field("SUMMARY") ?: fallback,
+            cards = cards,
+            tip = field("TIP"),
+            insight = field("INSIGHT")
+        )
     }
 
     // --- Doctor visits ("บันทึกการหาหมอ") -------------------------------------------------------
@@ -1245,9 +1947,44 @@ class ChildViewModel : ViewModel() {
     }
 
     /** Delete a vaccine record (called after the user confirms). */
+    /**
+     * Attach an ใบรับรองวัคซีน to a dose (#10): upload the bytes, then store the returned bucket
+     * path on the row. Only flips the row once the upload actually succeeded, so a failed upload
+     * can't leave a record claiming a certificate that isn't there.
+     */
+    fun uploadVaccineCertificate(
+        record: VaccineRecord,
+        bytes: ByteArray,
+        ext: String,
+        onDone: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch onDone(false)
+            healthRepo.uploadVaccineCertificate(childId, record.id, bytes, ext)
+                .onSuccess { path ->
+                    healthRepo.registerVaccineCertificateInVault(
+                        childId = childId,
+                        filePath = path,
+                        vaccineName = record.vaccineName,
+                        fileSizeBytes = bytes.size
+                    )
+                    healthRepo.updateVaccineRecord(record.copy(certificateUrl = path))
+                        .onSuccess {
+                            healthRepo.getVaccineRecords(childId).onSuccess { list ->
+                                _uiState.value = _uiState.value.copy(vaccines = list)
+                            }
+                            onDone(true)
+                        }
+                        .onFailure { onDone(false) }
+                }
+                .onFailure { onDone(false) }
+        }
+    }
+
     fun deleteVaccine(record: VaccineRecord) {
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
+            if (!ensureChildOwner(childId)) return@launch
             healthRepo.deleteVaccineRecord(record.id).onSuccess {
                 healthRepo.getVaccineRecords(childId).onSuccess {
                     _uiState.value = _uiState.value.copy(vaccines = it)
@@ -1258,6 +1995,34 @@ class ChildViewModel : ViewModel() {
                     "ลบ ${record.vaccineName} ออกจากสมุดวัคซีนแล้ว"
                 )
             }
+        }
+    }
+
+    /**
+     * Mark the doses the parent confirmed after scanning a สมุดวัคซีน (#10).
+     *
+     * Only touches rows whose name the parent actually ticked — OCR proposes, the parent decides.
+     * Stamps `source = "moph_book"` so the book and the PDF can show where the record came from.
+     * Uses the full-row update (not updateVaccineStatus) because that helper cannot write `source`.
+     */
+    fun applyScannedVaccines(names: Set<String>, onDone: (Int) -> Unit = {}) {
+        viewModelScope.launch {
+            val childId = _uiState.value.child?.id ?: return@launch onDone(0)
+            val today = java.time.LocalDate.now().toString()
+            var applied = 0
+            _uiState.value.vaccines.filter { it.vaccineName in names }.forEach { rec ->
+                healthRepo.updateVaccineRecord(
+                    rec.copy(
+                        status = "completed",
+                        dateGiven = rec.dateGiven ?: today,
+                        source = "moph_book"
+                    )
+                ).onSuccess { applied++ }
+            }
+            healthRepo.getVaccineRecords(childId).onSuccess {
+                _uiState.value = _uiState.value.copy(vaccines = it)
+            }
+            onDone(applied)
         }
     }
 

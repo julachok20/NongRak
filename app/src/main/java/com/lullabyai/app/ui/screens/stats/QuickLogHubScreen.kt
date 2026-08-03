@@ -27,6 +27,7 @@ import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.model.HealthRecord
 import com.lullabyai.app.data.model.SleepLog
 import com.lullabyai.app.data.repository.NutritionRepository
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.components.AppBottomNav
 import com.lullabyai.app.ui.components.BottomTab
 import com.lullabyai.app.ui.localization.LocalStrings
@@ -130,22 +131,21 @@ fun QuickLogHubScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ศูนย์บันทึกด่วน" else "Quick Log Hub", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ศูนย์บันทึกด่วน" else "Quick Log Hub",
+                onBack = { navController.popBackStack() },
                 actions = {
                     TextButton(onClick = { navController.navigate(Screen.SmartTrends.route) }) {
                         Icon(Icons.Filled.Insights, null, tint = Primary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(if (s.isThai) "แนวโน้มอัจฉริยะ" else "Smart Trends", color = Primary, fontWeight = FontWeight.Bold)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                }
             )
         },
         bottomBar = {
             AppBottomNav(
-                selected = BottomTab.STATS,
+                selected = BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
@@ -215,19 +215,11 @@ fun QuickLogHubScreen(
             }
 
             item {
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Primary)) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Text(if (s.isThai) "คำแนะนำจาก AI" else "AI Tip", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                        if (chatState.quickTip != null) {
-                            Text(chatState.quickTip!!, style = MaterialTheme.typography.bodyMedium, color = Color.White)
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color.White)
-                        }
-                    }
-                }
+                AIInsightCard(
+                    text = chatState.quickTip.orEmpty(),
+                    isLoading = chatState.quickTip == null,
+                    title = if (s.isThai) "คำแนะนำจาก NongRak AI" else "NongRak AI Tip"
+                )
             }
 
             item {

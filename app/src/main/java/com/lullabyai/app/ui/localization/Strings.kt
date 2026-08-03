@@ -207,7 +207,7 @@ val ThaiStrings = Strings(
     tabDevelopment = "พัฒนาการ",
     tabHealth = "สุขภาพ",
     tabVaccine = "สมุดวัคซีน",
-    tabRisk = "ความเสี่ยงโรค"
+    tabRisk = "โรคประจำตัว"
 )
 
 val EnglishStrings = Strings(
@@ -305,7 +305,7 @@ val EnglishStrings = Strings(
     tabDevelopment = "Development",
     tabHealth = "Health",
     tabVaccine = "Vaccine Book",
-    tabRisk = "Disease Risk"
+    tabRisk = "Chronic Conditions"
 )
 
 val LocalStrings = staticCompositionLocalOf { ThaiStrings }

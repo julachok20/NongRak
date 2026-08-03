@@ -21,6 +21,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
 
@@ -32,10 +33,9 @@ fun RecipeDetailScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit)
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isThai) "วิธีทำอาหาร" else "Recipe", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (isThai) "วิธีทำอาหาร" else "Recipe",
+                onBack = onBack
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -52,6 +52,7 @@ fun RecipeDetailScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit)
                 }
             }
             else -> {
+                val nutrientTags = nutrientTagSymbols(listOf(r.nutritionNote, r.title))
                 Column(
                     modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -63,11 +64,17 @@ fun RecipeDetailScreen(vm: NutritionViewModel, lang: String, onBack: () -> Unit)
                         InfoChip(Icons.Filled.ChildCare, r.ageRange)
                         InfoChip(Icons.Filled.Groups, r.servings)
                     }
-                    if (r.nutritionNote.isNotBlank()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SectionTitle(if (isThai) "คุณค่าทางโภชนาการ" else "Nutrition note")
-                            Text(r.nutritionNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (nutrientTags.isNotEmpty()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            nutrientTags.forEach { tag ->
+                                Surface(shape = CircleShape, color = Primary.copy(0.12f)) {
+                                    Text(tag, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Primary)
+                                }
+                            }
                         }
+                    }
+                    if (r.nutritionNote.isNotBlank()) {
+                        AIInsightCard(text = r.nutritionNote)
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         SectionTitle(if (isThai) "ส่วนผสม" else "Ingredients")

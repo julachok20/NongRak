@@ -29,6 +29,7 @@ import com.lullabyai.app.data.model.MedicalDocument
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.VisitReasonTemplates
 import com.lullabyai.app.viewmodel.ChildViewModel
 
 /** "รายละเอียดการพบแพทย์" — read view of one doctor_visits row (state.openDoctorVisitId, set by
@@ -45,17 +46,16 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "รายละเอียดการพบแพทย์" else "Visit Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "รายละเอียดการพบแพทย์" else "Visit Details",
+                onBack = onBack,
                 actions = {
                     TextButton(onClick = { navController.navigate(Screen.RecordDoctorVisit.route) }, enabled = visit != null) {
                         Icon(Icons.Filled.Edit, null, tint = Primary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(if (s.isThai) "แก้ไข" else "Edit", color = Primary, fontWeight = FontWeight.Bold)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -130,9 +130,10 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
             }
 
             if (!visit.symptoms.isNullOrEmpty()) {
+                val symptoms = visit.symptoms.orEmpty()
                 DetailSection(if (s.isThai) "อาการ" else "Symptoms") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        visit.symptoms.forEach { sym ->
+                        symptoms.forEach { sym ->
                             Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
                                 Text(sym, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary)
                             }
@@ -145,14 +146,36 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
                 DetailSection(if (s.isThai) "แผนการรักษาและยา" else "Treatment & medication") { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
 
-            visit.doctorAdvice?.takeIf { it.isNotBlank() }?.let {
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.TipsAndUpdates, null, tint = Primary, modifier = Modifier.size(18.dp))
-                            Text(if (s.isThai) "คำแนะนำจากคุณหมอ" else "Doctor's advice", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Primary)
+            visit.doctorAdvice?.takeIf { it.isNotBlank() }?.let { adviceRaw ->
+                val parsed = VisitReasonTemplates.parseVaccineAdvice(adviceRaw)
+                if (parsed != null) {
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Tertiary.copy(0.10f))) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Filled.Vaccines, null, tint = Tertiary, modifier = Modifier.size(20.dp))
+                                Text(
+                                    if (s.isThai) "สรุปหลังฉีดวัคซีน" else "Post-vaccination summary",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Tertiary
+                                )
+                            }
+                            parsed.vaccineName?.let { DetailLine(if (s.isThai) "วัคซีน" else "Vaccine", it) }
+                            parsed.lot?.let { DetailLine(if (s.isThai) "Lot" else "Lot", it) }
+                            parsed.site?.let { DetailLine(if (s.isThai) "ตำแหน่งฉีด" else "Site", it) }
+                            parsed.reaction?.let { DetailLine(if (s.isThai) "อาการหลังฉีด" else "Reaction", it) }
+                            parsed.advice?.let { DetailLine(if (s.isThai) "คำแนะนำ" else "Advice", it) }
                         }
-                        Text(it, style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else {
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Filled.TipsAndUpdates, null, tint = Primary, modifier = Modifier.size(18.dp))
+                                Text(if (s.isThai) "คำแนะนำจากคุณหมอ" else "Doctor's advice", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Primary)
+                            }
+                            Text(adviceRaw, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }
@@ -208,6 +231,14 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
 
             Spacer(Modifier.height(16.dp))
         }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Outline)
+        Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

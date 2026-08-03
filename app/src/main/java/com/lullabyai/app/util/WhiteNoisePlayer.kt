@@ -13,32 +13,31 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * [streamUrl] tracks are real ambient recordings from Mixkit (mixkit.co/license/ — free for
- * commercial use, no attribution or API key required, direct-linkable). The first pick (2026-07-04)
- * matched tracks by category name alone ("white-noise", "heartbeat", "ocean") without checking
- * actual titles — Mixkit's "white-noise" category turned out to be all sci-fi/glitch/radio-static
- * effects, "heartbeat" was almost entirely horror-movie jump-scare stingers, and the "ocean" pick
- * was a generic "wind, cold interior" track, not waves. Re-picked 2026-07-04 by pulling each
- * candidate's real <h2 class="item-grid-card__title"> text before choosing, not just its category.
+ * Professional multi-sound sleep library. [streamUrl] tracks are Mixkit ambient loops
+ * (mixkit.co/license/ — free commercial use). Empty URL = always-on procedural synth so the
+ * player never hard-fails offline. Verified titles were re-checked historically for RAIN/WOMB/
+ * DEEP_SLEEP/RELAX; newer tracks prefer procedural fallbacks when a Mixkit ID is uncertain.
  */
-enum class NoiseTrack(val labelTh: String, val labelEn: String, val streamUrl: String) {
-    RAIN("เสียงฝน", "Rain", "https://assets.mixkit.co/active_storage/sfx/1225/1225-preview.mp3"), // "Forest rain loop"
-    WOMB("ในครรภ์", "In Womb", "https://assets.mixkit.co/active_storage/sfx/496/496-preview.mp3"), // "Inside a beating heart"
-    DEEP_SLEEP("หลับสนิท", "Deep Sleep", "https://assets.mixkit.co/active_storage/sfx/3126/3126-preview.mp3"), // "Water flowing ambience loop"
-    RELAX("ผ่อนคลาย", "Relax", "https://assets.mixkit.co/active_storage/sfx/1196/1196-preview.mp3"), // "Sea waves loop"
-    // Deliberately no streamUrl: a real Mixkit lullaby track exists ("Baby toy music box lullaby")
-    // but its direct asset URL isn't recoverable without a browser (the download link isn't in the
-    // static page), and guessing a numeric sfx ID is exactly the mistake the note above already
-    // warns about. Synthesized instead — see LULLABY branch in startProceduralFallback() — so this
-    // track is always a real melody (a public-domain nursery tune), never a network guess.
-    LULLABY("เพลงกล่อมเด็ก", "Lullaby", "")
+enum class NoiseTrack(
+    val labelTh: String,
+    val labelEn: String,
+    val streamUrl: String,
+    val iconHint: String = "waves"
+) {
+    RAIN("เสียงฝน", "Rain", "https://assets.mixkit.co/active_storage/sfx/1225/1225-preview.mp3", "rainy"),
+    WOMB("ในครรภ์", "In Womb", "https://assets.mixkit.co/active_storage/sfx/496/496-preview.mp3", "favorite"),
+    DEEP_SLEEP("หลับสนิท", "Deep Sleep", "https://assets.mixkit.co/active_storage/sfx/3126/3126-preview.mp3", "water_drop"),
+    RELAX("คลื่นทะเล", "Ocean", "https://assets.mixkit.co/active_storage/sfx/1196/1196-preview.mp3", "waves"),
+    FAN("พัดลม", "Fan", "", "mode_fan"),
+    WIND("สายลม", "Soft Wind", "", "air"),
+    FIRE("เตาผิง", "Fireplace", "", "local_fire_department"),
+    BIRDS("นกยามเช้า", "Birds", "", "flutter"),
+    THUNDER("ฝนฟ้าคะนอง", "Thunder Rain", "", "thunderstorm"),
+    LULLABY("เพลงกล่อมเด็ก", "Lullaby", "", "music_note")
 }
 
 /**
- * Streams real ambient recordings ([NoiseTrack.streamUrl]) and loops them. If the stream can't be
- * reached (offline, blocked network, dead link) it automatically falls back to the original
- * procedurally-synthesized noise so sleep sounds still work without internet — a baby-sleep
- * feature that hard-fails with no signal would be worse than a rougher on-device substitute.
+ * Streams ambient recordings and loops them. Offline / dead-link → procedural synth per track.
  */
 class WhiteNoisePlayer {
     private val sampleRate = 44100
@@ -51,11 +50,6 @@ class WhiteNoisePlayer {
     private val handler = Handler(Looper.getMainLooper())
     private var tickRunnable: Runnable? = null
 
-    /** Bumped on every play() so a stale async callback from a superseded MediaPlayer (e.g. an
-     *  error that fires after the user already switched tracks) can't hijack the current track
-     *  into the fallback synth — confirmed live on-device: switching tracks could trigger the old
-     *  player's error listener, which reads the (already-updated) selected track and starts the
-     *  procedural fallback for it, silently replacing the real stream that would have worked. */
     @Volatile private var generation = 0
 
     private val _isPlaying = MutableStateFlow(false)
@@ -64,9 +58,15 @@ class WhiteNoisePlayer {
     val elapsedSeconds: StateFlow<Int> = _elapsedSeconds
     private val _selectedTrack = MutableStateFlow(NoiseTrack.RAIN)
     val selectedTrack: StateFlow<NoiseTrack> = _selectedTrack
+    private val _volume = MutableStateFlow(0.7f)
+    val volume: StateFlow<Float> = _volume
+    private val _durationSeconds = MutableStateFlow(30 * 60)
+    val durationSecondsFlow: StateFlow<Int> = _durationSeconds
 
-    /** Auto-stops after this many seconds (mockup showed a 30-minute sleep-timer style duration). */
-    var durationSeconds: Int = 30 * 60
+    /** Auto-stops after this many seconds (sleep timer). */
+    var durationSeconds: Int
+        get() = _durationSeconds.value
+        set(value) { _durationSeconds.value = value.coerceAtLeast(60) }
 
     fun selectTrack(t: NoiseTrack) {
         _selectedTrack.value = t
@@ -74,6 +74,30 @@ class WhiteNoisePlayer {
             stopInternal()
             play()
         }
+    }
+
+    fun nextTrack() {
+        val all = NoiseTrack.entries
+        val i = all.indexOf(_selectedTrack.value)
+        selectTrack(all[(i + 1) % all.size])
+    }
+
+    fun previousTrack() {
+        val all = NoiseTrack.entries
+        val i = all.indexOf(_selectedTrack.value)
+        selectTrack(all[(i - 1 + all.size) % all.size])
+    }
+
+    fun setVolume(v: Float) {
+        val clamped = v.coerceIn(0f, 1f)
+        _volume.value = clamped
+        mediaPlayer?.setVolume(clamped, clamped)
+        audioTrack?.setVolume(clamped)
+    }
+
+    fun setTimerMinutes(minutes: Int) {
+        durationSeconds = minutes.coerceIn(5, 120) * 60
+        if (_elapsedSeconds.value >= durationSeconds) pause()
     }
 
     fun play() {
@@ -84,6 +108,7 @@ class WhiteNoisePlayer {
         val myGen = ++generation
         startTicker()
         if (_selectedTrack.value.streamUrl.isBlank()) { startProceduralFallback(myGen); return }
+        val vol = _volume.value
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
@@ -92,8 +117,13 @@ class WhiteNoisePlayer {
                     .build()
             )
             isLooping = true
+            setVolume(vol, vol)
             setOnPreparedListener {
-                if (myGen == generation && running) { it.start(); _isPlaying.value = true }
+                if (myGen == generation && running) {
+                    it.setVolume(_volume.value, _volume.value)
+                    it.start()
+                    _isPlaying.value = true
+                }
             }
             setOnErrorListener { _, _, _ -> if (myGen == generation && running) startProceduralFallback(myGen); true }
         }
@@ -104,9 +134,6 @@ class WhiteNoisePlayer {
         }.onFailure { if (myGen == generation && running) startProceduralFallback(myGen) }
     }
 
-    /** Real internet track unreachable — synthesize the same track live instead of failing silently.
-     *  [gen] must still match the current generation (see [generation]'s doc) or this is a stale
-     *  callback from a track the user already switched away from, and is ignored. */
     private fun startProceduralFallback(gen: Int) {
         if (gen != generation || !running) return
         if (usingFallback) return
@@ -135,6 +162,7 @@ class WhiteNoisePlayer {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         audioTrack = player
+        player.setVolume(_volume.value)
         player.play()
 
         genThread = thread(start = true, name = "sleep-noise-gen") {
@@ -142,8 +170,7 @@ class WhiteNoisePlayer {
             var highPassPrevIn = 0f
             var highPassPrevOut = 0f
             var phase = 0.0
-            // "Ah! vous dirai-je, Maman" (Twinkle Twinkle Little Star) opening phrase — 18th-century
-            // French folk melody, public domain. Rests (0f) are silent beats between phrases.
+            var cracklePhase = 0.0
             val melody = floatArrayOf(
                 261.63f, 261.63f, 392.00f, 392.00f, 440.00f, 440.00f, 392.00f, 0f,
                 349.23f, 349.23f, 329.63f, 329.63f, 293.66f, 293.66f, 261.63f, 0f
@@ -155,17 +182,20 @@ class WhiteNoisePlayer {
             val chunk = ShortArray(bufSize / 2)
             while (running && usingFallback && gen == generation) {
                 val current = _selectedTrack.value
+                val gain = _volume.value
                 for (i in chunk.indices) {
                     val white = Random.nextFloat() * 2f - 1f
                     val sample: Float = when (current) {
-                        NoiseTrack.RAIN -> {
-                            // One-pole high-pass: cuts rumble, keeps hiss — reads as rainfall.
+                        NoiseTrack.RAIN, NoiseTrack.THUNDER -> {
                             val hp = 0.95f * (highPassPrevOut + white - highPassPrevIn)
                             highPassPrevIn = white; highPassPrevOut = hp
-                            hp * 0.5f
+                            var out = hp * 0.5f
+                            if (current == NoiseTrack.THUNDER && Random.nextFloat() < 0.0008f) {
+                                out += (Random.nextFloat() * 2f - 1f) * 0.7f
+                            }
+                            out
                         }
                         NoiseTrack.WOMB -> {
-                            // Low-pass rumble + slow amplitude pulse ~= heartbeat/whoosh.
                             lowPassState += 0.05f * (white - lowPassState)
                             val heartbeat = (sin(phase) * 0.5 + 0.5).toFloat()
                             lowPassState * (0.4f + 0.6f * heartbeat)
@@ -174,17 +204,41 @@ class WhiteNoisePlayer {
                             lowPassState += 0.03f * (white - lowPassState)
                             lowPassState * 0.6f
                         }
-                        NoiseTrack.RELAX -> {
+                        NoiseTrack.RELAX, NoiseTrack.WIND -> {
                             lowPassState += 0.08f * (white - lowPassState)
-                            lowPassState * 0.5f
+                            val swell = (sin(phase * 0.15) * 0.3 + 0.7).toFloat()
+                            lowPassState * 0.5f * swell
+                        }
+                        NoiseTrack.FAN -> {
+                            // Narrow-band whir + soft broadband hiss.
+                            val whir = sin(phase * 45).toFloat() * 0.15f
+                            lowPassState += 0.12f * (white - lowPassState)
+                            whir + lowPassState * 0.35f
+                        }
+                        NoiseTrack.FIRE -> {
+                            lowPassState += 0.2f * (white - lowPassState)
+                            val crackle = if (Random.nextFloat() < 0.01f) white * 0.8f else lowPassState * 0.4f
+                            cracklePhase += 0.01
+                            crackle * (0.7f + 0.3f * sin(cracklePhase).toFloat())
+                        }
+                        NoiseTrack.BIRDS -> {
+                            // Occasional soft chirp tones over quiet bed.
+                            lowPassState += 0.02f * (white - lowPassState)
+                            val chirp = if (Random.nextFloat() < 0.002f) {
+                                sin(phase * (800 + Random.nextFloat() * 1200)).toFloat() * 0.25f
+                            } else 0f
+                            lowPassState * 0.15f + chirp
                         }
                         NoiseTrack.LULLABY -> {
                             val freq = melody[melodyIndex]
                             val note = if (freq <= 0f) 0f else {
                                 val raw = sin(melodyPhase).toFloat()
-                                // Soft attack/release envelope per note so notes don't click.
                                 val t = melodySamplePos.toFloat() / noteSamples
-                                val env = when { t < 0.1f -> t / 0.1f; t > 0.8f -> ((1f - t) / 0.2f).coerceAtLeast(0f); else -> 1f }
+                                val env = when {
+                                    t < 0.1f -> t / 0.1f
+                                    t > 0.8f -> ((1f - t) / 0.2f).coerceAtLeast(0f)
+                                    else -> 1f
+                                }
                                 raw * env * 0.35f
                             }
                             melodyPhase += 2 * Math.PI * freq / sampleRate
@@ -197,7 +251,7 @@ class WhiteNoisePlayer {
                             note
                         }
                     }
-                    chunk[i] = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE * 0.3f).toInt().toShort()
+                    chunk[i] = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE * 0.35f * gain).toInt().toShort()
                     phase += 2 * Math.PI * 1.2 / sampleRate
                     if (phase > 2 * Math.PI) phase -= 2 * Math.PI
                 }
@@ -233,9 +287,6 @@ class WhiteNoisePlayer {
         running = false
         usingFallback = false
         stopTicker()
-        // release() alone is safe from any MediaPlayer state per the Android docs — stop() is not
-        // (e.g. calling it before a still-preparing player has started throws natively), and that
-        // throw used to skip the release() right after it, leaking the player.
         runCatching { mediaPlayer?.release() }
         mediaPlayer = null
         genThread?.join(200)
@@ -243,9 +294,6 @@ class WhiteNoisePlayer {
         audioTrack = null
     }
 
-    /** There's nothing to "resume" mid-position for the fallback synth; a real stream just re-buffers
-     *  from the start on the next play() since these are short looping ambience tracks, not narration.
-     *  Fully releases the player (rather than MediaPlayer.pause()) so play() never leaks a stale instance. */
     fun pause() {
         stopInternal()
         _isPlaying.value = false

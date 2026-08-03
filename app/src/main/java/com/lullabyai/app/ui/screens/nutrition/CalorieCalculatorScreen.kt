@@ -28,6 +28,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.NavController
+import com.lullabyai.app.data.model.ExerciseLog
+import com.lullabyai.app.data.model.FoodLog
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
@@ -45,7 +48,10 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
     var showExercise by remember { mutableStateOf(false) }
     var exName by remember { mutableStateOf("") }
     var exMinutes by remember { mutableStateOf("") }
+    var editingFood by remember { mutableStateOf<FoodLog?>(null) }
+    var editingExercise by remember { mutableStateOf<ExerciseLog?>(null) }
     LaunchedEffect(Unit) { if (ui.child == null) vm.load(lang) }
+    LaunchedEffect(ui.foods, ui.todayMilkMl, lang) { vm.loadMacros(lang) }
 
     LaunchedEffect(ui.photoAddFailed) {
         if (ui.photoAddFailed) {
@@ -77,10 +83,10 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isThai) "เครื่องคำนวณแคลอรี่" else "Calorie Calculator", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (isThai) "เครื่องคำนวณแคลอรี่" else "Calorie Calculator",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
@@ -91,7 +97,7 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
+                onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -100,6 +106,11 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            AIInsightCard(
+                text = vm.loggingInsightText(isThai),
+                isLoading = ui.macrosLoading && ui.macros == null
+            )
+
             // Total kcal card
             Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
                 Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -207,12 +218,15 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
                                     Icon(Icons.Filled.Restaurant, null, tint = Primary, modifier = Modifier.size(20.dp))
                                 }
                                 Column(Modifier.weight(1f)) {
+                                    Text(displayMealLabel(f, isThai), style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
                                     Text(f.itemName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                     val time = com.lullabyai.app.util.TimeUtils.localTime(f.createdAt) ?: ""
                                     Text((if (time.isNotBlank()) "$time " + (if (isThai) "น. • " else "• ") else "") + (if (isThai) "ประมาณ " else "approx. ") + "${f.calories ?: "-"} kcal", style = MaterialTheme.typography.labelSmall, color = Outline)
                                 }
-                                IconButton(onClick = { navController.navigate(Screen.EditFoodEntries.route) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.Edit, null, tint = Primary, modifier = Modifier.size(18.dp)) }
-                                IconButton(onClick = { vm.deleteFood(f.id) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.DeleteOutline, null, tint = Error, modifier = Modifier.size(18.dp)) }
+                                IconButton(onClick = { editingFood = f }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.Edit, null, tint = Primary, modifier = Modifier.size(18.dp)) }
+                                if (ui.isChildOwner) {
+                                    IconButton(onClick = { vm.deleteFood(f.id) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.DeleteOutline, null, tint = Error, modifier = Modifier.size(18.dp)) }
+                                }
                             }
                         }
                     }
@@ -235,7 +249,10 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
                                         Text(e.activityName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                         Text("${e.durationMin ?: "-"} " + (if (isThai) "นาที" else "min") + (e.caloriesBurned?.let { " • -$it kcal" } ?: ""), style = MaterialTheme.typography.labelSmall, color = Outline)
                                     }
-                                    IconButton(onClick = { vm.deleteExercise(e.id) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.DeleteOutline, null, tint = Error, modifier = Modifier.size(18.dp)) }
+                                    IconButton(onClick = { editingExercise = e }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.Edit, null, tint = Primary, modifier = Modifier.size(18.dp)) }
+                                    if (ui.isChildOwner) {
+                                        IconButton(onClick = { vm.deleteExercise(e.id) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.DeleteOutline, null, tint = Error, modifier = Modifier.size(18.dp)) }
+                                    }
                                 }
                             }
                         }
@@ -281,5 +298,56 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
             }
             Spacer(Modifier.height(8.dp))
         }
+    }
+
+    editingFood?.let { target ->
+        var name by remember(target.id) { mutableStateOf(target.itemName) }
+        var kcalText by remember(target.id) { mutableStateOf(target.calories?.toString() ?: "") }
+        AlertDialog(
+            onDismissRequest = { editingFood = null },
+            title = { Text(if (isThai) "แก้ไขรายการอาหาร" else "Edit food", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(if (isThai) "ชื่ออาหาร" else "Food name") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                    OutlinedTextField(value = kcalText, onValueChange = { kcalText = it.filter { c -> c.isDigit() } }, singleLine = true, label = { Text("kcal") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (name.isNotBlank()) vm.editFood(target.id, name)
+                    kcalText.toIntOrNull()?.let { vm.editFoodCalories(target.id, it) }
+                    editingFood = null
+                }) { Text(if (isThai) "ยืนยัน" else "Confirm", color = Primary, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { editingFood = null }) { Text(if (isThai) "ยกเลิก" else "Cancel") } }
+        )
+    }
+
+    editingExercise?.let { target ->
+        var name by remember(target.id) { mutableStateOf(target.activityName) }
+        var mins by remember(target.id) { mutableStateOf(target.durationMin?.toString() ?: "") }
+        AlertDialog(
+            onDismissRequest = { editingExercise = null },
+            title = { Text(if (isThai) "แก้ไขกิจกรรม" else "Edit activity", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(if (isThai) "ชื่อกิจกรรม" else "Activity") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                    OutlinedTextField(
+                        value = mins, onValueChange = { mins = it.filter { c -> c.isDigit() } }, singleLine = true,
+                        label = { Text(if (isThai) "เวลา (นาที)" else "Minutes") },
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val m = mins.toIntOrNull() ?: 0
+                    if (name.isNotBlank() && m > 0) vm.editExercise(target.id, name, m, lang)
+                    editingExercise = null
+                }) { Text(if (isThai) "ยืนยัน" else "Confirm", color = Primary, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { editingExercise = null }) { Text(if (isThai) "ยกเลิก" else "Cancel") } }
+        )
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.MedicationSchedule
 import com.lullabyai.app.data.repository.MedicationRepository
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
@@ -42,18 +43,21 @@ fun FullMedicationHistoryScreen(childViewModel: ChildViewModel, navController: N
     var filter by remember { mutableStateOf(MedFilter.ALL) }
     var query by remember { mutableStateOf("") }
 
+    val state by childViewModel.uiState.collectAsState()
     LaunchedEffect(childId) {
         val id = childId ?: return@LaunchedEffect
         loading = true
         schedules = MedicationRepository().getSchedules(id).getOrDefault(emptyList())
         loading = false
+        childViewModel.loadMedicationHistoryInsight(s.isThai)
     }
 
     val today = remember { LocalDate.now() }
     fun isActive(sch: MedicationSchedule): Boolean {
         val end = sch.endDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val numDoses = sch.numDoses
         return if (sch.scheduleType == "date_range") end == null || !end.isBefore(today)
-        else (sch.numDoses == null || sch.dosesTaken < sch.numDoses)
+        else (numDoses == null || sch.dosesTaken < numDoses)
     }
 
     val filtered = remember(schedules, filter, query) {
@@ -75,10 +79,15 @@ fun FullMedicationHistoryScreen(childViewModel: ChildViewModel, navController: N
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติการใช้ยาทั้งหมด" else "Full Medication History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติการใช้ยาทั้งหมด" else "Full Medication History",
+                onBack = onBack,
+                navController = navController,
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.PdfExport.route) }) {
+                        Icon(Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก" else "Export", tint = Primary)
+                    }
+                }
             )
         },
         bottomBar = {
@@ -122,6 +131,14 @@ fun FullMedicationHistoryScreen(childViewModel: ChildViewModel, navController: N
                         }
                     }
                 }
+            }
+
+            item {
+                AIInsightCard(
+                    text = state.medicationHistoryInsight
+                        ?: if (s.isThai) "กำลังวิเคราะห์ประวัติยา..." else "Analyzing medication history...",
+                    isLoading = state.medicationHistoryInsightLoading || state.medicationHistoryInsight == null
+                )
             }
 
             if (loading) {

@@ -1,7 +1,5 @@
 package com.lullabyai.app.ui.screens.onboarding
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,10 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import android.provider.OpenableColumns
 import com.lullabyai.app.data.VaccineSetupCatalog
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
@@ -36,7 +32,6 @@ fun OnboardingStep3Screen(
     onBack: () -> Unit
 ) {
     val state by onboardingViewModel.uiState.collectAsState()
-    val context = LocalContext.current
     var hasMedication by remember { mutableStateOf(state.hasTakenMedication) }
     var medDetails by remember { mutableStateOf(state.medicationDetails) }
     var selectedVaccines by remember {
@@ -51,23 +46,6 @@ fun OnboardingStep3Screen(
     var showAllergyError by remember { mutableStateOf(false) }
     val allergyValid = state.noKnownAllergies || state.allergyEntries.isNotEmpty()
 
-    // Document picker (PDF/JPG/PNG). Reads bytes via the content resolver and holds them in the
-    // onboarding state; they upload to the private medical-docs bucket when onboarding completes.
-    val docLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            runCatching {
-                val cr = context.contentResolver
-                var name = "document"
-                cr.query(it, null, null, null, null)?.use { c ->
-                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0 && c.moveToFirst()) name = c.getString(idx) ?: name
-                }
-                val mime = cr.getType(it)
-                val bytes = cr.openInputStream(it)?.use { s -> s.readBytes() }
-                if (bytes != null && bytes.size <= 10 * 1024 * 1024) onboardingViewModel.addPendingDoc(name, mime, bytes)
-            }
-        }
-    }
     var customVaccines by remember { mutableStateOf(state.selectedVaccines.filterNot { it in VaccineSetupCatalog.ALL_DB_NAMES }) }
     var customInput by remember { mutableStateOf("") }
 
@@ -404,31 +382,19 @@ fun OnboardingStep3Screen(
                     )
                 }
 
-                // Medical documents (uploaded but not clinically reviewed)
+                // Ministry vaccine book (optional)
                 MedicalCard {
-                    Text("Medical documents (optional)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Text("เอกสารทางการแพทย์ (ไม่จำเป็น) — อัปโหลดเก็บไว้ ระบบไม่ได้ตรวจสอบทางการแพทย์", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = { docLauncher.launch("*/*") },
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Filled.UploadFile, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("อัปโหลดไฟล์ (PDF, JPG, PNG)")
-                    }
-                    state.pendingDocs.forEachIndexed { i, d ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(Icons.Filled.Description, null, tint = Primary, modifier = Modifier.size(18.dp))
-                            Text(d.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                            IconButton(onClick = { onboardingViewModel.removePendingDoc(i) }) {
-                                Icon(Icons.Filled.Close, "ลบ", tint = Error, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    }
+                    OnboardingVaccineBookSection(
+                        onboardingViewModel = onboardingViewModel,
+                        pendingCount = state.pendingDocs.size,
+                        enabled = !state.isLoading
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OnboardingVaccineBookPendingList(
+                        onboardingViewModel = onboardingViewModel,
+                        pendingDocs = state.pendingDocs,
+                        enabled = !state.isLoading
+                    )
                 }
 
                 Card(

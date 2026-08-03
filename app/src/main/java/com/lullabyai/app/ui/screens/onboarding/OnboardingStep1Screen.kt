@@ -1,5 +1,6 @@
 package com.lullabyai.app.ui.screens.onboarding
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +35,8 @@ fun OnboardingStep1Screen(
     var ethnicity by remember { mutableStateOf(state.ethnicity) }
     var religion by remember { mutableStateOf(state.religion) }
     // Allergies + notes are collected later (Step 3: list-based allergies & notes), not here.
+
+    BackHandler(onBack = onBack)
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(

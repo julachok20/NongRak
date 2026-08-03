@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.MedicationDose
 import com.lullabyai.app.data.model.MedicationSchedule
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
@@ -28,6 +29,8 @@ import com.lullabyai.app.viewmodel.ChildViewModel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+
+private enum class TodayDoseFilter { ALL, PENDING, TAKEN }
 
 @Composable
 fun MedicationHistoryScreen(
@@ -39,8 +42,13 @@ fun MedicationHistoryScreen(
     val state by childViewModel.uiState.collectAsState()
     val schedules = state.medicationSchedules.associateBy { it.id }
     val doses = state.medicationDoses
+    var query by remember { mutableStateOf("") }
+    var doseFilter by remember { mutableStateOf(TodayDoseFilter.ALL) }
 
-    LaunchedEffect(state.child?.id) { childViewModel.loadMedications() }
+    LaunchedEffect(state.child?.id) {
+        childViewModel.loadMedications()
+        childViewModel.loadMedicationHistoryInsight(s.isThai)
+    }
 
     val today = remember { LocalDate.now() }
     val todayDoses = remember(doses) {
@@ -56,6 +64,18 @@ fun MedicationHistoryScreen(
         doses.filter { TimeUtils.parseInstant(it.scheduledAt)?.atZone(ZoneId.systemDefault())?.toLocalDate() == today }
             .sortedWith(compareBy({ priority(it) }, { it.scheduledAt }))
     }
+    val visibleDoses = remember(todayDoses, query, doseFilter, schedules) {
+        todayDoses.filter { dose ->
+            val name = schedules[dose.scheduleId]?.medicineName ?: ""
+            val qOk = query.isBlank() || name.contains(query, ignoreCase = true)
+            val fOk = when (doseFilter) {
+                TodayDoseFilter.ALL -> true
+                TodayDoseFilter.PENDING -> dose.status == "pending"
+                TodayDoseFilter.TAKEN -> dose.status == "taken"
+            }
+            qOk && fOk
+        }
+    }
     val takenToday = todayDoses.count { it.status == "taken" }
     val nextDose = doses.filter { it.status == "pending" }
         .mapNotNull { d -> TimeUtils.parseInstant(d.scheduledAt)?.let { d to it } }
@@ -63,10 +83,15 @@ fun MedicationHistoryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติการใช้ยา" else "Medication History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติการใช้ยา" else "Medication History",
+                onBack = onBack,
+                navController = navController,
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.PdfExport.route) }) {
+                        Icon(Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก" else "Export", tint = Primary)
+                    }
+                }
             )
         },
         bottomBar = {
@@ -100,6 +125,39 @@ fun MedicationHistoryScreen(
             }
 
             item {
+                AIInsightCard(
+                    text = state.medicationHistoryInsight
+                        ?: if (s.isThai) "กำลังวิเคราะห์ตารางยา..." else "Analyzing medication plan...",
+                    isLoading = state.medicationHistoryInsightLoading || state.medicationHistoryInsight == null
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(if (s.isThai) "ค้นหาชื่อยา..." else "Search medicine...", color = Outline) },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = Outline) },
+                    singleLine = true, shape = RoundedCornerShape(100.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        TodayDoseFilter.ALL to (if (s.isThai) "ทั้งหมด" else "All"),
+                        TodayDoseFilter.PENDING to (if (s.isThai) "รอทาน" else "Pending"),
+                        TodayDoseFilter.TAKEN to (if (s.isThai) "ทานแล้ว" else "Taken")
+                    ).forEach { (f, label) ->
+                        FilterChip(
+                            selected = doseFilter == f, onClick = { doseFilter = f },
+                            label = { Text(label) }, shape = RoundedCornerShape(100.dp),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Primary.copy(0.12f), selectedLabelColor = Primary)
+                        )
+                    }
+                }
+            }
+
+            item {
                 Button(
                     onClick = { navController.navigate(Screen.AddMedicineSchedule.route) },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -121,10 +179,10 @@ fun MedicationHistoryScreen(
                 }
             }
 
-            if (todayDoses.isEmpty()) {
+            if (visibleDoses.isEmpty()) {
                 item { Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) { Text(if (s.isThai) "ยังไม่มีตารางการทานยาวันนี้" else "No doses scheduled today", color = Outline) } }
             } else {
-                items(todayDoses, key = { it.id }) { dose ->
+                items(visibleDoses, key = { it.id }) { dose ->
                     DoseRow(
                         dose = dose,
                         medicineName = schedules[dose.scheduleId]?.medicineName ?: "",

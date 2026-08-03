@@ -29,6 +29,7 @@ import androidx.navigation.NavController
 import com.lullabyai.app.data.model.DevelopmentMilestone
 import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.repository.NutritionRepository
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.components.NoChildDataCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
@@ -156,14 +157,18 @@ fun StatisticsInsightsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "สถิติและข้อมูลเชิงลึก" else "Statistics & Insights", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "สถิติและข้อมูลเชิงลึก" else "Statistics & Insights",
+                // #3: Stats is a Child sub-page, not a tab root, so it DOES get a back arrow.
+                onBack = { navController.popBackStack() },
+                navController = navController
             )
         },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
-                selected = com.lullabyai.app.ui.components.BottomTab.STATS,
+                // #3: Stats belongs to the ข้อมูลลูก family, so the Child tab is the one that
+                // highlights blue — matching where the user expects to find it.
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
@@ -411,19 +416,11 @@ fun StatisticsInsightsScreen(
             }
 
             // AI recommendation (reuses trendInsights — no redundant extra AI call)
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(18.dp))
-                        Text(if (s.isThai) "คำแนะนำจาก AI" else "AI Recommendation", style = MaterialTheme.typography.titleSmall, color = Primary, fontWeight = FontWeight.Bold)
-                    }
-                    if (chatState.trendInsights != null) {
-                        Text(chatState.trendInsights!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                    }
-                }
-            }
+            AIInsightCard(
+                text = chatState.trendInsights.orEmpty(),
+                isLoading = chatState.trendInsights == null,
+                title = if (s.isThai) "คำแนะนำจาก NongRak AI" else "NongRak AI Recommendation"
+            )
 
             Spacer(Modifier.height(16.dp))
         }

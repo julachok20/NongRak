@@ -21,3 +21,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "NongRak"
 include(":app")
+include(":core:common")
+include(":core:navigation")
+include(":core:model")

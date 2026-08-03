@@ -11,8 +11,7 @@ keystore.properties
 .gradle/
 /local.properties
 /.idea/
-/build/
-app/build/
+build/
 /captures/
 .externalNativeBuild/
 .cxx/
@@ -20,6 +19,15 @@ app/build/
 # Misc
 *.log
 .DS_Store
+
+# Local tooling state / caches — regenerable, not source
+.claude/
+.gradle-chronic/
+.stitch-cache/
+.tmp-stitch-*/
+.vault_stitch.*
+graphify-out/
+app/graphify-out/
 
 # Built release artifacts (AAB/APK) — copied here for record-keeping, not source
 /Releases/

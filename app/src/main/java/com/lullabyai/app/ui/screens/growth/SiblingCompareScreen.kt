@@ -52,7 +52,7 @@ fun SiblingCompareScreen(childViewModel: ChildViewModel, navController: NavContr
     LaunchedEffect(idA, idB) { if (idA.isNotBlank() && idB.isNotBlank()) vm.load(idA, idB) }
 
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "เปรียบเทียบพี่น้อง" else "Sibling Comparison", onBack = onBack) },
+        topBar = { LullabyTopBar(title = if (isThai) "เปรียบเทียบพี่น้อง" else "Sibling Comparison", onBack = onBack, navController = navController) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(

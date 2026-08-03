@@ -2,7 +2,9 @@ package com.lullabyai.app.ui.screens.mentalhealth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
@@ -30,7 +32,14 @@ fun MentalHealthAssessmentScreen(authViewModel: AuthViewModel, onDone: () -> Uni
     val q = questions[index]
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 20.dp)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .systemBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+        ) {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { if (index > 0) index-- else onBack() }) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) }
                 Text(if (isThai) "แบบประเมินสุขภาพใจ" else "Mental Health Check-in", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold)
@@ -104,7 +113,7 @@ fun MentalHealthAssessmentScreen(authViewModel: AuthViewModel, onDone: () -> Uni
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(24.dp))
             Button(
                 onClick = {
                     if (index < questions.lastIndex) index++

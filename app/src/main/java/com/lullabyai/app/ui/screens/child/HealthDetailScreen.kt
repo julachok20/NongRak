@@ -34,11 +34,11 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.HealthRecordRules
 import com.lullabyai.app.viewmodel.ChildViewModel
 
-/** #7 — Health-record detail ("ดูเพิ่มเติม"). Shows temperature, main symptom, additional-symptom
- *  chips, an editable observation note, an attached photo, and one-shot AI care advice. Edits
- *  (symptoms / notes / photo) are saved back to the record via the Save action. */
+/** Health-record detail ("ดูเพิ่มเติม"). F3: content locks 10 min after last symptom
+ *  record/update; unused remains tickable; edits stamp an "edited" badge. */
 @Composable
 fun HealthDetailScreen(
     childViewModel: ChildViewModel,
@@ -49,6 +49,13 @@ fun HealthDetailScreen(
     val state by childViewModel.uiState.collectAsState()
     val context = LocalContext.current
     val record = state.healthRecords.firstOrNull { it.id == state.openHealthRecordId }
+    val editLocked = record?.let {
+        HealthRecordRules.isEditLocked(it, state.symptomUpdateByRecord[it.id] ?: it.symptomsUpdatedAt)
+    } == true
+    val edited = record?.let { HealthRecordRules.isEdited(it) } == true
+    val display = record?.let {
+        HealthRecordRules.displayStatus(it, state.symptomActivityByRecord[it.id])
+    }
 
     // Load AI advice + signed photo once we know which record is open.
     LaunchedEffect(record?.id) {
@@ -64,6 +71,7 @@ fun HealthDetailScreen(
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let {
+            if (editLocked) return@let
             val bytes = runCatching { context.contentResolver.openInputStream(it)?.use { st -> st.readBytes() } }.getOrNull()
             if (bytes != null && record != null) childViewModel.uploadHealthPhoto(record.id, bytes)
         }
@@ -71,9 +79,9 @@ fun HealthDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "รายละเอียดสุขภาพ" else "Health Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "รายละเอียดสุขภาพ" else "Health Details",
+                onBack = onBack,
                 actions = {
                     TextButton(
                         onClick = {
@@ -83,13 +91,16 @@ fun HealthDetailScreen(
                                 )
                             }
                         },
-                        enabled = record != null && !state.healthDetailSaving
+                        enabled = record != null && !state.healthDetailSaving && !editLocked
                     ) {
                         if (state.healthDetailSaving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Primary)
-                        else Text(if (s.isThai) "บันทึก" else "Save", color = Primary, fontWeight = FontWeight.Bold)
+                        else Text(
+                            if (s.isThai) "บันทึก" else "Save",
+                            color = if (editLocked) Outline else Primary,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                }
             )
         },
         bottomBar = {
@@ -122,34 +133,96 @@ fun HealthDetailScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // Date + saved badge
+            // Date + saved / edited / locked badges
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Filled.CalendarToday, null, tint = Outline, modifier = Modifier.size(16.dp))
                     Text(formatHealthDate(com.lullabyai.app.util.TimeUtils.localDate(record.recordedAt), s.isThai), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
-                    Text(if (s.isThai) "บันทึกแล้ว" else "Saved", modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (edited) {
+                        Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
+                            Text(if (s.isThai) "แก้ไขแล้ว" else "Edited", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Surface(shape = RoundedCornerShape(100.dp), color = if (editLocked) Outline.copy(0.12f) else Primary.copy(0.1f)) {
+                        Text(
+                            when {
+                                editLocked -> if (s.isThai) "ล็อกแล้ว" else "Locked"
+                                else -> if (s.isThai) "บันทึกแล้ว" else "Saved"
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (editLocked) Outline else Primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
-            // Recovered/monitoring toggle — feeds the status badge on HealthHistoryScreen's timeline.
+            if (editLocked) {
+                Text(
+                    if (s.isThai) "แก้ไขเนื้อหาได้ภายใน 10 นาทีหลังอัปเดตอาการ — ยังติ๊ก \"ไม่ใช้\" ได้"
+                    else "Content edits lock 10 minutes after the last symptom update — you can still tick Unused",
+                    style = MaterialTheme.typography.bodySmall, color = Outline
+                )
+            }
+
+            if (display == HealthRecordRules.DisplayStatus.AUTO_RESOLVED) {
+                Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF558B2F).copy(0.1f), modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        if (s.isThai) "ไม่มีบันทึกอาการต่อเนื่อง 7 วัน — ระบบถือว่าหายแล้ว (ไม่ลบข้อมูล)"
+                        else "No active log for 7 days — assumed resolved (data is kept)",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF558B2F),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // Recovered/monitoring toggle — still allowed after the edit lock.
             val recovered = record.status == "recovered"
-            Surface(
-                onClick = { childViewModel.toggleHealthRecordStatus(record.id) },
-                shape = RoundedCornerShape(100.dp),
-                color = if (recovered) Color(0xFF2E7D32).copy(0.1f) else Color(0xFFED6C02).copy(0.1f)
+            if (record.status != "unused") {
+                Surface(
+                    onClick = { childViewModel.toggleHealthRecordStatus(record.id) },
+                    shape = RoundedCornerShape(100.dp),
+                    color = if (recovered) Color(0xFF2E7D32).copy(0.1f) else Color(0xFFED6C02).copy(0.1f)
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(
+                            if (recovered) Icons.Filled.CheckCircle else Icons.Filled.Visibility, null,
+                            tint = if (recovered) Color(0xFF2E7D32) else Color(0xFFED6C02), modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (recovered) (if (s.isThai) "หายแล้ว — แตะเพื่อทำเครื่องหมายว่ากำลังติดตาม" else "Recovered — tap to mark as monitoring")
+                            else (if (s.isThai) "กำลังติดตาม — แตะเพื่อทำเครื่องหมายว่าหายแล้ว" else "Monitoring — tap to mark as recovered"),
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                            color = if (recovered) Color(0xFF2E7D32) else Color(0xFFED6C02)
+                        )
+                    }
+                }
+            }
+
+            // Batch Q #8 — "unused" remains tickable after the content lock.
+            Row(
+                Modifier.fillMaxWidth().clickable { childViewModel.setHealthRecordUnused(record.id, record.status != "unused") },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(
-                        if (recovered) Icons.Filled.CheckCircle else Icons.Filled.Visibility, null,
-                        tint = if (recovered) Color(0xFF2E7D32) else Color(0xFFED6C02), modifier = Modifier.size(18.dp)
+                Checkbox(
+                    checked = record.status == "unused",
+                    onCheckedChange = { childViewModel.setHealthRecordUnused(record.id, it) },
+                    colors = CheckboxDefaults.colors(checkedColor = Primary)
+                )
+                Column {
+                    Text(
+                        if (s.isThai) "ไม่ใช้บันทึกนี้" else "Mark as unused",
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        if (recovered) (if (s.isThai) "หายแล้ว — แตะเพื่อทำเครื่องหมายว่ากำลังติดตาม" else "Recovered — tap to mark as monitoring")
-                        else (if (s.isThai) "กำลังติดตาม — แตะเพื่อทำเครื่องหมายว่าหายแล้ว" else "Monitoring — tap to mark as recovered"),
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                        color = if (recovered) Color(0xFF2E7D32) else Color(0xFFED6C02)
+                        if (s.isThai) "ติ๊กได้แม้หลังล็อก 10 นาที" else "Can still be ticked after the 10-min lock",
+                        style = MaterialTheme.typography.labelSmall, color = Outline
                     )
                 }
             }
@@ -165,12 +238,13 @@ fun HealthDetailScreen(
                         Icon(Icons.Filled.Thermostat, null, tint = Primary, modifier = Modifier.size(26.dp))
                     }
                     Text(if (s.isThai) "อุณหภูมิร่างกาย" else "Body temperature", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    // Editable temperature: big centered number + °C, with a thin underline to signal input.
+                    // Editable temperature (read-only after Batch Q #8 lock).
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             BasicTextField(
                                 value = tempText,
-                                onValueChange = { v -> tempText = v.filter { it.isDigit() || it == '.' }.take(5) },
+                                onValueChange = { v -> if (!editLocked) tempText = v.filter { it.isDigit() || it == '.' }.take(5) },
+                                enabled = !editLocked,
                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 44.sp, fontWeight = FontWeight.Bold, color = feverColor, textAlign = TextAlign.Center),
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -215,7 +289,8 @@ fun HealthDetailScreen(
                         val isSel = selected.contains(sym)
                         FilterChip(
                             selected = isSel,
-                            onClick = { selected = if (isSel) selected - sym else selected + sym },
+                            onClick = { if (!editLocked) selected = if (isSel) selected - sym else selected + sym },
+                            enabled = !editLocked,
                             label = { Text(sym) },
                             leadingIcon = if (isSel) { { Icon(Icons.Filled.Check, null, modifier = Modifier.size(16.dp)) } } else null,
                             shape = RoundedCornerShape(100.dp),
@@ -225,11 +300,12 @@ fun HealthDetailScreen(
                 }
             }
 
-            // Observation note (editable)
+            // Observation note (editable until lock)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (s.isThai) "บันทึก / การสังเกตอาการ" else "Notes / Observations", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(
-                    value = notes, onValueChange = { notes = it },
+                    value = notes, onValueChange = { if (!editLocked) notes = it },
+                    enabled = !editLocked,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
                     placeholder = { Text(if (s.isThai) "บันทึกการสังเกตอาการของลูก..." else "Note what you observed...", color = Outline) },
                     shape = RoundedCornerShape(12.dp),
@@ -252,7 +328,9 @@ fun HealthDetailScreen(
                         modifier = Modifier.weight(1f).height(120.dp).clip(RoundedCornerShape(14.dp))
                             .border(BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.surface)
-                            .clickable(enabled = !state.healthPhotoUploading) { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            .clickable(enabled = !state.healthPhotoUploading && !editLocked) {
+                                picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         if (state.healthPhotoUploading) {
@@ -260,9 +338,14 @@ fun HealthDetailScreen(
                         } else {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Box(Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Filled.AddAPhoto, null, tint = Primary, modifier = Modifier.size(22.dp))
+                                    Icon(Icons.Filled.AddAPhoto, null, tint = if (editLocked) Outline else Primary, modifier = Modifier.size(22.dp))
                                 }
-                                Text(if (s.isThai) "เพิ่มรูปภาพ" else "Add photo", style = MaterialTheme.typography.labelMedium, color = Primary)
+                                Text(
+                                    if (editLocked) (if (s.isThai) "ล็อกแล้ว" else "Locked")
+                                    else (if (s.isThai) "เพิ่มรูปภาพ" else "Add photo"),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (editLocked) Outline else Primary
+                                )
                             }
                         }
                     }

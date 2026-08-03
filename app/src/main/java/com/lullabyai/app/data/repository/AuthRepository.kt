@@ -1,13 +1,10 @@
 package com.lullabyai.app.data.repository
 
-import android.content.Context
-import androidx.credentials.CredentialManager
-import androidx.credentials.GetCredentialRequest
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.lullabyai.app.BuildConfig
 import com.lullabyai.app.data.model.MentalHealthAssessment
 import com.lullabyai.app.data.model.Profile
+import com.lullabyai.app.data.model.ProfileRole
+import com.lullabyai.app.data.model.effectiveRoles
+import com.lullabyai.app.data.model.hasDoctorRole
 import com.lullabyai.app.data.remote.StorageHelper
 import com.lullabyai.app.data.remote.supabase
 import io.github.jan.supabase.auth.OtpType
@@ -27,14 +24,38 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.security.MessageDigest
-import java.util.UUID
+
+/**
+ * Thai phone numbers, normalized to national form (`0812345678`).
+ *
+ * Accepts anything a parent might actually type — spaces, dashes, dots, parentheses — and the
+ * `+66` / `0066` / `66` country prefixes. Returns `null` when the input cannot be a Thai number,
+ * so callers show a clear message instead of silently storing junk. Never log the input or result.
+ */
+object ThaiPhone {
+    fun normalize(raw: String): String? {
+        var d = raw.filter { it.isDigit() }
+        if (d.startsWith("00")) d = d.drop(2)       // 00 = international access prefix
+        if (d.startsWith("66")) d = "0" + d.drop(2) // country code -> national trunk '0'
+        // Mobile is 10 digits (06x/08x/09x), landline 9 (02x-07x). Second digit is never 0.
+        return d.takeIf { it.length in 9..10 && it[0] == '0' && it[1] != '0' }
+    }
+}
 
 class AuthRepository {
 
     val currentUser get() = supabase.auth.currentUserOrNull()
 
-    suspend fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null): Result<Unit> = runCatching {
+    /** [phone] is expected pre-normalized by the caller, but is re-normalized here — this is the
+     *  trust boundary, and an un-validated number must never reach the database. */
+    suspend fun signUp(
+        email: String,
+        password: String,
+        fullName: String,
+        captchaToken: String? = null,
+        accountType: String = "parent", // "parent" | "doctor"
+        phone: String? = null
+    ): Result<Unit> = runCatching {
         supabase.auth.signUpWith(Email) {
             this.email = email
             this.password = password
@@ -52,7 +73,32 @@ class AuthRepository {
                 this.password = password
             }
         }
-        ensureProfile(fullName)
+        ensureProfile(fullName = fullName, accountType = accountType, phone = phone?.let { ThaiPhone.normalize(it) })
+    }
+
+    /**
+     * Doctor registration when the email may already belong to a parent account (same person,
+     * separate app area). Supabase allows one auth user per email — we add the doctor role instead
+     * of creating a second auth user.
+     */
+    suspend fun signUpDoctor(
+        email: String,
+        password: String,
+        fullName: String,
+        captchaToken: String? = null,
+        /** The doctor's contact number. The sign-up form has always collected it, but it stopped at
+         *  the screen — `profiles.phone` exists and the parent flow writes it, so not forwarding it
+         *  here silently discarded what the doctor typed. */
+        phone: String? = null
+    ): Result<Unit> = runCatching {
+        val created = runCatching {
+            signUp(email, password, fullName, captchaToken, accountType = ProfileRole.DOCTOR, phone = phone)
+        }
+        if (created.isSuccess) return@runCatching
+        val err = created.exceptionOrNull() ?: error("Doctor sign-up failed")
+        if (!isEmailAlreadyRegistered(err)) throw err
+        signIn(email, password, captchaToken).getOrThrow()
+        grantDoctorRole().getOrThrow()
     }
 
     suspend fun signIn(email: String, password: String, captchaToken: String? = null): Result<Unit> = runCatching {
@@ -61,63 +107,106 @@ class AuthRepository {
             this.password = password
             this.captchaToken = captchaToken
         }
-        ensureProfile(null)
+        ensureProfile(fullName = null, accountType = null)
     }
 
-    /** Safety net: guarantee a profiles row exists so children/chat foreign keys never fail. */
-    private suspend fun ensureProfile(fullName: String?) {
+    suspend fun grantDoctorRole(): Result<Unit> = runCatching {
+        val user = supabase.auth.currentUserOrNull() ?: error("Not signed in")
+        val profile = getProfile().getOrThrow()
+        val merged = (profile.effectiveRoles() + ProfileRole.DOCTOR).distinct()
+        val patch = buildJsonObject {
+            put("roles", JsonArray(merged.map { JsonPrimitive(it) }))
+            if (!merged.contains(ProfileRole.PARENT)) {
+                put("account_type", JsonPrimitive(ProfileRole.DOCTOR))
+            }
+        }
+        supabase.from("profiles").update(patch) { filter { eq("id", user.id) } }
+    }
+
+    private fun isEmailAlreadyRegistered(err: Throwable): Boolean {
+        val msg = err.message?.lowercase() ?: return false
+        return msg.contains("already registered") ||
+            msg.contains("already been registered") ||
+            msg.contains("user already registered") ||
+            msg.contains("email address is already registered")
+    }
+
+    /** Creates or patches profile metadata. [accountType] null = sign-in only (do not change roles). */
+    private suspend fun ensureProfile(fullName: String?, accountType: String?, phone: String? = null) {
         val user = supabase.auth.currentUserOrNull() ?: return
         runCatching {
-            // Insert profile if missing (trigger usually creates it; this is a safety net)
             val existing = supabase.from("profiles").select {
                 filter { eq("id", user.id) }
                 limit(1)
             }.decodeList<Profile>()
             if (existing.isEmpty()) {
+                val role = when (accountType?.lowercase()) {
+                    ProfileRole.DOCTOR -> ProfileRole.DOCTOR
+                    else -> ProfileRole.PARENT
+                }
+                val legacyType = if (role == ProfileRole.DOCTOR) ProfileRole.DOCTOR else ProfileRole.PARENT
                 supabase.from("profiles").insert(
                     buildJsonObject {
                         put("id", JsonPrimitive(user.id))
                         if (!fullName.isNullOrBlank()) put("full_name", JsonPrimitive(fullName))
-                        // PDPA: first profile creation == the moment consent was given at signup
+                        put("account_type", JsonPrimitive(legacyType))
+                        put("roles", JsonArray(listOf(JsonPrimitive(role))))
+                        if (phone != null) put("phone", JsonPrimitive(phone))
                         put("consent_given_at", JsonPrimitive(java.time.Instant.now().toString()))
                     }
                 )
+            } else {
+                val patch = buildJsonObject {
+                    if (phone != null) put("phone", JsonPrimitive(phone))
+                }
+                if (patch.isNotEmpty()) {
+                    supabase.from("profiles").update(patch) { filter { eq("id", user.id) } }
+                }
+                if (accountType?.lowercase() == ProfileRole.DOCTOR && !existing.first().hasDoctorRole()) {
+                    grantDoctorRole()
+                }
             }
         }
     }
 
-    suspend fun signInWithGoogle(context: Context): Result<Unit> = runCatching {
-        val credentialManager = CredentialManager.create(context)
+    /** Completes Google auth after [GoogleAuthHelper] returns an ID token (classic Sign-In SDK). */
+    suspend fun signInWithGoogleIdToken(
+        idToken: String,
+        accountType: String = "parent"
+    ): Result<Unit> = runCatching {
+        require(idToken.isNotBlank()) { "missing_id_token" }
+        runCatching {
+            supabase.auth.signInWith(IDToken) {
+                this.idToken = idToken
+                provider = Google
+            }
+        }.onFailure { err ->
+            // Same email may already exist (email/password signup). Supabase links identities when
+            // automatic linking is enabled; if sign-in still fails, surface a clear message.
+            if (isEmailAlreadyRegistered(err)) {
+                error(
+                    if (accountType.lowercase() == ProfileRole.DOCTOR)
+                        "email_exists_use_password_then_google"
+                    else
+                        "email_exists_use_password_then_google"
+                )
+            } else throw err
+        }.getOrThrow()
+        ensureProfile(fullName = null, accountType = accountType)
+    }
 
-        // Supabase expects the raw nonce; Google expects its SHA-256 hash
-        val rawNonce = UUID.randomUUID().toString()
-        val hashedNonce = MessageDigest.getInstance("SHA-256")
-            .digest(rawNonce.toByteArray())
-            .joinToString("") { "%02x".format(it) }
+    enum class AuthPortal { PARENT, DOCTOR }
 
-        val googleIdOption = GetGoogleIdOption.Builder()
-            .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .setFilterByAuthorizedAccounts(false)
-            .setNonce(hashedNonce)
-            .build()
-
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(googleIdOption)
-            .build()
-
-        val result = try {
-            credentialManager.getCredential(context, request)
-        } catch (e: androidx.credentials.exceptions.NoCredentialException) {
-            error("ไม่พบบัญชี Google ในเครื่อง กรุณาเพิ่มบัญชี Google ในการตั้งค่าของอุปกรณ์ก่อน")
-        } catch (e: androidx.credentials.exceptions.GetCredentialCancellationException) {
-            error("ยกเลิกการเข้าสู่ระบบ")
+    fun portalRejectionMessage(portal: AuthPortal, isThai: Boolean): String = when (portal) {
+        AuthPortal.PARENT -> if (isThai) {
+            "อีเมลนี้เป็นบัญชีแพทย์เท่านั้น — เข้าสู่ระบบผู้ปกครองใช้บัญชีผู้ปกครอง หรือสมัครผู้ปกครองด้วยอีเมลนี้ (บัญชีแยกในส่วนแพทย์/ผู้ปกครอง)"
+        } else {
+            "This email is doctor-only. Use parent sign-in with a parent account, or register as parent first (same email can hold both roles separately)."
         }
-        val googleCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
-
-        supabase.auth.signInWith(IDToken) {
-            idToken = googleCredential.idToken
-            provider = Google
-            nonce = rawNonce
+        AuthPortal.DOCTOR -> if (isThai) {
+            "บัญชีนี้ยังไม่มีสิทธิ์แพทย์ — สมัครสมาชิกแพทย์ด้วยอีเมลเดียวกันได้ (แยกจากผู้ปกครอง)"
+        } else {
+            "This account does not have doctor access yet — register as a doctor with the same email (separate from parent)."
         }
     }
 

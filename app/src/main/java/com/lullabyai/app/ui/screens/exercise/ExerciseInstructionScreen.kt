@@ -39,10 +39,9 @@ fun ExerciseInstructionScreen(vm: NutritionViewModel, lang: String, onBack: () -
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isThai) "วิธีฝึกออกกำลังกาย" else "Exercise Guide", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (isThai) "วิธีฝึกออกกำลังกาย" else "Exercise Guide",
+                onBack = onBack
             )
         },
         containerColor = MaterialTheme.colorScheme.background

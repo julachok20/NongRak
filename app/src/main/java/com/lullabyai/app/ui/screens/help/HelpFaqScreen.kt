@@ -45,19 +45,10 @@ fun HelpFaqScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("วิธีใช้งาน & FAQ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, "กลับไปหน้าตั้งค่า", tint = Primary)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { navController.navigate(Screen.Notifications.route) }) {
-                        Icon(Icons.Filled.Notifications, null)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = "วิธีใช้งาน & FAQ",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {

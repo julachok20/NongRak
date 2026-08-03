@@ -5,19 +5,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.ExerciseLog
 import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.repository.NutritionRepository
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.components.AppBottomNav
 import com.lullabyai.app.ui.components.BottomTab
 import com.lullabyai.app.ui.components.LullabyTopBar
@@ -111,10 +108,10 @@ fun MonthlyReportScreen(childViewModel: ChildViewModel, chatViewModel: ChatViewM
     }
 
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "สรุปรายงานประจำเดือน" else "Monthly Summary Report", onBack = onBack) },
+        topBar = { LullabyTopBar(title = if (isThai) "สรุปรายงานประจำเดือน" else "Monthly Summary Report", onBack = onBack, navController = navController) },
         bottomBar = {
             AppBottomNav(
-                selected = BottomTab.STATS,
+                selected = BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
@@ -131,31 +128,26 @@ fun MonthlyReportScreen(childViewModel: ChildViewModel, chatViewModel: ChatViewM
         ) {
             Spacer(Modifier.height(4.dp))
 
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Primary)) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Text(if (isThai) "รายงานโดย AI" else "AI REPORT", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Text(if (isThai) "สรุปรายงานประจำเดือน" else "Monthly Summary Report", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("${monthAgo} – ${today}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(0.85f))
-                }
-            }
+            Text(
+                if (isThai) "สรุปรายงานประจำเดือน" else "Monthly Summary Report",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "$monthAgo – $today",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (!hasAnyData) {
-                        Text(
-                            if (isThai) "ยังไม่มีข้อมูลเพียงพอในช่วง 30 วันที่ผ่านมา ลองบันทึกการนอน อาหาร หรือกิจกรรมเพิ่มเติม" else "Not enough data in the last 30 days yet — try logging more sleep, food, or activity.",
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else if (chatState.monthlyReport != null) {
-                        Text(chatState.monthlyReport!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                    }
-                }
-            }
+            AIInsightCard(
+                text = chatState.monthlyReport.orEmpty(),
+                isLoading = hasAnyData && chatState.monthlyReport == null,
+                title = if (isThai) "รายงานโดย NongRak AI" else "NongRak AI Report",
+                emptyMessage = if (!hasAnyData) {
+                    if (isThai) "ยังไม่มีข้อมูลเพียงพอในช่วง 30 วันที่ผ่านมา ลองบันทึกการนอน อาหาร หรือกิจกรรมเพิ่มเติม"
+                    else "Not enough data in the last 30 days yet — try logging more sleep, food, or activity."
+                } else null
+            )
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (isThai) "ข้อมูลที่ใช้ในการสรุป (30 วัน)" else "Data used in this summary (30d)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)

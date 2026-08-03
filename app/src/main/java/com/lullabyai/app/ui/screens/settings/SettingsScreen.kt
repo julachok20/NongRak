@@ -49,14 +49,11 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(s.settingsTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = { navController.navigate(Screen.Notifications.route) }) {
-                        Icon(Icons.Filled.Notifications, null)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = s.settingsTitle,
+                onBack = null,
+                navController = navController,
+                showProfile = false
             )
         },
         bottomBar = {
@@ -159,9 +156,15 @@ fun SettingsScreen(
                     )
                     Divider52()
                     SettingsRow(
+                        Icons.Filled.Folder,
+                        if (isThai) "คลังเอกสาร (Vault)" else "Document Vault",
+                        onClick = { navController.navigate(Screen.MedicalDataVault.route) }
+                    )
+                    Divider52()
+                    SettingsRow(
                         Icons.Filled.Storage,
                         if (isThai) "ข้อมูลที่ AI เก็บไว้" else "Data the AI keeps",
-                        onClick = { navController.navigate(Screen.MedicalDataVault.route) }
+                        onClick = { navController.navigate(Screen.AiDataRetention.route) }
                     )
                     Divider52()
                     SettingsRow(

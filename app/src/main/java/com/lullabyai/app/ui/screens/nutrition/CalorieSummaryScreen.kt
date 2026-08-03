@@ -14,21 +14,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.FoodLog
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
-
-private fun mealLabel(key: String, isThai: Boolean) = when (key) {
-    "breakfast" -> if (isThai) "มื้อเช้า" else "Breakfast"
-    "lunch" -> if (isThai) "มื้อกลางวัน" else "Lunch"
-    "dinner" -> if (isThai) "มื้อเย็น" else "Dinner"
-    "snack" -> if (isThai) "ของว่าง" else "Snack"
-    else -> if (isThai) "อื่นๆ" else "Other"
-}
 
 @Composable
 fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
@@ -36,19 +30,20 @@ fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: Na
     val isThai = lang.startsWith("th")
     LaunchedEffect(Unit) { if (ui.child == null) vm.load(lang) }
     // Estimate today's macros (cached by the food set).
-    LaunchedEffect(ui.foods, lang) { vm.loadMacros(lang) }
+    LaunchedEffect(ui.foods, ui.todayMilkMl, lang) { vm.loadMacros(lang) }
 
     val intake = ui.summary?.intakeKcal ?: 0
     val burned = ui.summary?.burnedKcal ?: 0
     val net = intake - burned
     val target = ui.targetKcal.coerceAtLeast(1)
+    val ageBadge = ageAppropriateBadge(intake, ui.targetKcal, isThai)
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isThai) "สรุปแคลอรี่ประจำวัน" else "Daily Calorie Summary", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (isThai) "สรุปแคลอรี่ประจำวัน" else "Daily Calorie Summary",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
@@ -59,7 +54,7 @@ fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: Na
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
+                onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -68,6 +63,11 @@ fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: Na
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            AIInsightCard(
+                text = vm.loggingInsightText(isThai),
+                isLoading = ui.macrosLoading && ui.macros == null
+            )
+
             Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(150.dp)) {
@@ -79,6 +79,12 @@ fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: Na
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("$intake", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Primary)
                             Text((if (isThai) "จาก ${ui.targetKcal} แคลอรี่" else "of ${ui.targetKcal} kcal"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (ageBadge != null) {
+                                Spacer(Modifier.height(4.dp))
+                                Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF2E7D32).copy(0.12f)) {
+                                    Text(ageBadge, Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -111,10 +117,18 @@ fun CalorieSummaryScreen(vm: NutritionViewModel, lang: String, navController: Na
             if (ui.foods.isEmpty()) {
                 Text(if (isThai) "ยังไม่มีรายการอาหาร" else "No food items yet", style = MaterialTheme.typography.bodyMedium, color = Outline)
             } else {
-                listOf("breakfast", "lunch", "dinner", "snack").forEach { mealType ->
+                listOf("breakfast", "lunch", "dinner").forEach { mealType ->
                     val foods = ui.foods.filter { it.mealType == mealType }
                     if (foods.isNotEmpty()) MealCard(mealLabel(mealType, isThai), foods, Modifier.fillMaxWidth())
                 }
+                val snacksAm = ui.foods.filter { it.mealType == "snack" && snackSlotForHour(
+                    com.lullabyai.app.util.TimeUtils.localTime(it.createdAt)?.take(2)?.toIntOrNull() ?: 15
+                ) == "snack_morning" }
+                val snacksPm = ui.foods.filter { it.mealType == "snack" && snackSlotForHour(
+                    com.lullabyai.app.util.TimeUtils.localTime(it.createdAt)?.take(2)?.toIntOrNull() ?: 15
+                ) == "snack_afternoon" }
+                if (snacksAm.isNotEmpty()) MealCard(mealLabel("snack_morning", isThai), snacksAm, Modifier.fillMaxWidth())
+                if (snacksPm.isNotEmpty()) MealCard(mealLabel("snack_afternoon", isThai), snacksPm, Modifier.fillMaxWidth())
                 val other = ui.foods.filter { it.mealType !in setOf("breakfast", "lunch", "dinner", "snack") }
                 if (other.isNotEmpty()) MealCard(mealLabel("other", isThai), other, Modifier.fillMaxWidth())
             }

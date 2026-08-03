@@ -43,10 +43,10 @@ fun TaskHistoryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("กิจกรรมทั้งหมด", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = "กิจกรรมทั้งหมด",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = { ChildBottomNav(navController = navController, currentTab = "child") },

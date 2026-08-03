@@ -37,12 +37,10 @@ fun MaintenanceScreen(navController: NavController? = null, onBack: () -> Unit) 
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = MaterialTheme.colorScheme.onSurface) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = "",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {

@@ -45,6 +45,7 @@ fun EditChildScreen(
 ) {
     val s = LocalStrings.current
     val state by childViewModel.uiState.collectAsState()
+    val canDelete = state.isChildOwner
     val child = state.child
     val context = LocalContext.current
 
@@ -83,11 +84,9 @@ fun EditChildScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "แก้ไขข้อมูลลูก" else "Edit Child Info", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) }
-                },
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "แก้ไขข้อมูลลูก" else "Edit Child Info",
+                onBack = onBack,
                 actions = {
                     Button(
                         onClick = {
@@ -107,8 +106,7 @@ fun EditChildScreen(
                         Text(if (s.isThai) "บันทึก" else "Save", color = Color.White, style = MaterialTheme.typography.labelLarge)
                     }
                     Spacer(Modifier.width(8.dp))
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                }
             )
         },
         bottomBar = {
@@ -247,8 +245,10 @@ fun EditChildScreen(
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Filled.Description, null, tint = Primary, modifier = Modifier.size(18.dp))
                         Text(d.fileName, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                        IconButton(onClick = { childViewModel.deleteMedicalDocument(d.id, d.filePath) }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Filled.Close, if (s.isThai) "ลบไฟล์" else "Remove", tint = Error, modifier = Modifier.size(16.dp))
+                        if (canDelete) {
+                            IconButton(onClick = { childViewModel.deleteMedicalDocument(d.id, d.filePath) }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Filled.Close, if (s.isThai) "ลบไฟล์" else "Remove", tint = Error, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }

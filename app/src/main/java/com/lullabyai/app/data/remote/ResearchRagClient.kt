@@ -3,7 +3,7 @@ package com.lullabyai.app.data.remote
 import com.lullabyai.app.BuildConfig
 import io.github.jan.supabase.auth.auth
 import io.ktor.client.*
-import io.ktor.client.engine.android.*
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -19,7 +19,7 @@ object ResearchRagClient {
     data class Chunk(val title: String, val source: String, val content: String, val similarity: Double)
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val client = HttpClient(Android) {
+    private val client = HttpClient(OkHttp) {
         install(HttpTimeout) { requestTimeoutMillis = 20_000; socketTimeoutMillis = 20_000 }
     }
     private val functionUrl = "${BuildConfig.SUPABASE_URL.trimEnd('/')}/functions/v1/research-rag"

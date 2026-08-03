@@ -2,6 +2,7 @@ package com.lullabyai.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lullabyai.app.data.model.ChatMode
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChatSession
 import com.lullabyai.app.data.model.UiChatMessage
@@ -35,13 +36,15 @@ data class ChatUiState(
     val nutritionInsight: String? = null,
     val sleepActivityInsight: String? = null,
     val eliminationInsight: String? = null,
+    val wasteInsight: String? = null,
     val monthlyReport: String? = null,
     val diseaseList: List<RiskDisease> = emptyList(),
     val preventionList: List<PreventionTip> = emptyList(),
     val isRefreshing: Boolean = false,
     val analysisChildId: String? = null,  // which child the AI analyses below belong to (multi-child)
     val parentRelationship: String? = null, // profiles.relationship — how the chatbot addresses the user
-    val lastProvider: String = ""   // which AI model answered the latest message (debug indicator)
+    val lastProvider: String = "",   // which AI model answered the latest message (debug indicator)
+    val mode: ChatMode = ChatMode.NORMAL  // persona/speech style: normal, เล่านิทาน, คุยกับเด็ก
 )
 
 class ChatViewModel : ViewModel() {
@@ -130,15 +133,25 @@ class ChatViewModel : ViewModel() {
         }
     }
 
+    /** Story / talk-to-child mode. Changes the persona sent with each message (see [ChatMode]) and
+     *  the TTS speech style the chat + call screens use. */
+    fun setMode(mode: ChatMode) {
+        _uiState.value = _uiState.value.copy(mode = mode)
+    }
+
     fun sendMessage(content: String, child: Child?, imageBytes: ByteArray? = null, imageUri: String? = null, imageMime: String? = null) {
         val sessionId = _uiState.value.currentSessionId ?: return
         val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = content, imageUri = imageUri)
+        // Persona instruction rides along with the text (the system prompt is fixed inside
+        // ChatRepository); the bubble above keeps the parent's raw wording. Empty for NORMAL, so
+        // normal chat sends exactly what it always did.
+        val outgoing = _uiState.value.mode.promptPrefix() + content
         _uiState.value = _uiState.value.copy(
             messages = _uiState.value.messages.filterNot { it.id == "welcome" } + userMsg,
             isLoading = true
         )
         viewModelScope.launch {
-            repo.sendMessage(sessionId, content, child, imageBytes, imageMime, _uiState.value.parentRelationship)
+            repo.sendMessage(sessionId, outgoing, child, imageBytes, imageMime, _uiState.value.parentRelationship)
                 .onSuccess { response ->
                     // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
                     // RelationshipLabels.chatSystemPrompt) — strip it into structured data for the
@@ -371,7 +384,7 @@ class ChatViewModel : ViewModel() {
                 analysisChildId = childId,
                 dashboardSummary = null, childInfoSummary = null, healthAnalysis = null,
                 diseaseRiskAnalysis = null, growthInsight = null, weeklyHealthReport = null, sleepInsight = null,
-                quickTip = null, trendInsights = null, nutritionInsight = null, sleepActivityInsight = null, eliminationInsight = null, monthlyReport = null,
+                quickTip = null, trendInsights = null, nutritionInsight = null, sleepActivityInsight = null, eliminationInsight = null, wasteInsight = null, monthlyReport = null,
                 diseaseList = emptyList(), preventionList = emptyList()
             )
         }
@@ -548,6 +561,17 @@ class ChatViewModel : ViewModel() {
                 repo.generateEliminationInsight(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(eliminationInsight = text)
+        }
+    }
+
+    /** [summary] is a caller-built plain-text summary of recent waste/elimination log rows only. */
+    fun loadWasteInsight(child: Child, summary: String, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        viewModelScope.launch {
+            val text = aiRepo.getOrGenerate(child.id, "waste_insight_${langTag(isThai)}") {
+                repo.generateWasteInsight(child, summary, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(wasteInsight = text)
         }
     }
 

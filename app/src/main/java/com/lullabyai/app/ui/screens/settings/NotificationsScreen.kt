@@ -29,7 +29,13 @@ import com.lullabyai.app.viewmodel.ChildViewModel
 import com.lullabyai.app.viewmodel.NotificationViewModel
 
 @Composable
-fun NotificationsScreen(navController: NavController, childViewModel: ChildViewModel, onBack: () -> Unit) {
+fun NotificationsScreen(
+    navController: NavController,
+    childViewModel: ChildViewModel,
+    onBack: () -> Unit,
+    /** Shared with Doctor Settings — same notification list, doctor footer. See ChangePasswordScreen. */
+    isDoctor: Boolean = false
+) {
     val vm: NotificationViewModel = viewModel()
     val state by vm.uiState.collectAsState()
     val childState by childViewModel.uiState.collectAsState()
@@ -47,14 +53,20 @@ fun NotificationsScreen(navController: NavController, childViewModel: ChildViewM
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("การแจ้งเตือน", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = "การแจ้งเตือน",
+                onBack = onBack,
+                navController = navController,
+                showNotification = false
             )
         },
         bottomBar = {
-            com.lullabyai.app.ui.components.AppBottomNav(
+            if (isDoctor) {
+                com.lullabyai.app.ui.screens.doctor.DoctorBottomNav(
+                    navController,
+                    com.lullabyai.app.ui.screens.doctor.DoctorTab.SETTINGS
+                )
+            } else com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.HOME,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
@@ -139,18 +151,49 @@ private fun NotificationCard(n: AppNotification) {
         NotifCategory.WARNING -> Icons.Filled.Warning to HealthRisk
         else -> Icons.Filled.Notifications to HealthGood
     }
+    // Important notices read as urgent: red tint, red-washed card, bigger type and an IMPORTANT
+    // eyebrow, so a stack of several of them is scannable at a glance (#8).
+    val isImportant = n.category == NotifCategory.WARNING
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isImportant) HealthRisk.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isImportant) androidx.compose.foundation.BorderStroke(1.5.dp, HealthRisk.copy(alpha = 0.45f)) else null
     ) {
-        Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.padding(if (isImportant) 16.dp else 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(0.12f)),
+                modifier = Modifier
+                    .size(if (isImportant) 48.dp else 40.dp)
+                    .clip(CircleShape)
+                    .background(if (isImportant) HealthRisk else color.copy(0.12f)),
                 contentAlignment = Alignment.Center
-            ) { Icon(icon, null, tint = color, modifier = Modifier.size(22.dp)) }
+            ) {
+                Icon(
+                    icon, null,
+                    tint = if (isImportant) androidx.compose.ui.graphics.Color.White else color,
+                    modifier = Modifier.size(if (isImportant) 28.dp else 22.dp)
+                )
+            }
             Column(Modifier.weight(1f)) {
-                Text(n.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                if (isImportant) {
+                    Text(
+                        if (com.lullabyai.app.ui.localization.LocalStrings.current.isThai) "สำคัญ" else "IMPORTANT",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = HealthRisk
+                    )
+                }
+                Text(
+                    n.title,
+                    style = if (isImportant) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isImportant) HealthRisk else MaterialTheme.colorScheme.onSurface
+                )
                 n.body?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 com.lullabyai.app.util.TimeUtils.localDate(n.createdAt)?.let { d ->
                     val t = com.lullabyai.app.util.TimeUtils.localTime(n.createdAt)

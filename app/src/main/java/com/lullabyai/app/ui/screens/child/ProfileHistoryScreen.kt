@@ -46,10 +46,10 @@ fun ProfileHistoryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติเด็ก" else "Child Profile", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติเด็ก" else "Child Profile",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {

@@ -15,6 +15,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.rememberNavController
+import com.lullabyai.app.data.model.hasDoctorRole
+import com.lullabyai.app.data.model.hasParentRole
+import com.lullabyai.app.data.settings.SettingsManager
 import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.data.settings.AppLanguage
 import com.lullabyai.app.ui.localization.LocalStrings
@@ -81,12 +84,43 @@ class MainActivity : ComponentActivity() {
                             supabase.auth.awaitInitialization()
                             val session = supabase.auth.currentSessionOrNull()
                             startDestination = if (session != null) {
-                                // A child is no longer required to enter the app — Dashboard now nudges
-                                // childless accounts to add/sync one instead of gating startup on it.
-                                // Covers accounts that already had a child before this tour existed —
-                                // new signups already go through it via LastSetup's onComplete.
-                                val seenTour = com.lullabyai.app.data.settings.SettingsManager(applicationContext).hasSeenTour.first()
-                                if (seenTour) Screen.Dashboard.route else Screen.FirstRunTour.route
+                                val profile = com.lullabyai.app.data.repository.AuthRepository()
+                                    .getProfile().getOrNull()
+                                val lastPortal = settingsManager.getLastAuthPortalSync()
+                                    .takeIf { it != SettingsManager.PORTAL_PARENT }
+                                    ?: settingsManager.getLastAuthPortal()
+                                when {
+                                    profile?.hasParentRole() == true && profile.hasDoctorRole() -> {
+                                        if (lastPortal == SettingsManager.PORTAL_DOCTOR) {
+                                            Screen.DoctorDashboard.route
+                                        } else {
+                                            var seenTour = settingsManager.hasSeenTour.first()
+                                            if (!seenTour) {
+                                                val hasExistingChild = com.lullabyai.app.data.repository.ChildRepository()
+                                                    .getChildren().getOrNull()?.isNotEmpty() == true
+                                                if (hasExistingChild) {
+                                                    settingsManager.setHasSeenTour(true)
+                                                    seenTour = true
+                                                }
+                                            }
+                                            if (seenTour) Screen.Dashboard.route else Screen.FirstRunTour.route
+                                        }
+                                    }
+                                    profile?.hasParentRole() == true -> {
+                                        var seenTour = settingsManager.hasSeenTour.first()
+                                        if (!seenTour) {
+                                            val hasExistingChild = com.lullabyai.app.data.repository.ChildRepository()
+                                                .getChildren().getOrNull()?.isNotEmpty() == true
+                                            if (hasExistingChild) {
+                                                settingsManager.setHasSeenTour(true)
+                                                seenTour = true
+                                            }
+                                        }
+                                        if (seenTour) Screen.Dashboard.route else Screen.FirstRunTour.route
+                                    }
+                                    profile?.hasDoctorRole() == true -> Screen.DoctorDashboard.route
+                                    else -> Screen.Welcome.route
+                                }
                             } else Screen.Welcome.route
                         } catch (e: Exception) {
                             startDestination = Screen.Welcome.route

@@ -1,0 +1,664 @@
+﻿Traversal: BFS depth=2 | Start: ['HealthRepository', 'DoctorPatientInfoScreen()', 'VaccineRecord', '.book()', 'VaccineAgeBuckets'] | 250 nodes found
+
+NODE ChildViewModel [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L133 community=ChildViewModel]
+NODE .put() [src=app/src/main/java/com/lullabyai/app/data/offline/OfflineCache.kt loc=L24 community=.put]
+NODE Child [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L190 community=Child]
+NODE String [src= loc= community=ChildViewModel]
+NODE ChildRepository [src=app/src/main/java/com/lullabyai/app/data/repository/ChildRepository.kt loc=L37 community=.put]
+NODE SettingsManager [src=app/src/main/java/com/lullabyai/app/data/settings/SettingsManager.kt loc=L25 community=SettingsManager]
+NODE HealthRepository [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L20 community=HealthRepository]
+NODE Models.kt [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L1 community=Models.kt]
+NODE String [src= loc= community=HealthRepository]
+NODE Result [src= loc= community=HealthRepository]
+NODE .error() [src=app/src/main/java/com/lullabyai/app/viewmodel/AccessRequestViewModel.kt loc=L245 community=AuthRepository]
+NODE ChatRepository [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L56 community=ChatRepository]
+NODE String [src= loc= community=ChatRepository]
+NODE NutritionRepository [src=app/src/main/java/com/lullabyai/app/data/repository/NutritionRepository.kt loc=L17 community=NutritionRepository]
+NODE DoctorBottomNav() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorBottomNav.kt loc=L37 community=DoctorBottomNav]
+NODE .buildChildContext() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L196 community=ChatRepository]
+NODE onDone() [src=app/src/main/java/com/lullabyai/app/util/TtsSpeaker.kt loc=L53 community=ChildViewModel]
+NODE SleepRepository [src=app/src/main/java/com/lullabyai/app/data/repository/SleepRepository.kt loc=L15 community=SleepRepository]
+NODE Unit [src= loc= community=HealthRepository]
+NODE VaccineRecord [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L315 community=HealthRepository]
+NODE .add() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChronicRegistryViewModel.kt loc=L50 community=.add]
+NODE GrowthRecord [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L374 community=GrowthRecord]
+NODE DoctorPatientRegistrationDetailScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientRegistrationDetailScreen.kt loc=L33 community=DoctorPatientRegistrationDetailScreen]
+NODE HealthRecord [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L409 community=HealthRecord]
+NODE WearableRepository [src=app/src/main/java/com/lullabyai/app/data/repository/WearableRepository.kt loc=L33 community=WearableRepository]
+NODE .run() [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L121 community=.run]
+NODE NotificationRepository [src=app/src/main/java/com/lullabyai/app/data/repository/NotificationRepository.kt loc=L19 community=NotificationRepository]
+NODE DoctorSettingsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorSettingsScreen.kt loc=L38 community=SettingsViewModel]
+NODE DoctorAppointmentSlot [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L153 community=DoctorRepository]
+NODE Appointment [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L165 community=DoctorRepository]
+NODE VaccineAgeBuckets [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L19 community=.run]
+NODE SuggestionItem [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L653 community=NutritionAiService]
+NODE .upsertSymptomLog() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L229 community=HealthRepository]
+NODE DoctorSpecialDatesScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorSpecialDatesScreen.kt loc=L59 community=DoctorSpecialDatesScreen]
+NODE DoctorClinicalRecordEntryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorClinicalRecordEntryScreen.kt loc=L48 community=DoctorClinicalRecordEntryScreen]
+NODE DoctorReservationViewModel [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L31 community=DoctorReservationViewModel]
+NODE VaccineBookScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L34 community=VaccineBookScreen]
+NODE DoctorEditProfileScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorEditProfileScreen.kt loc=L38 community=DoctorEditProfileScreen]
+NODE DoctorPatientRegistrationApprovalScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientRegistrationApprovalScreen.kt loc=L37 community=DoctorPatientRegistrationApprovalScreen.kt]
+NODE VaccineRow() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L529 community=VaccineBookScreen]
+NODE DoctorPatientRegistrationFormScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientRegistrationFormScreen.kt loc=L44 community=DoctorPatientRegistrationFormScreen]
+NODE DevelopmentMilestone [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L487 community=.put]
+NODE DoctorPatientInfoScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientInfoScreen.kt loc=L29 community=DoctorPatientInfoScreen]
+NODE .sendMessage() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L121 community=ChatRepository]
+NODE List [src= loc= community=HealthRepository]
+NODE .generateQuickTip() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L457 community=ChatRepository]
+NODE .generateWasteInsight() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L518 community=ChatRepository]
+NODE .generateGrowthInsight() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L410 community=ChatRepository]
+NODE DoctorDashboardScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorDashboardScreen.kt loc=L40 community=DoctorDashboardScreen]
+NODE .generateChildSummary() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L332 community=ChatRepository]
+NODE .updateHealthRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L406 community=HealthRepository]
+NODE .generateChildInfoCardSummary() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L346 community=ChatRepository]
+NODE .generateWeeklyHealthReport() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L427 community=ChatRepository]
+NODE .generateDiseaseRiskAnalysis() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L368 community=ChatRepository]
+NODE .generateNutritionInsight() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L482 community=ChatRepository]
+NODE DoctorManageSlotsScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorManageSlotsScreen.kt loc=L39 community=DoctorManageSlotsScreen]
+NODE .generateTrendInsights() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L470 community=ChatRepository]
+NODE .generateSleepInsight() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L444 community=ChatRepository]
+NODE .generateDiseaseList() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L379 community=ChatRepository]
+NODE .generatePrevention() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L396 community=ChatRepository]
+NODE .generateSleepActivityInsight() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L494 community=ChatRepository]
+NODE .generateHealthAnalysis() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L357 community=ChatRepository]
+NODE DoctorPatientScheduleScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientScheduleScreen.kt loc=L34 community=DoctorPatientScheduleScreen]
+NODE .generateMonthlyReport() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L536 community=ChatRepository]
+NODE .generateDashboardSummary() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L321 community=ChatRepository]
+NODE .generateEliminationInsight() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L506 community=ChatRepository]
+NODE DoctorVisit [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L462 community=DoctorConnectViewModels.kt]
+NODE ByteArray [src= loc= community=ChildViewModel]
+NODE Profile [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L106 community=DoctorAvatar]
+NODE .courseStatus() [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L93 community=.run]
+NODE .buildStatsSummary() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L273 community=ChatRepository]
+NODE DoctorPatientVaccineHistoryViewModel [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorPatientVaccineHistoryViewModel.kt loc=L28 community=DoctorPatientVaccineHistoryViewModel]
+NODE SleepLog [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L80 community=SleepRepository]
+NODE .updateVaccineStatus() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L29 community=HealthRepository]
+NODE DoctorClinicalRecordEntryScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorClinicalRecordEntryScreen.kt loc=L1 community=DoctorClinicalRecordEntryScreen]
+NODE .generateDailyQuestion() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L552 community=ChatRepository]
+NODE .applyOnboardingVaccineSelections() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L531 community=HealthRepository]
+NODE .getVaccineRecords() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L22 community=HealthRepository]
+NODE .addSymptomLog() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L271 community=HealthRepository]
+NODE VaccineBookScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L1 community=VaccineBookScreen]
+NODE .syncAllergySummaryForChild() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L209 community=HealthRepository]
+NODE String [src= loc= community=DoctorClinicalRecordEntryScreen]
+NODE VaccineAgeBuckets.kt [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L1 community=.run]
+NODE DoctorAddAppointmentScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorAddAppointmentScreen.kt loc=L32 community=ScheduleDatePickerField]
+NODE WidgetDataFetcher [src=app/src/main/java/com/lullabyai/app/widget/WidgetData.kt loc=L68 community=WidgetData.kt]
+NODE DoctorWeeklyHoursScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorWeeklyHoursScreen.kt loc=L46 community=DoctorViewModel]
+NODE .addAllergy() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L167 community=HealthRepository]
+NODE String [src= loc= community=DoctorReservationViewModel]
+NODE DoctorHelpFaqScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorHelpFaqScreen.kt loc=L29 community=DoctorHelpFaqScreen]
+NODE .getAllergies() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L160 community=HealthRepository]
+NODE DoctorProfile [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L130 community=DoctorRepository]
+NODE VaccineVerificationRequest [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L178 community=DoctorRepository]
+NODE .updateAllergy() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L182 community=HealthRepository]
+NODE doctorChartData() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientInfoScreen.kt loc=L470 community=DoctorPatientInfoScreen]
+NODE DoctorAboutNongRakScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorAboutNongRakScreen.kt loc=L26 community=DoctorAboutNongRakScreen]
+NODE VerificationCard() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorVaccineVerificationHubScreen.kt loc=L85 community=VerificationCard]
+NODE AiTask [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L553 community=AiRepository]
+NODE ClinicBookingGate [src=core/model/src/main/java/com/lullabyai/app/data/model/PediaConnectLink.kt loc=L49 community=DoctorAvatar]
+NODE DoctorTimeAppointmentHubScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorTimeAppointmentHubScreen.kt loc=L42 community=DoctorTimeAppointmentHubScreen]
+NODE .doWork() [src=app/src/main/java/com/lullabyai/app/work/VaccineReminderWorker.kt loc=L32 community=.doWork]
+NODE .getLatestSymptomUpdateByRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L454 community=HealthRepository]
+NODE DoctorVaccineVerificationHubScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorVaccineVerificationHubScreen.kt loc=L36 community=VerificationCard]
+NODE DoctorVaccineVerificationSentScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorVaccineVerificationSentScreen.kt loc=L30 community=DoctorVaccineVerificationHubViewModel]
+NODE .updateChronicCondition() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L314 community=HealthRepository]
+NODE ChildAccessMember [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L239 community=PatientRegistrationScreen]
+NODE UiChatMessage [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L518 community=.openSession]
+NODE clinicalHn() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorClinicalRecordEntryScreen.kt loc=L571 community=DoctorClinicalRecordEntryScreen]
+NODE .readAll() [src=app/src/main/java/com/lullabyai/app/data/offline/PendingWriteQueue.kt loc=L24 community=GrowthRecord]
+NODE String [src= loc= community=.run]
+NODE .getGrowthRecords() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L333 community=HealthRepository]
+NODE .deleteAllergy() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L199 community=HealthRepository]
+NODE .addWasteRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L141 community=HealthRepository]
+NODE .addHealthRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L384 community=HealthRepository]
+NODE CourseStatus [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L68 community=.run]
+NODE .bookingGateMessage() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L111 community=DoctorReservationViewModel]
+NODE DoctorPatientManagementScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientManagementScreen.kt loc=L33 community=DoctorPatientManagementScreen]
+NODE DoctorPatientInfoScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientInfoScreen.kt loc=L1 community=DoctorPatientInfoScreen]
+NODE .getHealthRecords() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L374 community=HealthRepository]
+NODE CourseBadge() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L719 community=VaccineBookScreen]
+NODE SectionHeader() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientInfoScreen.kt loc=L537 community=DoctorPatientInfoScreen]
+NODE DoctorPatientVaccineHistoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientVaccineHistoryScreen.kt loc=L28 community=DoctorBottomNav]
+NODE ChildRole [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L268 community=PermissionSettingsDetailScreen]
+NODE .getWasteRecords() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L134 community=HealthRepository]
+NODE .uploadHealthPhoto() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L479 community=HealthRepository]
+NODE .uploadSymptomLogPhoto() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L487 community=HealthRepository]
+NODE FoodLog [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L576 community=NutritionRepository]
+NODE .uploadVaccineCertificate() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1784 community=ChildViewModel]
+NODE PendingWriteQueue [src=app/src/main/java/com/lullabyai/app/data/offline/PendingWriteQueue.kt loc=L20 community=GrowthRecord]
+NODE .writeAll() [src=app/src/main/java/com/lullabyai/app/data/offline/PendingWriteQueue.kt loc=L29 community=GrowthRecord]
+NODE .addGrowthRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L348 community=HealthRepository]
+NODE .updateVaccineSchedule() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L109 community=HealthRepository]
+NODE .getChronicConditions() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L291 community=HealthRepository]
+NODE .updateHealthStatus() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L430 community=HealthRepository]
+NODE .skipVaccine() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L123 community=HealthRepository]
+NODE .getSymptomLogs() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L216 community=HealthRepository]
+NODE .addChronicCondition() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L298 community=HealthRepository]
+NODE ChildSyncRequest [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L225 community=AccessPermissionBottomNav]
+NODE .getLatestSymptomActivityByRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L438 community=HealthRepository]
+NODE .refreshVaccineStatuses() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L85 community=HealthRepository]
+NODE .stampSymptomsUpdatedAt() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L280 community=HealthRepository]
+NODE .deleteWasteRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L154 community=HealthRepository]
+NODE .addVaccine() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1697 community=ChildViewModel]
+NODE VaccineBookRow() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientInfoScreen.kt loc=L421 community=DoctorPatientInfoScreen]
+NODE Color [src= loc= community=VaccineBookScreen]
+NODE IconLine() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L733 community=VaccineBookScreen]
+NODE .fetchGrowth() [src=app/src/main/java/com/lullabyai/app/widget/WidgetData.kt loc=L103 community=WidgetData.kt]
+NODE .ageMonthsOf() [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L64 community=.run]
+NODE .flush() [src=app/src/main/java/com/lullabyai/app/data/offline/PendingWriteQueue.kt loc=L39 community=GrowthRecord]
+NODE .ageLabel() [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L104 community=.run]
+NODE .deleteVaccineRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L73 community=HealthRepository]
+NODE EditVaccineDialog() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L487 community=VaccineBookScreen]
+NODE .bucketForMonths() [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L39 community=.run]
+NODE DoctorManualPatientRegisterScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorManualPatientRegisterScreen.kt loc=L28 community=ManualRegisterCard]
+NODE MedicalHistory [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L304 community=.put]
+NODE .sendVerificationToParent() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorPatientVaccineHistoryViewModel.kt loc=L47 community=DoctorPatientVaccineHistoryViewModel]
+NODE .uploadVaccineCertificate() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L57 community=HealthRepository]
+NODE .load() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorPatientVaccineHistoryViewModel.kt loc=L36 community=DoctorPatientVaccineHistoryViewModel]
+NODE .addVaccineRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L38 community=HealthRepository]
+NODE .fetchVaccine() [src=app/src/main/java/com/lullabyai/app/widget/WidgetData.kt loc=L122 community=WidgetData.kt]
+NODE .updateVaccineRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L44 community=HealthRepository]
+NODE com [src= loc= community=HealthRepository]
+NODE .TimeUtilsInstant() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L474 community=HealthRepository]
+NODE .ageOrderForGroup() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1682 community=ChildViewModel]
+NODE DoctorPatientDirectoryScreen() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientDirectoryScreen.kt loc=L36 community=DoctorPatientDirectoryViewModel]
+NODE Outstanding [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L79 community=.run]
+NODE .deleteGrowthRecord() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L365 community=HealthRepository]
+NODE .deleteChronicCondition() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L329 community=HealthRepository]
+NODE ExerciseLog [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L587 community=NutritionRepository]
+NODE VaccineHistoryRow() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientVaccineHistoryScreen.kt loc=L110 community=DoctorBottomNav]
+NODE MedicationSchedule [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L51 community=MedicationRepository]
+NODE .isPartOfSeries() [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L101 community=.run]
+NODE .book() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L77 community=DoctorReservationViewModel]
+NODE Map [src= loc= community=HealthRepository]
+NODE .insertDefaultVaccines() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L503 community=HealthRepository]
+NODE VaccineReminderWorker [src=app/src/main/java/com/lullabyai/app/work/VaccineReminderWorker.kt loc=L21 community=.doWork]
+NODE String [src= loc= community=DoctorPatientInfoScreen]
+NODE ChatSession [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L499 community=ChatRepository]
+NODE ByteArray [src= loc= community=HealthRepository]
+NODE ChronicCondition [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L385 community=ChronicRegistryScreen]
+NODE DoctorAvailability [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L143 community=DoctorRepository]
+NODE AppNotification [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L363 community=NotificationRepository]
+NODE InfoRow() [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientInfoScreen.kt loc=L545 community=DoctorPatientInfoScreen]
+NODE MedicationDose [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L69 community=MedicationRepository]
+NODE DeviceReading [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L602 community=WearableRepository]
+NODE .signedVaccineCertificateUrl() [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L69 community=HealthRepository]
+NODE GrowthSnapshot [src=app/src/main/java/com/lullabyai/app/widget/WidgetData.kt loc=L29 community=WidgetData.kt]
+NODE MedicalDocument [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L33 community=VisitDetailsScreen]
+NODE SymptomLog [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L441 community=SymptomLogCard]
+NODE Allergy [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L397 community=AllergyHistoryScreen]
+NODE DoctorBottomNav.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorBottomNav.kt loc=L1 community=DoctorBottomNav]
+NODE Double [src= loc= community=HealthRepository]
+NODE Int [src= loc= community=.run]
+NODE VaccineSnapshot [src=app/src/main/java/com/lullabyai/app/widget/WidgetData.kt loc=L37 community=WidgetData.kt]
+NODE Bucket [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L25 community=.run]
+NODE .skipVaccine() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1767 community=ChildViewModel]
+NODE .updateVaccineSchedule() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1750 community=ChildViewModel]
+NODE vaccineSkipReasons() [src=app/src/main/java/com/lullabyai/app/ui/screens/child/VaccineBookScreen.kt loc=L525 community=VaccineBookScreen]
+NODE .calculateAge() [src=app/src/main/java/com/lullabyai/app/data/repository/ChatRepository.kt loc=L561 community=ChatRepository]
+NODE Boolean [src= loc= community=VaccineBookScreen]
+NODE ChildAccessInvite [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L295 community=Models.kt]
+NODE Complete [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L72 community=.run]
+NODE VaccineAgeBucketsCheck [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L120 community=.run]
+NODE ExerciseContent [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L641 community=Models.kt]
+NODE ChildSyncMatch [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L218 community=Models.kt]
+NODE Boolean [src= loc= community=DoctorReservationViewModel]
+NODE .toggleVaccine() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1851 community=HealthRepository]
+NODE ChatMessage [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L508 community=Models.kt]
+NODE DoctorTab [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorBottomNav.kt loc=L31 community=DoctorBottomNav]
+NODE MilkLog [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L340 community=MilkRecordScreen]
+NODE .deleteVaccine() [src=app/src/main/java/com/lullabyai/app/viewmodel/ChildViewModel.kt loc=L1807 community=HealthRepository]
+NODE NeedInfoRequest [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L535 community=Models.kt]
+NODE .load() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L39 community=DoctorReservationViewModel]
+NODE .refreshSlots() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L63 community=DoctorReservationViewModel]
+NODE DoctorVaccineVerificationHubScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorVaccineVerificationHubScreen.kt loc=L1 community=VerificationCard]
+NODE ChildAccessActivity [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L282 community=Models.kt]
+NODE DoctorReservationViewModel.kt [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L1 community=DoctorReservationViewModel]
+NODE NotASeries [src=app/src/main/java/com/lullabyai/app/data/VaccineAgeBuckets.kt loc=L70 community=.run]
+NODE DoctorNavItem [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorBottomNav.kt loc=L113 community=DoctorBottomNav]
+NODE Boolean [src= loc= community=.run]
+NODE WearableConnection [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L618 community=Models.kt]
+NODE DoctorPatientVaccineHistoryScreen.kt [src=app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorPatientVaccineHistoryScreen.kt loc=L1 community=DoctorBottomNav]
+NODE Boolean [src= loc= community=DoctorPatientInfoScreen]
+NODE AgentAction [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L546 community=Models.kt]
+NODE .refreshLinkGate() [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L70 community=DoctorReservationViewModel]
+NODE RecipeContent [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L631 community=Models.kt]
+NODE DoctorReservationUiState [src=app/src/main/java/com/lullabyai/app/viewmodel/DoctorReservationViewModel.kt loc=L18 community=DoctorReservationViewModel]
+NODE com [src= loc= community=DoctorPatientInfoScreen]
+NODE Color [src= loc= community=DoctorPatientInfoScreen]
+NODE Int [src= loc= community=HealthRepository]
+NODE androidx [src= loc= community=DoctorPatientInfoScreen]
+NODE SleepSchedule [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L94 community=Models.kt]
+NODE WasteRecord [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L351 community=Models.kt]
+NODE Boolean [src= loc= community=DoctorBottomNav]
+NODE Boolean [src= loc= community=HealthRepository]
+NODE Set [src= loc= community=.run]
+NODE HealthRepository.kt [src=app/src/main/java/com/lullabyai/app/data/repository/HealthRepository.kt loc=L1 community=HealthRepository]
+NODE Boolean [src= loc= community=DoctorPatientVaccineHistoryViewModel]
+NODE Map [src= loc= community=.run]
+NODE StateFlow [src= loc= community=DoctorReservationViewModel]
+NODE Boolean [src= loc= community=VerificationCard]
+NODE PostpartumCheckIn [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L22 community=Models.kt]
+NODE NavController [src= loc= community=DoctorPatientInfoScreen]
+NODE MentalHealthAssessment [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L8 community=Models.kt]
+NODE List [src= loc= community=.run]
+NODE Int [src= loc= community=DoctorPatientInfoScreen]
+NODE Result [src= loc= community=.doWork]
+NODE AiAnalysis [src=core/model/src/main/java/com/lullabyai/app/data/model/Models.kt loc=L565 community=Models.kt]
+NODE java [src= loc= community=HealthRepository]
+NODE NavController [src= loc= community=DoctorBottomNav]
+NODE ViewModel [src= loc= community=DoctorReservationViewModel]
+EDGE DoctorPatientInfoScreen() --calls [INFERRED context=call]--> DoctorBottomNav()
+EDGE DoctorPatientInfoScreen() --calls [INFERRED context=call]--> clinicalHn()
+EDGE DoctorPatientInfoScreen() --contains [EXTRACTED]--> DoctorPatientInfoScreen.kt
+EDGE DoctorPatientInfoScreen() --calls [EXTRACTED context=call]--> doctorChartData()
+EDGE DoctorPatientInfoScreen() --calls [EXTRACTED context=call]--> InfoRow()
+EDGE DoctorPatientInfoScreen() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE DoctorPatientInfoScreen() --references [EXTRACTED context=parameter_type]--> String
+EDGE DoctorPatientInfoScreen() --calls [EXTRACTED context=call]--> SectionHeader()
+EDGE DoctorPatientInfoScreen() --calls [EXTRACTED context=call]--> VaccineBookRow()
+EDGE VaccineAgeBuckets --contains [EXTRACTED]--> VaccineAgeBuckets.kt
+EDGE VaccineAgeBuckets --references [EXTRACTED context=generic_arg]--> Bucket
+EDGE VaccineAgeBuckets --references [EXTRACTED context=generic_arg]--> List
+EDGE VaccineAgeBuckets --references [EXTRACTED context=field]--> Map
+EDGE VaccineAgeBuckets --references [EXTRACTED context=generic_arg]--> String
+EDGE VaccineAgeBuckets --method [EXTRACTED]--> .ageLabel()
+EDGE VaccineAgeBuckets --method [EXTRACTED]--> .ageMonthsOf()
+EDGE VaccineAgeBuckets --method [EXTRACTED]--> .bucketForMonths()
+EDGE VaccineAgeBuckets --method [EXTRACTED]--> .courseStatus()
+EDGE VaccineAgeBuckets --method [EXTRACTED]--> .isPartOfSeries()
+EDGE VaccineAgeBuckets --references [EXTRACTED context=parameter_type]--> VaccineRow()
+EDGE VaccineRecord --references [EXTRACTED context=generic_arg]--> .getVaccineRecords()
+EDGE VaccineRecord --references [EXTRACTED context=generic_arg]--> .addVaccineRecord()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .updateVaccineRecord()
+EDGE VaccineRecord --calls [EXTRACTED context=call]--> .insertDefaultVaccines()
+EDGE VaccineRecord --calls [EXTRACTED context=call]--> .applyOnboardingVaccineSelections()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> EditVaccineDialog()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> VaccineRow()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> VaccineHistoryRow()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> VerificationCard()
+EDGE VaccineRecord --calls [EXTRACTED context=call]--> .addVaccine()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .updateVaccineSchedule()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .skipVaccine()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .uploadVaccineCertificate()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .deleteVaccine()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .toggleVaccine()
+EDGE VaccineRecord --references [EXTRACTED context=parameter_type]--> .sendVerificationToParent()
+EDGE VaccineRecord --contains [EXTRACTED]--> Models.kt
+EDGE HealthRepository --calls [INFERRED context=call]--> .flush()
+EDGE HealthRepository --calls [INFERRED context=call]--> .buildChildContext()
+EDGE HealthRepository --calls [INFERRED context=call]--> .buildStatsSummary()
+EDGE HealthRepository --contains [EXTRACTED]--> HealthRepository.kt
+EDGE HealthRepository --method [EXTRACTED]--> .addAllergy()
+EDGE HealthRepository --method [EXTRACTED]--> .addChronicCondition()
+EDGE HealthRepository --method [EXTRACTED]--> .addGrowthRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .addHealthRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .addSymptomLog()
+EDGE HealthRepository --method [EXTRACTED]--> .addVaccineRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .addWasteRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .applyOnboardingVaccineSelections()
+EDGE HealthRepository --method [EXTRACTED]--> .deleteAllergy()
+EDGE HealthRepository --method [EXTRACTED]--> .deleteChronicCondition()
+EDGE HealthRepository --method [EXTRACTED]--> .deleteGrowthRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .deleteVaccineRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .deleteWasteRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .getAllergies()
+EDGE HealthRepository --method [EXTRACTED]--> .getChronicConditions()
+EDGE HealthRepository --method [EXTRACTED]--> .getGrowthRecords()
+EDGE HealthRepository --method [EXTRACTED]--> .getHealthRecords()
+EDGE HealthRepository --method [EXTRACTED]--> .getLatestSymptomActivityByRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .getLatestSymptomUpdateByRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .getSymptomLogs()
+EDGE HealthRepository --method [EXTRACTED]--> .getVaccineRecords()
+EDGE HealthRepository --method [EXTRACTED]--> .getWasteRecords()
+EDGE HealthRepository --method [EXTRACTED]--> .insertDefaultVaccines()
+EDGE HealthRepository --method [EXTRACTED]--> .refreshVaccineStatuses()
+EDGE HealthRepository --method [EXTRACTED]--> .signedVaccineCertificateUrl()
+EDGE HealthRepository --method [EXTRACTED]--> .skipVaccine()
+EDGE HealthRepository --method [EXTRACTED]--> .stampSymptomsUpdatedAt()
+EDGE HealthRepository --method [EXTRACTED]--> .syncAllergySummaryForChild()
+EDGE HealthRepository --method [EXTRACTED]--> .TimeUtilsInstant()
+EDGE HealthRepository --method [EXTRACTED]--> .updateAllergy()
+EDGE HealthRepository --method [EXTRACTED]--> .updateChronicCondition()
+EDGE HealthRepository --method [EXTRACTED]--> .updateHealthRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .updateHealthStatus()
+EDGE HealthRepository --method [EXTRACTED]--> .updateVaccineRecord()
+EDGE HealthRepository --method [EXTRACTED]--> .updateVaccineSchedule()
+EDGE HealthRepository --method [EXTRACTED]--> .updateVaccineStatus()
+EDGE HealthRepository --method [EXTRACTED]--> .uploadHealthPhoto()
+EDGE HealthRepository --method [EXTRACTED]--> .uploadSymptomLogPhoto()
+EDGE HealthRepository --method [EXTRACTED]--> .uploadVaccineCertificate()
+EDGE HealthRepository --method [EXTRACTED]--> .upsertSymptomLog()
+EDGE HealthRepository --calls [INFERRED context=call]--> .fetchGrowth()
+EDGE HealthRepository --calls [INFERRED context=call]--> .fetchVaccine()
+EDGE HealthRepository --calls [INFERRED context=call]--> .doWork()
+EDGE .book() --method [EXTRACTED]--> DoctorReservationViewModel
+EDGE .book() --references [EXTRACTED context=parameter_type]--> String
+EDGE .book() --calls [EXTRACTED context=call]--> .bookingGateMessage()
+EDGE .book() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .stampSymptomsUpdatedAt() --calls [INFERRED context=call]--> .put()
+EDGE .stampSymptomsUpdatedAt() --references [EXTRACTED context=parameter_type]--> String
+EDGE .insertDefaultVaccines() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateChronicCondition() --calls [INFERRED context=call]--> .put()
+EDGE .updateChronicCondition() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateChronicCondition() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateChronicCondition() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .deleteWasteRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteWasteRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteWasteRecord() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorAboutNongRakScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorAddAppointmentScreen()
+EDGE DoctorBottomNav() --contains [EXTRACTED]--> DoctorBottomNav.kt
+EDGE DoctorBottomNav() --references [EXTRACTED context=parameter_type]--> DoctorTab
+EDGE DoctorBottomNav() --calls [EXTRACTED context=call]--> DoctorNavItem
+EDGE DoctorBottomNav() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorClinicalRecordEntryScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorDashboardScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorEditProfileScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorHelpFaqScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorManageSlotsScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorManualPatientRegisterScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientDirectoryScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientManagementScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientRegistrationApprovalScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientRegistrationDetailScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientRegistrationFormScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientScheduleScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorPatientVaccineHistoryScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorSettingsScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorSpecialDatesScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorTimeAppointmentHubScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorVaccineVerificationHubScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorVaccineVerificationSentScreen()
+EDGE DoctorBottomNav() --calls [INFERRED context=call]--> DoctorWeeklyHoursScreen()
+EDGE clinicalHn() --contains [EXTRACTED]--> DoctorClinicalRecordEntryScreen.kt
+EDGE clinicalHn() --calls [EXTRACTED context=call]--> DoctorClinicalRecordEntryScreen()
+EDGE clinicalHn() --references [EXTRACTED context=return_type]--> String
+EDGE .addVaccine() --method [EXTRACTED]--> ChildViewModel
+EDGE .addVaccine() --references [EXTRACTED context=parameter_type]--> String
+EDGE .addVaccine() --calls [EXTRACTED context=call]--> .ageOrderForGroup()
+EDGE VaccineBookRow() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE VaccineBookRow() --references [EXTRACTED context=parameter_type]--> com
+EDGE .courseStatus() --references [EXTRACTED context=return_type]--> CourseStatus
+EDGE .courseStatus() --calls [EXTRACTED context=call]--> Outstanding
+EDGE .courseStatus() --references [EXTRACTED context=parameter_type]--> Set
+EDGE .courseStatus() --calls [EXTRACTED context=call]--> .run()
+EDGE .addAllergy() --calls [INFERRED context=call]--> .put()
+EDGE .addAllergy() --references [EXTRACTED context=parameter_type]--> String
+EDGE .addAllergy() --references [EXTRACTED context=return_type]--> Result
+EDGE .addAllergy() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE String --references [EXTRACTED context=parameter_type]--> .load()
+EDGE String --references [EXTRACTED context=parameter_type]--> .refreshLinkGate()
+EDGE String --references [EXTRACTED context=parameter_type]--> .refreshSlots()
+EDGE .buildStatsSummary() --references [EXTRACTED context=return_type]--> String
+EDGE .buildStatsSummary() --method [EXTRACTED]--> ChatRepository
+EDGE .buildStatsSummary() --calls [INFERRED context=call]--> ChildRepository
+EDGE .buildStatsSummary() --calls [INFERRED context=call]--> NutritionRepository
+EDGE .buildStatsSummary() --calls [INFERRED context=call]--> SleepRepository
+EDGE .getGrowthRecords() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getGrowthRecords() --references [EXTRACTED context=return_type]--> Result
+EDGE .getGrowthRecords() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getGrowthRecords() --references [EXTRACTED context=generic_arg]--> GrowthRecord
+EDGE .deleteAllergy() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteAllergy() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteAllergy() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .addWasteRecord() --calls [INFERRED context=call]--> .put()
+EDGE .addWasteRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .addWasteRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .addWasteRecord() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .fetchGrowth() --calls [INFERRED context=call]--> ChildRepository
+EDGE .fetchGrowth() --references [EXTRACTED context=return_type]--> GrowthSnapshot
+EDGE .fetchGrowth() --method [EXTRACTED]--> WidgetDataFetcher
+EDGE .ageMonthsOf() --references [EXTRACTED context=return_type]--> Int
+EDGE .updateVaccineStatus() --calls [INFERRED context=call]--> .put()
+EDGE .updateVaccineStatus() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateVaccineStatus() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateVaccineStatus() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .addHealthRecord() --calls [INFERRED context=call]--> .put()
+EDGE .addHealthRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .addHealthRecord() --calls [INFERRED context=call]--> .add()
+EDGE .addHealthRecord() --references [EXTRACTED context=generic_arg]--> HealthRecord
+EDGE .toggleVaccine() --method [EXTRACTED]--> ChildViewModel
+EDGE .getAllergies() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAllergies() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAllergies() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAllergies() --references [EXTRACTED context=generic_arg]--> Allergy
+EDGE .bookingGateMessage() --references [EXTRACTED context=parameter_type]--> ClinicBookingGate
+EDGE .updateHealthRecord() --calls [INFERRED context=call]--> .put()
+EDGE .updateHealthRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateHealthRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateHealthRecord() --references [EXTRACTED context=parameter_type]--> List
+EDGE .updateHealthRecord() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .updateHealthRecord() --references [EXTRACTED context=parameter_type]--> Double
+EDGE .updateHealthRecord() --calls [INFERRED context=call]--> .add()
+EDGE .deleteVaccine() --method [EXTRACTED]--> ChildViewModel
+EDGE VaccineRow() --contains [EXTRACTED]--> VaccineBookScreen.kt
+EDGE VaccineRow() --calls [EXTRACTED context=call]--> VaccineBookScreen()
+EDGE VaccineRow() --calls [EXTRACTED context=call]--> vaccineSkipReasons()
+EDGE VaccineRow() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE VaccineRow() --calls [EXTRACTED context=call]--> CourseBadge()
+EDGE VaccineRow() --calls [EXTRACTED context=call]--> IconLine()
+EDGE VaccineRow() --calls [EXTRACTED context=call]--> Color
+EDGE .flush() --method [EXTRACTED]--> PendingWriteQueue
+EDGE .flush() --calls [EXTRACTED context=call]--> .readAll()
+EDGE .flush() --calls [EXTRACTED context=call]--> .writeAll()
+EDGE .ageLabel() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .ageLabel() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .signedVaccineCertificateUrl() --references [EXTRACTED context=generic_arg]--> String
+EDGE .signedVaccineCertificateUrl() --references [EXTRACTED context=return_type]--> Result
+EDGE .buildChildContext() --references [EXTRACTED context=return_type]--> String
+EDGE .buildChildContext() --method [EXTRACTED]--> ChatRepository
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .sendMessage()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .calculateAge()
+EDGE .buildChildContext() --calls [INFERRED context=call]--> WearableRepository
+EDGE .buildChildContext() --references [EXTRACTED context=parameter_type]--> Child
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateChildInfoCardSummary()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateChildSummary()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateDailyQuestion()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateDashboardSummary()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateDiseaseList()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateDiseaseRiskAnalysis()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateEliminationInsight()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateGrowthInsight()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateHealthAnalysis()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateMonthlyReport()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateNutritionInsight()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generatePrevention()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateQuickTip()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateSleepActivityInsight()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateSleepInsight()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateTrendInsights()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateWasteInsight()
+EDGE .buildChildContext() --calls [EXTRACTED context=call]--> .generateWeeklyHealthReport()
+EDGE .applyOnboardingVaccineSelections() --references [EXTRACTED context=generic_arg]--> String
+EDGE .applyOnboardingVaccineSelections() --references [EXTRACTED context=parameter_type]--> List
+EDGE .deleteVaccineRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteVaccineRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteVaccineRecord() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE EditVaccineDialog() --contains [EXTRACTED]--> VaccineBookScreen.kt
+EDGE EditVaccineDialog() --calls [EXTRACTED context=call]--> VaccineBookScreen()
+EDGE EditVaccineDialog() --calls [EXTRACTED context=call]--> Color
+EDGE .getHealthRecords() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getHealthRecords() --references [EXTRACTED context=return_type]--> Result
+EDGE .getHealthRecords() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getHealthRecords() --references [EXTRACTED context=generic_arg]--> HealthRecord
+EDGE .bucketForMonths() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .bucketForMonths() --calls [EXTRACTED context=call]--> .run()
+EDGE .updateAllergy() --calls [INFERRED context=call]--> .put()
+EDGE .updateAllergy() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateAllergy() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateAllergy() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE SectionHeader() --references [EXTRACTED context=parameter_type]--> androidx
+EDGE SectionHeader() --references [EXTRACTED context=parameter_type]--> Color
+EDGE .sendVerificationToParent() --method [EXTRACTED]--> DoctorPatientVaccineHistoryViewModel
+EDGE .sendVerificationToParent() --calls [EXTRACTED context=call]--> .load()
+EDGE .sendVerificationToParent() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .uploadVaccineCertificate() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadVaccineCertificate() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadVaccineCertificate() --references [EXTRACTED context=parameter_type]--> ByteArray
+EDGE .getVaccineRecords() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getVaccineRecords() --references [EXTRACTED context=return_type]--> Result
+EDGE .getVaccineRecords() --references [EXTRACTED context=parameter_type]--> String
+EDGE .addSymptomLog() --references [EXTRACTED context=parameter_type]--> String
+EDGE .addSymptomLog() --references [EXTRACTED context=return_type]--> Result
+EDGE .addSymptomLog() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .addSymptomLog() --references [EXTRACTED context=parameter_type]--> Map
+EDGE .addSymptomLog() --references [EXTRACTED context=parameter_type]--> Double
+EDGE .upsertSymptomLog() --calls [INFERRED context=call]--> .put()
+EDGE .upsertSymptomLog() --references [EXTRACTED context=parameter_type]--> String
+EDGE .upsertSymptomLog() --references [EXTRACTED context=return_type]--> Result
+EDGE .upsertSymptomLog() --references [EXTRACTED context=generic_arg]--> com
+EDGE .upsertSymptomLog() --references [EXTRACTED context=parameter_type]--> Double
+EDGE .upsertSymptomLog() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .upsertSymptomLog() --references [EXTRACTED context=parameter_type]--> Map
+EDGE doctorChartData() --references [EXTRACTED context=return_type]--> com
+EDGE doctorChartData() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE doctorChartData() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .addVaccineRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .getWasteRecords() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getWasteRecords() --references [EXTRACTED context=return_type]--> Result
+EDGE .getWasteRecords() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getWasteRecords() --references [EXTRACTED context=generic_arg]--> com
+EDGE .fetchVaccine() --calls [INFERRED context=call]--> ChildRepository
+EDGE .fetchVaccine() --references [EXTRACTED context=return_type]--> VaccineSnapshot
+EDGE .fetchVaccine() --method [EXTRACTED]--> WidgetDataFetcher
+EDGE Models.kt --contains [EXTRACTED]--> AgentAction
+EDGE Models.kt --contains [EXTRACTED]--> AiAnalysis
+EDGE Models.kt --contains [EXTRACTED]--> AiTask
+EDGE Models.kt --contains [EXTRACTED]--> Allergy
+EDGE Models.kt --contains [EXTRACTED]--> AppNotification
+EDGE Models.kt --contains [EXTRACTED]--> Appointment
+EDGE Models.kt --contains [EXTRACTED]--> ChatMessage
+EDGE Models.kt --contains [EXTRACTED]--> ChatSession
+EDGE Models.kt --contains [EXTRACTED]--> Child
+EDGE Models.kt --contains [EXTRACTED]--> ChildAccessActivity
+EDGE Models.kt --contains [EXTRACTED]--> ChildAccessInvite
+EDGE Models.kt --contains [EXTRACTED]--> ChildAccessMember
+EDGE Models.kt --contains [EXTRACTED]--> ChildRole
+EDGE Models.kt --contains [EXTRACTED]--> ChildSyncMatch
+EDGE Models.kt --contains [EXTRACTED]--> ChildSyncRequest
+EDGE Models.kt --contains [EXTRACTED]--> ChronicCondition
+EDGE Models.kt --contains [EXTRACTED]--> DevelopmentMilestone
+EDGE Models.kt --contains [EXTRACTED]--> DeviceReading
+EDGE Models.kt --contains [EXTRACTED]--> DoctorAppointmentSlot
+EDGE Models.kt --contains [EXTRACTED]--> DoctorAvailability
+EDGE Models.kt --contains [EXTRACTED]--> DoctorProfile
+EDGE Models.kt --contains [EXTRACTED]--> DoctorVisit
+EDGE Models.kt --contains [EXTRACTED]--> ExerciseContent
+EDGE Models.kt --contains [EXTRACTED]--> ExerciseLog
+EDGE Models.kt --contains [EXTRACTED]--> FoodLog
+EDGE Models.kt --contains [EXTRACTED]--> GrowthRecord
+EDGE Models.kt --contains [EXTRACTED]--> HealthRecord
+EDGE Models.kt --contains [EXTRACTED]--> MedicalDocument
+EDGE Models.kt --contains [EXTRACTED]--> MedicalHistory
+EDGE Models.kt --contains [EXTRACTED]--> MedicationDose
+EDGE Models.kt --contains [EXTRACTED]--> MedicationSchedule
+EDGE Models.kt --contains [EXTRACTED]--> MentalHealthAssessment
+EDGE Models.kt --contains [EXTRACTED]--> MilkLog
+EDGE Models.kt --contains [EXTRACTED]--> NeedInfoRequest
+EDGE Models.kt --contains [EXTRACTED]--> PostpartumCheckIn
+EDGE Models.kt --contains [EXTRACTED]--> Profile
+EDGE Models.kt --contains [EXTRACTED]--> RecipeContent
+EDGE Models.kt --contains [EXTRACTED]--> SleepLog
+EDGE Models.kt --contains [EXTRACTED]--> SleepSchedule
+EDGE Models.kt --contains [EXTRACTED]--> SuggestionItem
+EDGE Models.kt --contains [EXTRACTED]--> SymptomLog
+EDGE Models.kt --contains [EXTRACTED]--> UiChatMessage
+EDGE Models.kt --contains [EXTRACTED]--> VaccineVerificationRequest
+EDGE Models.kt --contains [EXTRACTED]--> WasteRecord
+EDGE Models.kt --contains [EXTRACTED]--> WearableConnection
+EDGE .updateVaccineRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateVaccineRecord() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .syncAllergySummaryForChild() --calls [INFERRED context=call]--> ChildRepository
+EDGE .syncAllergySummaryForChild() --references [EXTRACTED context=parameter_type]--> String
+EDGE .TimeUtilsInstant() --references [EXTRACTED context=parameter_type]--> String
+EDGE .TimeUtilsInstant() --references [EXTRACTED context=return_type]--> java
+EDGE .uploadHealthPhoto() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadHealthPhoto() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadHealthPhoto() --references [EXTRACTED context=parameter_type]--> ByteArray
+EDGE .uploadHealthPhoto() --calls [INFERRED context=call]--> .error()
+EDGE .uploadSymptomLogPhoto() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadSymptomLogPhoto() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadSymptomLogPhoto() --references [EXTRACTED context=parameter_type]--> ByteArray
+EDGE .uploadSymptomLogPhoto() --calls [INFERRED context=call]--> .error()
+EDGE .uploadVaccineCertificate() --calls [INFERRED context=call]--> onDone()
+EDGE .uploadVaccineCertificate() --method [EXTRACTED]--> ChildViewModel
+EDGE .uploadVaccineCertificate() --references [EXTRACTED context=parameter_type]--> String
+EDGE .uploadVaccineCertificate() --references [EXTRACTED context=parameter_type]--> ByteArray
+EDGE .deleteGrowthRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteGrowthRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteGrowthRecord() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE VaccineAgeBuckets.kt --contains [EXTRACTED]--> Complete
+EDGE VaccineAgeBuckets.kt --contains [EXTRACTED]--> CourseStatus
+EDGE VaccineAgeBuckets.kt --contains [EXTRACTED]--> NotASeries
+EDGE VaccineAgeBuckets.kt --contains [EXTRACTED]--> Outstanding
+EDGE VaccineAgeBuckets.kt --contains [EXTRACTED]--> VaccineAgeBucketsCheck
+EDGE .addGrowthRecord() --calls [INFERRED context=call]--> .put()
+EDGE .addGrowthRecord() --calls [INFERRED context=call]--> ChildRepository
+EDGE .addGrowthRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .addGrowthRecord() --references [EXTRACTED context=generic_arg]--> GrowthRecord
+EDGE VerificationCard() --contains [EXTRACTED]--> DoctorVaccineVerificationHubScreen.kt
+EDGE VerificationCard() --calls [EXTRACTED context=call]--> DoctorVaccineVerificationHubScreen()
+EDGE VerificationCard() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE VerificationCard() --references [EXTRACTED context=parameter_type]--> Child
+EDGE VerificationCard() --references [EXTRACTED context=parameter_type]--> VaccineVerificationRequest
+EDGE .updateVaccineSchedule() --calls [INFERRED context=call]--> .put()
+EDGE .updateVaccineSchedule() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateVaccineSchedule() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateVaccineSchedule() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .deleteChronicCondition() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteChronicCondition() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteChronicCondition() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .getChronicConditions() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getChronicConditions() --references [EXTRACTED context=return_type]--> Result
+EDGE .getChronicConditions() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getChronicConditions() --references [EXTRACTED context=generic_arg]--> com
+EDGE .updateHealthStatus() --calls [INFERRED context=call]--> .put()
+EDGE .updateHealthStatus() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateHealthStatus() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateHealthStatus() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .skipVaccine() --calls [INFERRED context=call]--> .put()
+EDGE .skipVaccine() --references [EXTRACTED context=parameter_type]--> String
+EDGE .skipVaccine() --references [EXTRACTED context=return_type]--> Result
+EDGE .skipVaccine() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE VaccineHistoryRow() --contains [EXTRACTED]--> DoctorPatientVaccineHistoryScreen.kt
+EDGE VaccineHistoryRow() --calls [EXTRACTED context=call]--> DoctorPatientVaccineHistoryScreen()
+EDGE VaccineHistoryRow() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .getSymptomLogs() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getSymptomLogs() --references [EXTRACTED context=return_type]--> Result
+EDGE .getSymptomLogs() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getSymptomLogs() --references [EXTRACTED context=generic_arg]--> com
+EDGE .addChronicCondition() --calls [INFERRED context=call]--> .put()
+EDGE .addChronicCondition() --references [EXTRACTED context=parameter_type]--> String
+EDGE .addChronicCondition() --references [EXTRACTED context=return_type]--> Result
+EDGE .addChronicCondition() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .skipVaccine() --method [EXTRACTED]--> ChildViewModel
+EDGE .skipVaccine() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getLatestSymptomActivityByRecord() --calls [INFERRED context=call]--> .put()
+EDGE .getLatestSymptomActivityByRecord() --references [EXTRACTED context=generic_arg]--> String
+EDGE .getLatestSymptomActivityByRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .getLatestSymptomActivityByRecord() --references [EXTRACTED context=generic_arg]--> Map
+EDGE DoctorReservationViewModel --contains [EXTRACTED]--> DoctorReservationViewModel.kt
+EDGE DoctorReservationViewModel --references [EXTRACTED context=generic_arg]--> DoctorReservationUiState
+EDGE DoctorReservationViewModel --method [EXTRACTED]--> .load()
+EDGE DoctorReservationViewModel --method [EXTRACTED]--> .refreshLinkGate()
+EDGE DoctorReservationViewModel --method [EXTRACTED]--> .refreshSlots()
+EDGE DoctorReservationViewModel --references [EXTRACTED context=field]--> StateFlow
+EDGE DoctorReservationViewModel --inherits [EXTRACTED]--> ViewModel
+EDGE .isPartOfSeries() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .isPartOfSeries() --calls [EXTRACTED context=call]--> .run()
+EDGE .updateVaccineSchedule() --method [EXTRACTED]--> ChildViewModel
+EDGE .updateVaccineSchedule() --references [EXTRACTED context=parameter_type]--> String
+EDGE .refreshVaccineStatuses() --references [EXTRACTED context=parameter_type]--> String
+EDGE .refreshVaccineStatuses() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .doWork() --calls [INFERRED context=call]--> ChildRepository
+EDGE .doWork() --calls [INFERRED context=call]--> NotificationRepository
+EDGE .doWork() --calls [INFERRED context=call]--> SettingsManager
+EDGE .doWork() --method [EXTRACTED]--> VaccineReminderWorker
+EDGE .doWork() --references [EXTRACTED context=return_type]--> Result
+EDGE .getLatestSymptomUpdateByRecord() --calls [INFERRED context=call]--> .put()
+EDGE .getLatestSymptomUpdateByRecord() --references [EXTRACTED context=generic_arg]--> String
+EDGE .getLatestSymptomUpdateByRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .getLatestSymptomUpdateByRecord() --references [EXTRACTED context=generic_arg]--> Map

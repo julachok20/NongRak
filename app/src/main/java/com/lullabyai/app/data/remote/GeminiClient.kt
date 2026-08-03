@@ -1,7 +1,7 @@
 package com.lullabyai.app.data.remote
 
 import io.ktor.client.*
-import io.ktor.client.engine.android.*
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -14,7 +14,7 @@ object GeminiClient {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    private val client = HttpClient(Android) {
+    private val client = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) {
             requestTimeoutMillis = 60_000

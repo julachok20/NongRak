@@ -106,12 +106,16 @@ object WidgetDataFetcher {
         val records = HealthRepository().getGrowthRecords(childId).getOrDefault(emptyList())
         val latest = records.getOrNull(0)
         val previous = records.getOrNull(1)
+        val latestWeight = latest?.weightKg
+        val previousWeight = previous?.weightKg
+        val latestHeight = latest?.heightCm
+        val previousHeight = previous?.heightCm
         return GrowthSnapshot(
             childName = child?.name,
-            weightKg = latest?.weightKg,
-            weightDeltaKg = if (latest?.weightKg != null && previous?.weightKg != null) latest.weightKg - previous.weightKg else null,
-            heightCm = latest?.heightCm,
-            heightDeltaCm = if (latest?.heightCm != null && previous?.heightCm != null) latest.heightCm - previous.heightCm else null
+            weightKg = latestWeight,
+            weightDeltaKg = if (latestWeight != null && previousWeight != null) latestWeight - previousWeight else null,
+            heightCm = latestHeight,
+            heightDeltaCm = if (latestHeight != null && previousHeight != null) latestHeight - previousHeight else null
         )
     }
 

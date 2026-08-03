@@ -156,11 +156,57 @@ fun DashboardScreen(
     }
 
     val child = childState.child
+    val hasActiveChild = childState.children.isNotEmpty() && child != null
     val username = authState.profile?.username?.takeIf { it.isNotBlank() }
         ?: authState.profile?.fullName?.takeIf { it.isNotBlank() }
     val relationship = authState.profile?.relationship
 
     LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile(); childViewModel.loadPendingSyncRequests(); authViewModel.loadMentalHealthHistory(); authViewModel.loadPostpartumHistory() }
+
+    LaunchedEffect(childState.children.size, childState.isLoading) {
+        if (!childState.isLoading && childState.children.isNotEmpty()) {
+            childViewModel.loadDoctorVaccineInbox(context)
+        }
+    }
+
+    childState.doctorVaccineInboxPopup?.let { inbox ->
+        AlertDialog(
+            onDismissRequest = { childViewModel.dismissDoctorVaccineInbox(context) },
+            icon = { Icon(Icons.Filled.Vaccines, null, tint = Primary) },
+            title = {
+                Text(if (s.isThai) "ได้รับการยืนยันวัคซีนจากแพทย์" else "Vaccine verification from your doctor")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (s.isThai) "${inbox.childName} — ${inbox.vaccineName}"
+                        else "${inbox.childName} — ${inbox.vaccineName}",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        inbox.message ?: if (s.isThai)
+                            "แพทย์ส่งการยืนยันวัคซีนแล้ว ไปที่สมุดวัคซีนเพื่อดูรายละเอียด"
+                        else
+                            "Your doctor sent a vaccine verification. Open Vaccine Book to review.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    childViewModel.dismissDoctorVaccineInbox(context, openVaccineBook = true)
+                    onNavigateToVaccine()
+                }) {
+                    Text(if (s.isThai) "ไปที่สมุดวัคซีน" else "Open Vaccine Book", color = Primary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { childViewModel.dismissDoctorVaccineInbox(context) }) {
+                    Text(if (s.isThai) "ปิด" else "Close")
+                }
+            }
+        )
+    }
 
     // Monthly parent mental-health check-in nudge — only shows if nothing was submitted this
     // calendar month yet (per-parent, not per-child; see MentalHealthCatalog).
@@ -191,14 +237,21 @@ fun DashboardScreen(
 
     // AI "what do you want to know more" popup — open-ended question, capped 3/day (see
     // SettingsManager.aiDailyQuestionCountToday), shown here rather than only inside the chat.
-    LaunchedEffect(child?.id) { child?.let { childViewModel.loadDailyQuestion(context, isThai) } }
+    LaunchedEffect(child?.id, hasActiveChild) {
+        if (!hasActiveChild) return@LaunchedEffect
+        child?.let { childViewModel.loadDailyQuestion(context, isThai) }
+    }
 
     // Daily-logging streak: consecutive days (up to today) with at least one sleep/food/exercise/
     // health log. Derived entirely from data already tracked — no new table. Food/exercise need an
     // explicit range fetch (same direct-repo-call pattern QuickLogHub/SmartTrends already use);
     // sleep + health records are already in childState via the child-load cascade.
     var rangeLogDates by remember { mutableStateOf<Set<LocalDate>>(emptySet()) }
-    LaunchedEffect(child?.id) {
+    LaunchedEffect(child?.id, hasActiveChild) {
+        if (!hasActiveChild) {
+            rangeLogDates = emptySet()
+            return@LaunchedEffect
+        }
         val c = child ?: return@LaunchedEffect
         childViewModel.loadSleep()
         val nutritionRepo = NutritionRepository()
@@ -207,7 +260,8 @@ fun DashboardScreen(
         val exerciseDates = nutritionRepo.getExerciseLogsRange(c.id, from).mapNotNull { runCatching { LocalDate.parse(it.logDate) }.getOrNull() }
         rangeLogDates = (foodDates + exerciseDates).toSet()
     }
-    val streak = remember(rangeLogDates, childState.sleepLogs, childState.healthRecords) {
+    val streak = remember(rangeLogDates, childState.sleepLogs, childState.healthRecords, hasActiveChild) {
+        if (!hasActiveChild) 0 else {
         val sleepDates = childState.sleepLogs.mapNotNull { TimeUtils.localDate(it.startTime)?.let { d -> runCatching { LocalDate.parse(d) }.getOrNull() } }
         val healthDates = childState.healthRecords.mapNotNull { TimeUtils.localDate(it.recordedAt)?.let { d -> runCatching { LocalDate.parse(d) }.getOrNull() } }
         val allDates = rangeLogDates + sleepDates + healthDates
@@ -216,15 +270,18 @@ fun DashboardScreen(
         var day = if (today in allDates) today else today.minusDays(1)
         while (day in allDates) { count++; day = day.minusDays(1) }
         count
+        }
     }
 
     // Milestone-completion celebration: reuses ChildDevelopmentScreen's "all age-appropriate skills
     // done" logic so the moment is visible on the Dashboard, not just buried in the พัฒนาการ tab.
     val ageMonths = childViewModel.getAgeMonths()
-    val allMilestonesDone = remember(childState.milestones, ageMonths) {
+    val allMilestonesDone = remember(childState.milestones, ageMonths, hasActiveChild) {
+        if (!hasActiveChild) false else {
         val hasAgeAppropriate = childState.milestones.any { (it.ageMonthsExpected ?: 0) <= ageMonths }
         val pendingPool = childState.milestones.any { !it.isAchieved && it.skipReason == null && (it.ageMonthsExpected ?: 0) <= ageMonths }
         hasAgeAppropriate && !pendingPool
+        }
     }
 
     // Same gap-check every AI-analysis screen already uses (ChildHealth/DiseaseRisk/GrowthMetrics)
@@ -243,38 +300,40 @@ fun DashboardScreen(
     }
 
     // Nearest upcoming (not-completed) vaccine, for the alert card.
-    val nextVaccine = remember(childState.vaccines) {
+    val nextVaccine = remember(childState.vaccines, hasActiveChild) {
+        if (!hasActiveChild) null else {
         val today = LocalDate.now()
         childState.vaccines
             .filter { it.status != "completed" && it.scheduledDate != null }
             .mapNotNull { v -> runCatching { LocalDate.parse(v.scheduledDate) }.getOrNull()?.let { v to it } }
             .filter { !it.second.isBefore(today) }
             .minByOrNull { it.second }
+        }
+    }
+    val ownedSyncRequests = remember(childState.pendingSyncRequests, childState.children) {
+        val ownedIds = childState.children.map { it.id }.toSet()
+        childState.pendingSyncRequests.filter { it.childId in ownedIds }
     }
 
     // Service registry + "recent" tracking. Opening a service records it (newest first) so the
     // "บริการล่าสุด" row reflects what the user actually used.
     val recent by com.lullabyai.app.data.settings.RecentServices.list.collectAsState()
-    val usage by com.lullabyai.app.data.settings.RecentServices.counts.collectAsState()
     val services = listOf(
-        DashSvc("vaccine", if (isThai) "ประวัติวัคซีน" else "Vaccine history", if (isThai) "ติดตามกำหนดการฉีดวัคซีน" else "Track vaccination schedule", Icons.Filled.Vaccines, Color(0xFF3F51B5), onNavigateToVaccine),
-        DashSvc("development", if (isThai) "บันทึกพัฒนาการ" else "Development", if (isThai) "ทักษะตามวัยและกิจกรรมแนะนำ" else "Milestones & activities", Icons.Filled.TrendingUp, Color(0xFF1976D2), onNavigateToDevelopment),
-        DashSvc("health", if (isThai) "ประวัติสุขภาพ" else "Health history", if (isThai) "บันทึกอาการและประวัติการรักษา" else "Symptoms & care history", Icons.Filled.HealthAndSafety, Color(0xFF00897B), onNavigateToHealth),
-        DashSvc("nutrition", if (isThai) "โภชนาการ" else "Nutrition", if (isThai) "บันทึกอาหารและคำนวณแคลอรี่" else "Log food & calories", Icons.Filled.Restaurant, Color(0xFFEF6C00), onNavigateToNutrition),
-        DashSvc("growth", if (isThai) "การเจริญเติบโต" else "Growth", if (isThai) "น้ำหนักและส่วนสูงตามวัย" else "Weight & height", Icons.Filled.MonitorWeight, Color(0xFF6A1B9A), onNavigateToGrowth),
-        DashSvc("sleep", if (isThai) "การนอน" else "Sleep", if (isThai) "ติดตามและตั้งตารางการนอน" else "Track & schedule sleep", Icons.Filled.Bedtime, Color(0xFF3949AB), onNavigateToSleep),
-        DashSvc("chat", if (isThai) "คุยกับ AI" else "Chat with AI", "", Icons.Filled.AutoAwesome, Primary, onNavigateToChat),
+        DashSvc("vaccine", if (isThai) "ประวัติวัคซีน" else "Vaccine history", Icons.Filled.Vaccines, onNavigateToVaccine),
+        DashSvc("development", if (isThai) "บันทึกพัฒนาการ" else "Development", Icons.Filled.TrendingUp, onNavigateToDevelopment),
+        DashSvc("health", if (isThai) "ประวัติสุขภาพ" else "Health history", Icons.Filled.HealthAndSafety, onNavigateToHealth),
+        DashSvc("nutrition", if (isThai) "โภชนาการ" else "Nutrition", Icons.Filled.Restaurant, onNavigateToNutrition),
+        DashSvc("growth", if (isThai) "การเจริญเติบโต" else "Growth", Icons.Filled.MonitorWeight, onNavigateToGrowth),
+        DashSvc("sleep", if (isThai) "การนอน" else "Sleep", Icons.Filled.Bedtime, onNavigateToSleep),
+        DashSvc("chat", if (isThai) "คุยกับ AI" else "Chat with AI", Icons.Filled.AutoAwesome, onNavigateToChat),
     )
     val svcMap = services.associateBy { it.key }
     // Just navigate — the visit is recorded centrally on the destination screen (AppNavigation), so it
     // counts no matter how the user reached the service (dashboard, child tab, bottom nav, sidebar…).
     val open: (String) -> Unit = { k -> svcMap[k]?.nav?.invoke() }
-    val recentKeys = (recent + listOf("nutrition", "growth")).distinct().take(2)
-    // "บริการหลัก" reorders by the user's activity: most-used first, with a stable default order on ties.
-    val mainCandidates = listOf("vaccine", "development", "health", "nutrition", "growth")
-    val mainKeys = mainCandidates
-        .sortedWith(compareByDescending<String> { usage[it] ?: 0 }.thenBy { mainCandidates.indexOf(it) })
-        .take(3)
+    // 3 tiles to match the Stitch design's recent-services row (Log Food / Log Sleep / Log Activity)
+    // — actual usage still takes priority, these are just the fallback fill-ins.
+    val recentKeys = (recent + listOf("nutrition", "sleep", "development")).distinct().take(3)
 
     Scaffold(
         bottomBar = {
@@ -283,15 +342,8 @@ fun DashboardScreen(
                 onHome = onNavigateHome, onChatbot = onNavigateToChat, onChild = onNavigateToChild, onStats = onNavigateToStats, onSettings = onNavigateToSettings, onConnect = onNavigateToConnect
             )
         },
-        // Quick Action FAB — the Quick Log Hub already exists (search this file for onNavigateToStats
-        // -> StatisticsInsightsScreen -> Screen.QuickLogHub) but had no entry point from the mother
-        // dashboard itself; this is that missing shortcut, "synced" with the same hub every other
-        // quick-log entry point already leads to.
-        floatingActionButton = {
-            FloatingActionButton(onClick = onNavigateToQuickLog, containerColor = Primary, contentColor = Color.White) {
-                Icon(Icons.Filled.Bolt, contentDescription = if (isThai) "บันทึกด่วน" else "Quick log")
-            }
-        },
+        // ponytail: no FAB — the in-feed Quick Action card below is the single entry point to
+        // Screen.QuickLogHub, matching the Stitch design (which has no bottom-right FAB either).
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(
@@ -308,8 +360,20 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Person, null, tint = Primary, modifier = Modifier.size(24.dp))
+                    val avatarUrl = com.lullabyai.app.ui.components.LocalAvatarUrl.current
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.1f)).clickable(onClick = onNavigateToSettings),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!avatarUrl.isNullOrBlank()) {
+                            coil.compose.AsyncImage(
+                                model = avatarUrl, contentDescription = "โปรไฟล์",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            Icon(Icons.Filled.Person, null, tint = Primary, modifier = Modifier.size(24.dp))
+                        }
                     }
                     Column {
                         Text("NONGRAK AI", style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
@@ -325,7 +389,6 @@ fun DashboardScreen(
                         )
                     }
                 }
-                IconButton(onClick = onNavigateToQuickActionSearch) { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurface) }
                 Box {
                     IconButton(onClick = onNavigateToNotifications) { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.onSurface) }
                     Box(Modifier.size(8.dp).clip(CircleShape).background(Error).align(Alignment.TopEnd).offset((-4).dp, 4.dp))
@@ -367,7 +430,7 @@ fun DashboardScreen(
                 }
 
                 // Milestone-completion celebration.
-                if (allMilestonesDone) {
+                if (hasActiveChild && allMilestonesDone) {
                     Card(Modifier.fillMaxWidth().clickableCard(onNavigateToDevelopment), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF4CAF50).copy(0.10f))) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF4CAF50).copy(0.18f)), contentAlignment = Alignment.Center) {
@@ -387,8 +450,8 @@ fun DashboardScreen(
 
                 // Pending "sync child" requests — surfaced here too, not just in Notifications, so an
                 // owner sees and can confirm/reject them wherever they happen to be.
-                childState.pendingSyncRequests.forEach { req ->
-                    val childName = childState.children.find { it.id == req.childId }?.name ?: "-"
+                ownedSyncRequests.forEach { req ->
+                    val childName = childState.children.find { it.id == req.childId }?.name ?: return@forEach
                     com.lullabyai.app.ui.components.SyncRequestCard(
                         childName = childName,
                         onApprove = { childViewModel.confirmSyncRequest(req.id, true) },
@@ -400,7 +463,7 @@ fun DashboardScreen(
                 // surfaced here as plain cards+button rather than their auto-popup modal. One card
                 // per child that has gaps, each naming the child, so it's never ambiguous which
                 // child's data is missing when there's more than one.
-                missingByChild.forEach { (c, missing) ->
+                if (hasActiveChild) missingByChild.forEach { (c, missing) ->
                     Card(
                         Modifier.fillMaxWidth().clickableCard {
                             com.lullabyai.app.data.settings.ChildSelection.set(c.id)
@@ -496,7 +559,7 @@ fun DashboardScreen(
 
                 // AI daily question — banner nudge, tapping it opens the actual question dialog
                 // (declared near the top of this composable) rather than popping up unprompted.
-                childState.dailyQuestion?.let {
+                if (hasActiveChild) childState.dailyQuestion?.let {
                     com.lullabyai.app.ui.components.DailyQuestionBanner(
                         isThai = isThai,
                         onClick = { showDailyQuestionDialog = true },
@@ -521,6 +584,45 @@ fun DashboardScreen(
                             }
                         }
                         Icon(Icons.Filled.ChevronRight, null, tint = Color.White)
+                    }
+                }
+
+                // Quick Action card — Stitch mockup shows this as a full-width row in the feed (bolt
+                // icon + add button), not just the FAB below; same destination (onNavigateToQuickLog)
+                // as the FAB, just a second, discoverable entry point matching the design.
+                Card(
+                    Modifier.fillMaxWidth().clickableCard(onNavigateToQuickLog),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Box(Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.Bolt, null, tint = Primary)
+                            }
+                            Column {
+                                Text(if (isThai) "บันทึกด่วน (Quick Action)" else "Quick Action", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (isThai) "เข้าถึงฟีเจอร์การบันทึกข้อมูลลูกน้อยได้อย่างรวดเร็ว" else "Quickly log your child's info",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Box(Modifier.size(36.dp).clip(CircleShape).background(Primary), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Add, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+
+                // Notifications section header — groups the alert card(s) below under the same
+                // "การแจ้งเตือน" heading the Stitch design uses, with a "View all" link to the full list.
+                if (nextVaccine != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (isThai) "การแจ้งเตือน" else "Notifications", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = onNavigateToNotifications) {
+                            Text(if (isThai) "ดูทั้งหมด" else "View all", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Primary)
+                        }
                     }
                 }
 
@@ -557,15 +659,6 @@ fun DashboardScreen(
                     }
                 }
 
-                // Main services — ordered by the user's activity (most-used first).
-                Text(if (isThai) "บริการหลักเพื่อลูกน้อย" else "For your little one", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                mainKeys.forEach { k ->
-                    svcMap[k]?.let { sv -> ServiceRow(sv.label, sv.sub, sv.icon, sv.color) { open(k) } }
-                }
-                // Sleep tracker — always shown here (not part of the usage-ranked rotation above,
-                // which caps at 3 slots and would otherwise make this unreachable for new users).
-                svcMap["sleep"]?.let { sv -> ServiceRow(sv.label, sv.sub, sv.icon, sv.color) { open("sleep") } }
-
                 // Help center
                 Card(
                     Modifier.fillMaxWidth().clickableCard(onNavigateToHelp),
@@ -589,7 +682,7 @@ fun DashboardScreen(
     }
 }
 
-private data class DashSvc(val key: String, val label: String, val sub: String, val icon: ImageVector, val color: Color, val nav: () -> Unit)
+private data class DashSvc(val key: String, val label: String, val icon: ImageVector, val nav: () -> Unit)
 
 private fun Modifier.clickableCard(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)
 
@@ -614,20 +707,4 @@ private fun streakMotivation(streak: Int, isThai: Boolean): String = when {
     streak >= 7 -> if (isThai) "หนึ่งสัปดาห์เต็มแล้ว! บันทึกต่อเนื่องช่วยให้เห็นพัฒนาการลูกชัดเจนขึ้น" else "A full week! Keeping this up makes your child's patterns easier to see"
     streak >= 3 -> if (isThai) "กำลังไปได้ดี บันทึกวันนี้เพื่อรักษาสถิติต่อไป" else "You're on a roll — log something today to keep it going"
     else -> if (isThai) "เริ่มต้นได้ดี! บันทึกต่อเนื่องเพื่อสร้างนิสัยที่ดี" else "Great start! Keep logging to build the habit"
-}
-
-@Composable
-private fun ServiceRow(title: String, subtitle: String, icon: ImageVector, iconColor: Color, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(44.dp).background(iconColor.copy(0.1f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = iconColor, modifier = Modifier.size(24.dp))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Outline)
-            }
-            Icon(Icons.Filled.ChevronRight, null, tint = Outline)
-        }
-    }
 }

@@ -144,10 +144,44 @@ fun OnboardingStep2Screen(
                     }
                 }
 
-                PrimaryButton(text = "Next →", onClick = {
-                    onboardingViewModel.updateStep2(height, weight, sleepHours, activityLevel, bloodGroup)
-                    onNext()
-                })
+                if (state.addMode) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(1.dp)
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OnboardingVaccineBookSection(
+                                onboardingViewModel = onboardingViewModel,
+                                pendingCount = state.pendingDocs.size,
+                                enabled = !state.isLoading
+                            )
+                            OnboardingVaccineBookPendingList(
+                                onboardingViewModel = onboardingViewModel,
+                                pendingDocs = state.pendingDocs,
+                                enabled = !state.isLoading
+                            )
+                        }
+                    }
+                }
+
+                PrimaryButton(
+                    text = when {
+                        state.isLoading -> "..."
+                        state.addMode -> "Complete ✓"
+                        else -> "Next →"
+                    },
+                    enabled = !state.isLoading,
+                    onClick = {
+                        onboardingViewModel.updateStep2(height, weight, sleepHours, activityLevel, bloodGroup)
+                        if (state.addMode) {
+                            onboardingViewModel.setNoKnownAllergies(true)
+                            onboardingViewModel.updateStep3(false, "", emptyList(), "")
+                        }
+                        onNext()
+                    }
+                )
 
                 Text("Secure and private health data processing.", style = MaterialTheme.typography.labelSmall, color = Outline)
                 Spacer(Modifier.height(32.dp))

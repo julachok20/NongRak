@@ -1,0 +1,428 @@
+﻿EDGE GoogleDriveClient --method [EXTRACTED]--> .findFileId()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .getCached()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .getToken()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .parseContent()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .pruneExpired()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .saveCache()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .updateFile()
+EDGE GoogleDriveClient --method [EXTRACTED]--> .writeToDrive()
+EDGE GoogleDriveClient --references [EXTRACTED context=field]--> String
+EDGE DoctorPatientDriveHelper --contains [EXTRACTED]--> DoctorPatientDriveHelper.kt
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .createFile()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .downloadFile()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .downloadPatientRecord()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .findFileId()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .getToken()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .isDriveAvailable()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .listPatientRecords()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .noTokenMessage()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .updateFile()
+EDGE DoctorPatientDriveHelper --method [EXTRACTED]--> .uploadPatientRecord()
+EDGE DoctorPatientDriveHelper --references [EXTRACTED context=generic_arg]--> .downloadPatientDetail()
+EDGE DoctorPatientDriveHelper --references [EXTRACTED context=generic_arg]--> .listPatientDetailFiles()
+EDGE DriveFileMeta --contains [EXTRACTED]--> DoctorPatientDriveHelper.kt
+EDGE DriveFileMeta --references [EXTRACTED context=generic_arg]--> .listPatientRecords()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> BirthDatePickerField()
+EDGE SyncChildProfileScreen() --references [EXTRACTED context=parameter_type]--> BottomTab
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> AppBottomNav()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> LullabyTopBar()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> PrimaryButton()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> AccessPermissionBottomNav()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> AccessQrScannerDialog()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> PendingAccessRequestDialog()
+EDGE SyncChildProfileScreen() --contains [EXTRACTED]--> SyncChildProfileScreen.kt
+EDGE SyncChildProfileScreen() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE SyncChildProfileScreen() --calls [EXTRACTED context=call]--> syncFieldColors()
+EDGE SyncChildProfileScreen() --calls [EXTRACTED context=call]--> SyncFieldLabel()
+EDGE SyncChildProfileScreen() --calls [EXTRACTED context=call]--> SyncOrDivider()
+EDGE SyncChildProfileScreen() --calls [INFERRED context=call]--> onDone()
+EDGE SyncChildProfileScreen() --references [EXTRACTED context=parameter_type]--> AccessRequestViewModel
+EDGE DoctorRepository --contains [EXTRACTED]--> DoctorRepository.kt
+EDGE DoctorRepository --method [EXTRACTED]--> .appointmentCountsBySlotId()
+EDGE DoctorRepository --method [EXTRACTED]--> .createSlot()
+EDGE DoctorRepository --method [EXTRACTED]--> .createSlotsBatch()
+EDGE DoctorRepository --method [EXTRACTED]--> .deleteSlot()
+EDGE DoctorRepository --method [EXTRACTED]--> .deleteUnbookedSlotsForDay()
+EDGE DoctorRepository --method [EXTRACTED]--> .downloadPatientDetail()
+EDGE DoctorRepository --method [EXTRACTED]--> .fetchBookableDoctorIdsViaRpc()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAppointment()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAppointmentsForChild()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAppointmentsForDoctor()
+EDGE DoctorRepository --method [EXTRACTED]--> .getAvailability()
+EDGE DoctorRepository --method [EXTRACTED]--> .getBookableSlotsForParent()
+EDGE DoctorRepository --method [EXTRACTED]--> .getDoctorProfile()
+EDGE DoctorRepository --method [EXTRACTED]--> .getPatientChildIds()
+EDGE DoctorRepository --method [EXTRACTED]--> .getProfileFullName()
+EDGE DoctorRepository --method [EXTRACTED]--> .getSlot()
+EDGE DoctorRepository --method [EXTRACTED]--> .getSlots()
+EDGE DoctorRepository --method [EXTRACTED]--> .getVaccineVerifications()
+EDGE DoctorRepository --method [EXTRACTED]--> .incrementSlotBookedCount()
+EDGE DoctorRepository --method [EXTRACTED]--> .isAppointmentDelayedInQueue()
+EDGE DoctorRepository --method [EXTRACTED]--> .isDoctorListedForParentBooking()
+EDGE DoctorRepository --method [EXTRACTED]--> .isPatientDriveAvailable()
+EDGE DoctorRepository --method [EXTRACTED]--> .listPatientDetailFiles()
+EDGE DoctorRepository --method [EXTRACTED]--> .pendingBookingsForDoctor()
+EDGE DoctorRepository --method [EXTRACTED]--> .purgeUnbookedSlotsOnClosedWeekdays()
+EDGE DoctorRepository --method [EXTRACTED]--> .requestAppointment()
+EDGE DoctorRepository --method [EXTRACTED]--> .requestVaccineVerification()
+EDGE DoctorRepository --method [EXTRACTED]--> .resolveClinicScheduleForDate()
+EDGE DoctorRepository --method [EXTRACTED]--> .resolveVaccineVerification()
+EDGE DoctorRepository --method [EXTRACTED]--> .searchBookableDoctors()
+EDGE DoctorRepository --method [EXTRACTED]--> .searchDoctors()
+EDGE DoctorRepository --method [EXTRACTED]--> .sendVaccineVerificationToParent()
+EDGE DoctorRepository --method [EXTRACTED]--> .setAvailability()
+EDGE DoctorRepository --method [EXTRACTED]--> .setSlotStatus()
+EDGE DoctorRepository --method [EXTRACTED]--> .slotPayload()
+EDGE DoctorRepository --method [EXTRACTED]--> .upcomingOpenClinicDates()
+EDGE DoctorRepository --method [EXTRACTED]--> .updateAppointmentStatus()
+EDGE DoctorRepository --method [EXTRACTED]--> .uploadPatientDetailRecord()
+EDGE DoctorRepository --method [EXTRACTED]--> .upsertDoctorProfile()
+EDGE .sendVaccineVerificationToParent() --calls [INFERRED context=call]--> .put()
+EDGE .sendVaccineVerificationToParent() --references [EXTRACTED context=parameter_type]--> String
+EDGE .sendVaccineVerificationToParent() --references [EXTRACTED context=return_type]--> Result
+EDGE .sendVaccineVerificationToParent() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .updateFile() --references [EXTRACTED context=parameter_type]--> String
+EDGE .saveCache() --calls [EXTRACTED context=call]--> CacheEntry
+EDGE .setAvailability() --calls [INFERRED context=call]--> .put()
+EDGE .setAvailability() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .setAvailability() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .setAvailability() --references [EXTRACTED context=parameter_type]--> String
+EDGE .setAvailability() --references [EXTRACTED context=return_type]--> Result
+EDGE .setAvailability() --references [EXTRACTED context=generic_arg]--> DoctorAvailability
+EDGE .listPatientDetailFiles() --references [EXTRACTED context=parameter_type]--> String
+EDGE .listPatientDetailFiles() --references [EXTRACTED context=return_type]--> Result
+EDGE .listPatientDetailFiles() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getSlot() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getSlot() --references [EXTRACTED context=return_type]--> Result
+EDGE .getSlot() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE GoogleDriveClient.kt --contains [EXTRACTED]--> CacheEntry
+EDGE BirthDatePickerField() --contains [EXTRACTED]--> BirthDatePickerField.kt
+EDGE BirthDatePickerField() --calls [EXTRACTED context=call]--> formatBirthDateDisplay()
+EDGE BirthDatePickerField() --references [EXTRACTED context=parameter_type]--> String
+EDGE BirthDatePickerField() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE BirthDatePickerField() --references [EXTRACTED context=parameter_type]--> Modifier
+EDGE BirthDatePickerField() --calls [INFERRED context=call]--> OnboardingStep1Screen()
+EDGE BirthDatePickerField() --calls [INFERRED context=call]--> SyncChildScreen()
+EDGE .noTokenMessage() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .noTokenMessage() --references [EXTRACTED context=return_type]--> String
+EDGE .getProfileFullName() --references [EXTRACTED context=generic_arg]--> String
+EDGE .getProfileFullName() --references [EXTRACTED context=return_type]--> Result
+EDGE .searchBookableDoctors() --references [EXTRACTED context=parameter_type]--> String
+EDGE .searchBookableDoctors() --references [EXTRACTED context=return_type]--> Result
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> List
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> Pair
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE .searchBookableDoctors() --references [EXTRACTED context=generic_arg]--> Profile
+EDGE .uploadPatientRecord() --references [EXTRACTED context=parameter_type]--> PatientDetailRecord
+EDGE .uploadPatientRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadPatientRecord() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadPatientRecord() --calls [INFERRED context=call]--> .error()
+EDGE .listPatientRecords() --references [EXTRACTED context=return_type]--> Result
+EDGE .listPatientRecords() --references [EXTRACTED context=parameter_type]--> String
+EDGE .listPatientRecords() --references [EXTRACTED context=generic_arg]--> List
+EDGE .listPatientRecords() --calls [INFERRED context=call]--> .error()
+EDGE .isDriveAvailable() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .createSlot() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .createSlot() --references [EXTRACTED context=parameter_type]--> String
+EDGE .createSlot() --references [EXTRACTED context=return_type]--> Result
+EDGE .createSlot() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE .isPatientDriveAvailable() --references [EXTRACTED context=return_type]--> Boolean
+EDGE AppBottomNav() --contains [EXTRACTED]--> CommonComponents.kt
+EDGE AppBottomNav() --calls [EXTRACTED context=call]--> switchToTab()
+EDGE AppBottomNav() --calls [EXTRACTED context=call]--> BottomNavBarItem()
+EDGE AppBottomNav() --references [EXTRACTED context=parameter_type]--> Unit
+EDGE AppBottomNav() --calls [INFERRED context=call]--> AddHealthRecordScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> AllergyHistoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ChildBottomNav()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> DevelopmentHistoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ChildDiaryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> RewindMemoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> SpecialMemoriesGalleryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> WhoGrowthDetailScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ChangePasswordScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> DocumentVaultBody()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> ProSleepHubScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> RecordSleepHistoryScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> HealthEliminationInsightsScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> MonthlyReportScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> NutritionInsightsScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> QuickLogHubScreen()
+EDGE AppBottomNav() --calls [INFERRED context=call]--> SleepActivityInsightsScreen()
+EDGE .uploadPatientDetailRecord() --references [EXTRACTED context=generic_arg]--> String
+EDGE .uploadPatientDetailRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .uploadPatientDetailRecord() --references [EXTRACTED context=parameter_type]--> Double
+EDGE .resolveVaccineVerification() --calls [INFERRED context=call]--> .put()
+EDGE .resolveVaccineVerification() --references [EXTRACTED context=parameter_type]--> String
+EDGE .resolveVaccineVerification() --references [EXTRACTED context=return_type]--> Result
+EDGE .resolveVaccineVerification() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .downloadFile() --references [EXTRACTED context=return_type]--> String
+EDGE .slotPayload() --calls [INFERRED context=call]--> .put()
+EDGE .slotPayload() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .slotPayload() --references [EXTRACTED context=parameter_type]--> String
+EDGE .isAppointmentDelayedInQueue() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .isAppointmentDelayedInQueue() --references [EXTRACTED context=parameter_type]--> Appointment
+EDGE .updateAppointmentStatus() --calls [INFERRED context=call]--> .put()
+EDGE .updateAppointmentStatus() --references [EXTRACTED context=parameter_type]--> String
+EDGE .updateAppointmentStatus() --references [EXTRACTED context=return_type]--> Result
+EDGE .updateAppointmentStatus() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAppointmentsForChild() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE PrimaryButton() --contains [EXTRACTED]--> CommonComponents.kt
+EDGE PrimaryButton() --references [EXTRACTED context=parameter_type]--> String
+EDGE PrimaryButton() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE PrimaryButton() --references [EXTRACTED context=parameter_type]--> Modifier
+EDGE PrimaryButton() --calls [INFERRED context=call]--> AddUserAccessActivityScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> PermissionSettingsDetailScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> RoleEditorSheet()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> ShareAccessQrScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> LoginScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> SignUpScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorEditProfileScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorSignInScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorSignUpScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> DoctorWeeklyHoursSection()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> LastSetupScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> MedicalDisclaimerScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> OnboardingStep1Screen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> OnboardingStep2Screen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> OnboardingStep3Screen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> SyncChildScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> EditProfileScreen()
+EDGE PrimaryButton() --calls [INFERRED context=call]--> WelcomeScreen()
+EDGE syncFieldColors() --references [EXTRACTED context=return_type]--> TextFieldColors
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=generic_arg]--> Int
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=generic_arg]--> String
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=parameter_type]--> Set
+EDGE .appointmentCountsBySlotId() --references [EXTRACTED context=return_type]--> Map
+EDGE .createFile() --references [EXTRACTED context=return_type]--> String
+EDGE .getAvailability() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAvailability() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAvailability() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAvailability() --references [EXTRACTED context=generic_arg]--> DoctorAvailability
+EDGE PendingAccessRequestDialog() --calls [INFERRED context=call]--> formatAccessTime()
+EDGE PendingAccessRequestDialog() --contains [EXTRACTED]--> PendingAccessRequestsScreen.kt
+EDGE PendingAccessRequestDialog() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE PendingAccessRequestDialog() --references [EXTRACTED context=parameter_type]--> String
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> methodLabel()
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> RequestDetailRow()
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> requestSummary()
+EDGE PendingAccessRequestDialog() --references [EXTRACTED context=parameter_type]--> ChildSyncRequest
+EDGE PendingAccessRequestDialog() --calls [EXTRACTED context=call]--> PendingAccessRequestsScreen()
+EDGE .getAppointment() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAppointment() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAppointment() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .getToken() --references [EXTRACTED context=return_type]--> String
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=parameter_type]--> String
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=return_type]--> Result
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=generic_arg]--> List
+EDGE .pendingBookingsForDoctor() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE BottomTab --contains [EXTRACTED]--> CommonComponents.kt
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> tabRootRoute()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> switchToTab()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> BottomNavBarItem()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> DocumentVaultBody()
+EDGE BottomTab --references [EXTRACTED context=parameter_type]--> MedicalDataVaultScreen()
+EDGE AccessQrScannerDialog() --contains [EXTRACTED]--> AccessQrScanner.kt
+EDGE AccessQrScannerDialog() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .findFileId() --references [EXTRACTED context=return_type]--> String
+EDGE .getDoctorProfile() --references [EXTRACTED context=return_type]--> Result
+EDGE .getDoctorProfile() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getDoctorProfile() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> BookableDoctorIdRow
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> ClinicDaySchedule
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> DoctorSpecialDateRow
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> effectiveBookedCount()
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> hasRemainingCapacity()
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> isFutureSlot()
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> Quadruple
+EDGE DoctorRepository.kt --contains [EXTRACTED]--> slotStartInstant()
+EDGE .deleteSlot() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteSlot() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteSlot() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE AccessRequestViewModel --references [EXTRACTED context=parameter_type]--> PendingAccessRequestsScreen()
+EDGE AccessRequestViewModel --contains [EXTRACTED]--> AccessRequestViewModel.kt
+EDGE AccessRequestViewModel --references [EXTRACTED context=generic_arg]--> AccessRequestUiState
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .clearError()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .clearRequestSent()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .dismissPopup()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .loadPending()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .onCleared()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .resolve()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .search()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .selectMatch()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .sendRequest()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setAccessCode()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setBirthdate()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setChildQuery()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .setRole()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .showPopup()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .startWatching()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .stopWatching()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .submit()
+EDGE AccessRequestViewModel --method [EXTRACTED]--> .submitScannedQr()
+EDGE AccessRequestViewModel --references [EXTRACTED context=field]--> Job
+EDGE AccessRequestViewModel --references [EXTRACTED context=field]--> StateFlow
+EDGE AccessRequestViewModel --inherits [EXTRACTED]--> ViewModel
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=return_type]--> Result
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getAppointmentsForDoctor() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .purgeUnbookedSlotsOnClosedWeekdays() --references [EXTRACTED context=parameter_type]--> String
+EDGE .purgeUnbookedSlotsOnClosedWeekdays() --references [EXTRACTED context=return_type]--> Result
+EDGE .purgeUnbookedSlotsOnClosedWeekdays() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .requestVaccineVerification() --calls [INFERRED context=call]--> .put()
+EDGE .requestVaccineVerification() --references [EXTRACTED context=parameter_type]--> String
+EDGE .requestVaccineVerification() --references [EXTRACTED context=return_type]--> Result
+EDGE .requestVaccineVerification() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .setSlotStatus() --calls [INFERRED context=call]--> .put()
+EDGE .setSlotStatus() --references [EXTRACTED context=parameter_type]--> String
+EDGE .setSlotStatus() --references [EXTRACTED context=return_type]--> Result
+EDGE .setSlotStatus() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE SyncOrDivider() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE DoctorPatientDriveHelper.kt --contains [EXTRACTED]--> PatientDetailRecord
+EDGE .downloadPatientRecord() --references [EXTRACTED context=generic_arg]--> PatientDetailRecord
+EDGE .downloadPatientRecord() --references [EXTRACTED context=return_type]--> Result
+EDGE .downloadPatientRecord() --references [EXTRACTED context=parameter_type]--> String
+EDGE .downloadPatientRecord() --calls [INFERRED context=call]--> .error()
+EDGE .getVaccineVerifications() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getVaccineVerifications() --references [EXTRACTED context=return_type]--> Result
+EDGE .getVaccineVerifications() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getVaccineVerifications() --references [EXTRACTED context=generic_arg]--> VaccineVerificationRequest
+EDGE .getSlots() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getSlots() --references [EXTRACTED context=return_type]--> Result
+EDGE .getSlots() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getSlots() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE SyncFieldLabel() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getPatientChildIds() --references [EXTRACTED context=generic_arg]--> String
+EDGE .getPatientChildIds() --references [EXTRACTED context=return_type]--> Result
+EDGE .getPatientChildIds() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getPatientChildIds() --calls [INFERRED context=call]--> PediaConnectLinkRepository
+EDGE .searchDoctors() --references [EXTRACTED context=parameter_type]--> String
+EDGE .searchDoctors() --references [EXTRACTED context=return_type]--> Result
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> List
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> Pair
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE .searchDoctors() --references [EXTRACTED context=generic_arg]--> Profile
+EDGE .incrementSlotBookedCount() --calls [INFERRED context=call]--> .put()
+EDGE .incrementSlotBookedCount() --references [EXTRACTED context=parameter_type]--> String
+EDGE .buildJson() --calls [INFERRED context=call]--> .put()
+EDGE .upsertDoctorProfile() --calls [INFERRED context=call]--> .put()
+EDGE .upsertDoctorProfile() --references [EXTRACTED context=parameter_type]--> String
+EDGE .upsertDoctorProfile() --references [EXTRACTED context=return_type]--> Result
+EDGE .upsertDoctorProfile() --references [EXTRACTED context=generic_arg]--> DoctorProfile
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=parameter_type]--> Int
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=parameter_type]--> String
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=return_type]--> Result
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=generic_arg]--> List
+EDGE .upcomingOpenClinicDates() --references [EXTRACTED context=generic_arg]--> LocalDate
+EDGE .fetchBookableDoctorIdsViaRpc() --references [EXTRACTED context=generic_arg]--> String
+EDGE .fetchBookableDoctorIdsViaRpc() --references [EXTRACTED context=return_type]--> Set
+EDGE .isDoctorListedForParentBooking() --references [EXTRACTED context=return_type]--> Boolean
+EDGE .isDoctorListedForParentBooking() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getBookableSlotsForParent() --calls [EXTRACTED context=call]--> isFutureSlot()
+EDGE .getBookableSlotsForParent() --calls [EXTRACTED context=call]--> hasRemainingCapacity()
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=parameter_type]--> String
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=return_type]--> Result
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=generic_arg]--> List
+EDGE .getBookableSlotsForParent() --references [EXTRACTED context=generic_arg]--> DoctorAppointmentSlot
+EDGE .requestAppointment() --calls [INFERRED context=call]--> .put()
+EDGE .requestAppointment() --calls [EXTRACTED context=call]--> slotStartInstant()
+EDGE .requestAppointment() --calls [EXTRACTED context=call]--> isFutureSlot()
+EDGE .requestAppointment() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE .requestAppointment() --calls [EXTRACTED context=call]--> hasRemainingCapacity()
+EDGE .requestAppointment() --references [EXTRACTED context=parameter_type]--> String
+EDGE .requestAppointment() --references [EXTRACTED context=return_type]--> Result
+EDGE .requestAppointment() --calls [INFERRED context=call]--> PediaConnectLinkRepository
+EDGE .requestAppointment() --calls [INFERRED context=call]--> .error()
+EDGE .requestAppointment() --calls [INFERRED context=call]--> .check()
+EDGE .requestAppointment() --references [EXTRACTED context=generic_arg]--> Appointment
+EDGE .createSlotsBatch() --references [EXTRACTED context=generic_arg]--> Int
+EDGE .createSlotsBatch() --references [EXTRACTED context=generic_arg]--> String
+EDGE .createSlotsBatch() --references [EXTRACTED context=return_type]--> Result
+EDGE .createSlotsBatch() --references [EXTRACTED context=parameter_type]--> List
+EDGE .createSlotsBatch() --references [EXTRACTED context=generic_arg]--> Quadruple
+EDGE AccessPermissionBottomNav() --contains [EXTRACTED]--> AccessCommon.kt
+EDGE AccessPermissionBottomNav() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> ChildBottomNav()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> AddUserAccessActivityScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> PendingAccessRequestsScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> PermissionAccessScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> PermissionSettingsDetailScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> RoleManagementScreen()
+EDGE AccessPermissionBottomNav() --calls [INFERRED context=call]--> ShareAccessQrScreen()
+EDGE .parseContent() --calls [EXTRACTED context=call]--> CacheEntry
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=generic_arg]--> ClinicDaySchedule
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=parameter_type]--> String
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=return_type]--> Result
+EDGE .resolveClinicScheduleForDate() --references [EXTRACTED context=parameter_type]--> LocalDate
+EDGE LullabyTopBar() --contains [EXTRACTED]--> CommonComponents.kt
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> String
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> Boolean
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> Unit
+EDGE LullabyTopBar() --references [EXTRACTED context=parameter_type]--> NavController
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AddUserAccessActivityScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> PendingAccessRequestsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> PermissionAccessScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> PermissionSettingsDetailScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> RoleManagementScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ShareAccessQrScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ChildAiSummaryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ChildScreenScaffold()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> VaccineBookScanScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> WasteRecordScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AddMemoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ChildDiaryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> RewindMemoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> SpecialMemoriesGalleryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorAboutNongRakScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorEditProfileScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorHelpFaqScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorLoginScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSettingsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSignInScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSignUpScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorSpecialDatesScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorTimeAppointmentHubScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DoctorWeeklyHoursScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AddGrowthRecordScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> GrowthHistoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> SiblingCompareScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> WhoGrowthDetailScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> MilkRecordScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> EditProfileScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> AiDataRetentionScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> DocumentVaultBody()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> ProSleepHubScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> RecordSleepHistoryScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> HealthEliminationInsightsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> MonthlyReportScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> NutritionInsightsScreen()
+EDGE LullabyTopBar() --calls [INFERRED context=call]--> SleepActivityInsightsScreen()
+EDGE .deleteUnbookedSlotsForDay() --references [EXTRACTED context=parameter_type]--> String
+EDGE .deleteUnbookedSlotsForDay() --references [EXTRACTED context=return_type]--> Result
+EDGE .deleteUnbookedSlotsForDay() --references [EXTRACTED context=generic_arg]--> Unit
+EDGE .downloadPatientDetail() --references [EXTRACTED context=parameter_type]--> String
+EDGE .downloadPatientDetail() --references [EXTRACTED context=return_type]--> Result
+EDGE onDone() --contains [EXTRACTED]--> TtsSpeaker.kt
+EDGE onDone() --references [EXTRACTED context=parameter_type]--> String
+EDGE onDone() --calls [INFERRED context=call]--> .cancel()
+EDGE onDone() --calls [INFERRED context=call]--> .cancelSignup()
+EDGE onDone() --calls [INFERRED context=call]--> .submitMentalHealthAssessment()
+EDGE onDone() --calls [INFERRED context=call]--> .submitPostpartumCheckIn()
+EDGE onDone() --calls [INFERRED context=call]--> .uploadAvatar()
+EDGE onDone() --calls [INFERRED context=call]--> .addAppointment()
+EDGE onDone() --calls [INFERRED context=call]--> .addMedicationSchedule()
+EDGE onDone() --calls [INFERRED context=call]--> .addSleepSchedule()
+EDGE onDone() --calls [INFERRED context=call]--> .applyScannedVaccines()
+EDGE onDone() --calls [INFERRED context=call]--> .saveHealthRecord()
+EDGE onDone() --calls [INFERRED context=call]--> .saveSymptomLog()
+EDGE onDone() --calls [INFERRED context=call]--> .updateChildInfo()
+EDGE onDone() --calls [INFERRED context=call]--> .updateSleepSchedule()
+EDGE onDone() --calls [INFERRED context=call]--> .uploadVaccineCertificate()
+EDGE onDone() --calls [INFERRED context=call]--> .addMemory()
+EDGE onDone() --calls [INFERRED context=call]--> .approveWithHn()
+EDGE onDone() --calls [INFERRED context=call]--> .setAvailability()
+EDGE onDone() --calls [INFERRED context=call]--> .calculateCalories()
+EDGE onDone() --calls [INFERRED context=call]--> .setQualityStars()

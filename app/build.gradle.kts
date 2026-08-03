@@ -20,8 +20,8 @@ android {
         applicationId = "com.publish.NongRak"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.3"
+        versionCode = 16
+        versionName = "1.0.3-dev36"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${localProps["SUPABASE_URL"]}\"")
@@ -80,6 +80,10 @@ android {
 }
 
 dependencies {
+    api(project(":core:common"))
+    api(project(":core:navigation"))
+    api(project(":core:model"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -99,14 +103,25 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
+    // Real Guava, not just the empty listenablefuture shim CameraX normally relies on —
+    // androidx.health.connect:connect-client forces listenablefuture to the empty
+    // "avoid-conflict-with-guava" placeholder on the compile classpath without pulling in
+    // real Guava to compensate, which makes ListenableFuture (CameraX's ProcessCameraProvider
+    // return type) inaccessible at compile time. Adding Guava directly resolves it.
+    implementation("com.google.guava:guava:33.3.1-android")
+
+    // Health Connect (Google Fit / Samsung / Fitbit / Garmin bridge on Android)
+    implementation(libs.androidx.health.connect)
 
     // Supabase
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.auth)
     implementation(libs.supabase.storage)
+    implementation(libs.supabase.realtime)
 
-    // Ktor engine
-    implementation(libs.ktor.client.android)
+    // Ktor engine — OkHttp required for Supabase Realtime WebSockets (Android engine has no WS).
+    implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.core)
 
     // Ktor JSON serialization for Claude/Anthropic REST API
@@ -119,11 +134,20 @@ dependencies {
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
+    // Encrypted SharedPreferences (doctor device-binding)
+    implementation(libs.androidx.security.crypto)
+
+    // QR generate/decode for Share Access + Sync Child scan (Stitch #5 C)
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
+
     // Serialization
     implementation(libs.kotlinx.serialization.json)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.google.play.services.auth)
 
     // Google Sign-In via Credential Manager
     implementation(libs.androidx.credentials)

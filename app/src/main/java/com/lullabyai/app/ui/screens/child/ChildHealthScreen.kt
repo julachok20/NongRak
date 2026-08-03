@@ -27,14 +27,15 @@ import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
 
-/** "ศูนย์สุขภาพ" (Child Health Hub) — per the 31.new_Health/child_health_hub mockup, this is a
- *  lightweight navigation hub: compact profile row, a due-medicine banner, and a 6-tile grid
- *  routing to the dedicated screens (vaccine book / sickness history / medication / allergy /
- *  waste record / documents). The old version crammed 8 full detail cards onto this one screen
- *  (AI risk analysis, inline allergy list, inline vaccine progress, inline health-record list...)
- *  — all of that already has its own dedicated screen reachable via these tiles, so keeping it
- *  here too was pure duplication, not extra functionality. Chronic conditions has no tile in the
- *  mockup's 6, so its inline add/delete card stays here (nowhere else for it to live yet). */
+/** "ศูนย์สุขภาพ" (Child Health Hub) — per the real "Child Health Hub" Stitch mockup (re-checked
+ *  2026-07-26; the mockup was updated since the earlier audit), this is a lightweight navigation
+ *  hub: compact profile row, a due-medicine banner, and a 6-tile grid: Vaccine Book / Sickness
+ *  History / Doctor Visits / Medication History / Allergy History / Chronic conditions. Waste
+ *  Record and Medical Documents are no longer tiles here (still reachable via Quick Action
+ *  Search, and Medical Documents also from the AI Summary screen) — the mockup dropped Waste
+ *  Record and swapped the old Medical Documents tile for Chronic conditions. The Chronic tile
+ *  routes to the existing ChronicRegistryScreen (full CRUD + prevention tips + emergency call)
+ *  instead of the old inline add/delete card, which duplicated a subset of that same screen. */
 @Composable
 fun ChildHealthScreen(
     childViewModel: ChildViewModel,
@@ -126,7 +127,7 @@ fun ChildHealthScreen(
                 }
             }
 
-            // 6-tile navigation grid
+            // 6-tile navigation grid, in design order.
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     HealthTile(if (s.isThai) "สมุดวัคซีน" else "Vaccine Book", Icons.Filled.MedicalServices, Modifier.weight(1f)) { navController.navigate(Screen.VaccineBook.route) }
@@ -135,93 +136,18 @@ fun ChildHealthScreen(
             }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HealthTile(if (s.isThai) "ประวัติการใช้ยา" else "Medication History", Icons.Filled.Medication, Modifier.weight(1f)) { navController.navigate(Screen.MedicationHistory.route) }
-                    HealthTile(if (s.isThai) "ประวัติภูมิแพ้" else "Allergy History", Icons.Filled.Warning, Modifier.weight(1f)) { navController.navigate(Screen.AllergyHistory.route) }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HealthTile(if (s.isThai) "บันทึกการขับถ่าย" else "Waste Record", Icons.Filled.WaterDrop, Modifier.weight(1f)) { navController.navigate(Screen.WasteRecord.route) }
-                    HealthTile(if (s.isThai) "เอกสารทางการแพทย์" else "Medical Documents", Icons.Filled.Description, Modifier.weight(1f)) { navController.navigate(Screen.MedicalDocumentHistory.route) }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     HealthTile(if (s.isThai) "บันทึกการหาหมอ" else "Doctor Visits", Icons.Filled.LocalHospital, Modifier.weight(1f)) { navController.navigate(Screen.DoctorVisitHistory.route) }
-                    Spacer(Modifier.weight(1f))
+                    HealthTile(if (s.isThai) "ประวัติการใช้ยา" else "Medication History", Icons.Filled.Medication, Modifier.weight(1f)) { navController.navigate(Screen.MedicationHistory.route) }
                 }
             }
-
-            // Chronic conditions — inline add/delete (no tile in the mockup's 6, so it stays here;
-            // delete + re-add covers corrections for a short name field, matching what was asked for).
             item {
-                var newConditionName by remember { mutableStateOf("") }
-                var conditionToDelete by remember { mutableStateOf<com.lullabyai.app.data.model.ChronicCondition?>(null) }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(1.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(modifier = Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(Primary.copy(0.12f)), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.HealthAndSafety, null, tint = Primary, modifier = Modifier.size(16.dp))
-                            }
-                            Text(if (s.isThai) "โรคประจำตัว" else "Chronic conditions", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        }
-                        if (childState.chronicConditions.isEmpty()) {
-                            Text(if (s.isThai) "ยังไม่มีข้อมูลโรคประจำตัว" else "No chronic conditions recorded yet", style = MaterialTheme.typography.bodySmall, color = Outline)
-                        } else {
-                            childState.chronicConditions.forEach { cc ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Primary.copy(0.06f)).padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Primary))
-                                    Text(cc.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { conditionToDelete = cc }, modifier = Modifier.size(28.dp)) {
-                                        Icon(Icons.Filled.DeleteOutline, if (s.isThai) "ลบ" else "Delete", tint = Error, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = newConditionName, onValueChange = { newConditionName = it },
-                                modifier = Modifier.weight(1f),
-                                placeholder = { Text(if (s.isThai) "เช่น หอบหืด, ภูมิแพ้อากาศ" else "e.g. Asthma", color = Outline) },
-                                singleLine = true, shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary)
-                            )
-                            IconButton(
-                                onClick = {
-                                    if (newConditionName.isNotBlank()) {
-                                        childViewModel.addChronicCondition(newConditionName.trim(), null)
-                                        newConditionName = ""
-                                    }
-                                },
-                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(Primary)
-                            ) {
-                                Icon(Icons.Filled.Add, if (s.isThai) "เพิ่ม" else "Add", tint = Color.White)
-                            }
-                        }
-                    }
-                }
-
-                conditionToDelete?.let { target ->
-                    AlertDialog(
-                        onDismissRequest = { conditionToDelete = null },
-                        icon = { Icon(Icons.Filled.DeleteOutline, null, tint = Error) },
-                        title = { Text(if (s.isThai) "ลบโรคประจำตัว?" else "Delete chronic condition?", fontWeight = FontWeight.Bold) },
-                        text = { Text(if (s.isThai) "ต้องการลบ \"${target.name}\" หรือไม่?" else "Remove \"${target.name}\"?") },
-                        confirmButton = {
-                            TextButton(onClick = { childViewModel.deleteChronicCondition(target.id); conditionToDelete = null }) {
-                                Text(if (s.isThai) "ลบ" else "Delete", color = Error, fontWeight = FontWeight.Bold)
-                            }
-                        },
-                        dismissButton = { TextButton(onClick = { conditionToDelete = null }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
-                    )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HealthTile(if (s.isThai) "ประวัติภูมิแพ้" else "Allergy History", Icons.Filled.Warning, Modifier.weight(1f)) { navController.navigate(Screen.AllergyHistory.route) }
+                    // Design swapped this tile from "Medical Documents" to "Chronic conditions"
+                    // (โรคประจำตัว) — routes to the existing ChronicRegistryScreen, which already
+                    // does full CRUD + prevention tips + emergency call for the same data the old
+                    // inline card here only partially covered (name + delete, no prevention field).
+                    HealthTile(if (s.isThai) "โรคประจำตัว" else "Chronic conditions", Icons.Filled.HealthAndSafety, Modifier.weight(1f)) { navController.navigate(Screen.ChronicRegistry.route) }
                 }
             }
         }

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.repository.NutritionRepository
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
@@ -122,15 +123,15 @@ fun SmartTrendsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "แนวโน้มอัจฉริยะ" else "Smart Trends", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "แนวโน้มอัจฉริยะ" else "Smart Trends",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
-                selected = com.lullabyai.app.ui.components.BottomTab.STATS,
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
@@ -148,19 +149,11 @@ fun SmartTrendsScreen(
             Spacer(Modifier.height(4.dp))
 
             // AI insights
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(18.dp))
-                        Text(if (s.isThai) "ข้อมูลเชิงลึกจาก AI" else "AI Insights", style = MaterialTheme.typography.titleSmall, color = Primary, fontWeight = FontWeight.Bold)
-                    }
-                    if (chatState.trendInsights != null) {
-                        Text(chatState.trendInsights!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Primary)
-                    }
-                }
-            }
+            AIInsightCard(
+                text = chatState.trendInsights.orEmpty(),
+                isLoading = chatState.trendInsights == null,
+                title = if (s.isThai) "ข้อมูลเชิงลึกจาก NongRak AI" else "NongRak AI Insights"
+            )
 
             // Heatmap
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {

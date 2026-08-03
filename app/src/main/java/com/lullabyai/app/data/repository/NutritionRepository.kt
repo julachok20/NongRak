@@ -27,13 +27,17 @@ class NutritionRepository {
         }.decodeList<com.lullabyai.app.data.model.MilkLog>()
     }.getOrDefault(emptyList())
 
-    suspend fun addMilkLog(childId: String, milkType: String, volumeMl: Int, side: String?, notes: String?): Result<Unit> = runCatching {
+    suspend fun addMilkLog(
+        childId: String, milkType: String, volumeMl: Int, side: String?, notes: String?,
+        loggedAt: String? = null
+    ): Result<Unit> = runCatching {
         supabase.from("milk_logs").insert(buildJsonObject {
             put("child_id", JsonPrimitive(childId))
             put("milk_type", JsonPrimitive(milkType))
             put("volume_ml", JsonPrimitive(volumeMl))
             put("side", side?.let { JsonPrimitive(it) } ?: JsonNull)
-            put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("notes", notes?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
+            if (loggedAt != null) put("logged_at", JsonPrimitive(loggedAt))
         })
     }
 
@@ -112,6 +116,16 @@ class NutritionRepository {
             put("mood", mood?.let { JsonPrimitive(it) } ?: JsonNull)
             put("notes", notes?.let { JsonPrimitive(it) } ?: JsonNull)
         })
+    }
+
+    suspend fun updateExercise(
+        id: String, activityName: String, durationMin: Int, caloriesBurned: Int?
+    ): Result<Unit> = runCatching {
+        supabase.from("exercise_logs").update(buildJsonObject {
+            put("activity_name", JsonPrimitive(activityName))
+            put("duration_min", JsonPrimitive(durationMin))
+            put("calories_burned", caloriesBurned?.let { JsonPrimitive(it) } ?: JsonNull)
+        }) { filter { eq("id", id) } }
     }
 
     suspend fun deleteExercise(id: String): Result<Unit> = runCatching {

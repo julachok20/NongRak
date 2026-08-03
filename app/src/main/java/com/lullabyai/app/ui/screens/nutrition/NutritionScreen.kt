@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.SuggestionItem
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.screens.child.ChildScreenScaffold
 import com.lullabyai.app.ui.theme.*
@@ -47,6 +48,13 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item { Text(if (isThai) "แดชบอร์ดสารอาหาร" else "Nutrient Dashboard", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+
+            item {
+                AIInsightCard(
+                    text = vm.loggingInsightText(isThai),
+                    isLoading = ui.macrosLoading && ui.macros == null
+                )
+            }
 
             // Nutrient hero cards — one big card per nutrient, matches the mockup's visual weight.
             if (ui.macrosLoading) {
@@ -177,8 +185,8 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
             }
 
             // Allergy watch — moved near the bottom, matches the mockup's position.
-            val allergies = ui.child?.allergies?.takeIf { !it.isNullOrBlank() }
-            if (allergies != null) {
+            val allergyText = ui.child?.allergies?.takeIf { it.isNotBlank() }
+            if (allergyText != null) {
                 item {
                     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Error.copy(0.08f))) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -186,7 +194,7 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                                 Icon(Icons.Filled.Warning, null, tint = Error, modifier = Modifier.size(22.dp))
                                 Text(if (isThai) "ข้อควรระวังเรื่องการแพ้" else "Allergy Watch", fontWeight = FontWeight.Bold, color = Error, style = MaterialTheme.typography.titleSmall)
                             }
-                            Text(allergies, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(allergyText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedButton(
                                 onClick = { navController.navigate(Screen.AllergyHistory.route) },
                                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp),

@@ -4,6 +4,7 @@ import com.lullabyai.app.BuildConfig
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.Storage
 
 val supabase = createSupabaseClient(
@@ -17,4 +18,7 @@ val supabase = createSupabaseClient(
     }
     install(Postgrest)
     install(Storage)
+    // Realtime powers the owner's live approve/deny popup for child access requests
+    // (ChildRepository.watchPendingSyncRequests). No FCM — the app must be open to get the popup.
+    install(Realtime)
 }

@@ -6,15 +6,18 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +29,9 @@ import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /** AI-aggregated child summary — pulls together data that already lives in ChildUiState/repos into
  *  one glanceable set of tiles, reached from ChildSummaryScreen's "ตรวจสอบข้อมูลสุขภาพ" CTA. Almost
@@ -65,8 +71,25 @@ fun ChildAiSummaryScreen(childViewModel: ChildViewModel, chatViewModel: ChatView
     val sleepTarget = childViewModel.sleepTargetHours()
     val nutritionTargetKcal = 1200 // rough daily reference; no per-child target field exists yet
 
+    // Growth-related Stitch bits: verification badge, last-updated, trend (decision #13)
+    val records = childState.growthRecords
+    val latestGrowthAt = records.firstOrNull()?.recordedAt
+    val latestWeight = records.firstOrNull { it.weightKg != null }
+    val prevWeight = latestWeight?.let { lw ->
+        records.drop(records.indexOf(lw) + 1).firstOrNull { it.weightKg != null }?.weightKg
+    }
+    val weightTrend = if (latestWeight?.weightKg != null && prevWeight != null) latestWeight.weightKg!! - prevWeight else null
+    val latestHeight = records.firstOrNull { it.heightCm != null }
+    val prevHeight = latestHeight?.let { lh ->
+        records.drop(records.indexOf(lh) + 1).firstOrNull { it.heightCm != null }?.heightCm
+    }
+    val heightTrend = if (latestHeight?.heightCm != null && prevHeight != null) latestHeight.heightCm!! - prevHeight else null
+    val lastUpdatedLabel = remember(latestGrowthAt, isThai, chatState.childInfoSummary) {
+        formatAiSummaryUpdated(latestGrowthAt, isThai)
+    }
+
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "ข้อมูลสรุปเด็กจาก AI" else "AI Child Summary", onBack = onBack) },
+        topBar = { LullabyTopBar(title = if (isThai) "ข้อมูลสรุปเด็กจาก AI" else "AI Child Summary", onBack = onBack, navController = navController) },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
@@ -75,26 +98,55 @@ fun ChildAiSummaryScreen(childViewModel: ChildViewModel, chatViewModel: ChatView
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
+                onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            // Profile header — mockup opens with this before the AI card; screen previously jumped
-            // straight into content with no child identity shown.
+            // Profile header — verified badge + last-updated (Stitch AI Child Profile Summary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(52.dp).clip(androidx.compose.foundation.shape.CircleShape).background(SecondaryContainer), contentAlignment = Alignment.Center) {
-                    val avatar = childState.childAvatarSignedUrl
-                    if (!avatar.isNullOrBlank()) coil.compose.AsyncImage(model = avatar, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                    else Text("👶", fontSize = 24.sp)
+                Box(contentAlignment = Alignment.BottomEnd) {
+                    Box(Modifier.size(72.dp).clip(CircleShape).background(SecondaryContainer), contentAlignment = Alignment.Center) {
+                        val avatar = childState.childAvatarSignedUrl
+                        if (!avatar.isNullOrBlank()) coil.compose.AsyncImage(model = avatar, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Text("👶", fontSize = 28.sp)
+                    }
+                    Box(
+                        Modifier.size(22.dp).clip(CircleShape).background(Primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Verified, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    }
                 }
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(child?.name ?: (if (isThai) "ลูกของคุณ" else "Your child"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        (if (isThai) "อายุ " else "Age ") + "${childViewModel.calculateAge(isThai)}",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(shape = RoundedCornerShape(100.dp), color = Secondary.copy(0.18f)) {
+                            Text(
+                                childViewModel.calculateAge(isThai),
+                                Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                        child?.gender?.takeIf { it.isNotBlank() }?.let { g ->
+                            Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.12f)) {
+                                Text(
+                                    genderLabel(g, isThai),
+                                    Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Filled.Schedule, null, tint = Outline, modifier = Modifier.size(14.dp))
+                        Text(
+                            lastUpdatedLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -122,8 +174,16 @@ fun ChildAiSummaryScreen(childViewModel: ChildViewModel, chatViewModel: ChatView
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    SummaryTile(Icons.Filled.MonitorWeight, if (isThai) "การเจริญเติบโต" else "Growth",
-                        "${child?.weightKg ?: "-"}kg / ${child?.heightCm ?: "-"}cm") { navController.navigate(Screen.GrowthHistory.route) }
+                    val trendBits = buildList {
+                        weightTrend?.let { add((if (it >= 0) "+" else "") + "%.1f kg".format(it)) }
+                        heightTrend?.let { add((if (it >= 0) "+" else "") + "%.1f cm".format(it)) }
+                    }.joinToString(" · ")
+                    SummaryTile(
+                        Icons.AutoMirrored.Filled.TrendingUp,
+                        if (isThai) "การเจริญเติบโต" else "Growth",
+                        "${child?.weightKg ?: "-"}kg / ${child?.heightCm ?: "-"}cm" +
+                            (if (trendBits.isNotBlank()) "\n${if (isThai) "แนวโน้ม" else "Trend"}: $trendBits" else "")
+                    ) { navController.navigate(Screen.GrowthHistory.route) }
                 }
                 item {
                     SummaryTile(Icons.Filled.MedicalServices, if (isThai) "ข้อมูลทางการแพทย์" else "Medical",
@@ -188,6 +248,27 @@ private fun SummaryTile(icon: ImageVector, label: String, value: String, onClick
                 Icon(icon, null, tint = Primary, modifier = Modifier.size(18.dp))
             }
             Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+private fun genderLabel(gender: String, isThai: Boolean): String = when (gender.lowercase()) {
+    "male", "m", "ชาย", "เด็กชาย" -> if (isThai) "เพศชาย" else "Male"
+    "female", "f", "หญิง", "เด็กหญิง" -> if (isThai) "เพศหญิง" else "Female"
+    else -> gender
+}
+
+/** Stitch-style "อัปเดตล่าสุด: วันนี้, HH:mm" from latest growth record date (or now if AI just loaded). */
+private fun formatAiSummaryUpdated(recordedAt: String?, isThai: Boolean): String {
+    val datePart = recordedAt?.take(10)
+    val today = LocalDate.now().toString()
+    val timeNow = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+    return when {
+        datePart == null -> if (isThai) "อัปเดตล่าสุด: วันนี้, $timeNow น." else "Last updated: today, $timeNow"
+        datePart == today -> if (isThai) "อัปเดตล่าสุด: วันนี้, $timeNow น." else "Last updated: today, $timeNow"
+        else -> {
+            val display = com.lullabyai.app.util.TimeUtils.localDate(recordedAt) ?: datePart
+            if (isThai) "อัปเดตล่าสุด: $display" else "Last updated: $display"
         }
     }
 }

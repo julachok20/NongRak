@@ -110,10 +110,9 @@ fun RecordVisitScreen(childViewModel: ChildViewModel, onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "บันทึกการหาหมอ" else "Record Doctor Visit", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "บันทึกการหาหมอ" else "Record Doctor Visit",
+                onBack = onBack
             )
         },
         containerColor = MaterialTheme.colorScheme.background

@@ -33,7 +33,11 @@ import com.lullabyai.app.viewmodel.AuthViewModel
 fun ChangePasswordScreen(
     authViewModel: AuthViewModel,
     navController: NavController,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /** Doctors reach this same page from Doctor Settings. The content is identical for both roles —
+     *  only the footer differs, so the screen stays shared and the chrome is switched here rather
+     *  than duplicating the page. Without this a doctor landed on the parent bottom bar. */
+    isDoctor: Boolean = false
 ) {
     val uiState by authViewModel.uiState.collectAsState()
     var newPassword by remember { mutableStateOf("") }
@@ -43,14 +47,19 @@ fun ChangePasswordScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("เปลี่ยนรหัสผ่าน", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "กลับ", tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = "เปลี่ยนรหัสผ่าน",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
-            AppBottomNav(
+            if (isDoctor) {
+                com.lullabyai.app.ui.screens.doctor.DoctorBottomNav(
+                    navController,
+                    com.lullabyai.app.ui.screens.doctor.DoctorTab.SETTINGS
+                )
+            } else AppBottomNav(
                 selected = BottomTab.SETTINGS,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },

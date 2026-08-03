@@ -3,9 +3,11 @@ package com.lullabyai.app.ui.screens.child
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -49,6 +51,7 @@ fun AllergyHistoryScreen(
     val s = LocalStrings.current
     val childState by childViewModel.uiState.collectAsState()
     val allergies = childState.allergies
+    val canDelete = childState.isChildOwner
 
     var editingId by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
@@ -57,15 +60,30 @@ fun AllergyHistoryScreen(
     var symptoms by remember { mutableStateOf("") }
     var allergyToDelete by remember { mutableStateOf<Allergy?>(null) }
 
+    // #3 fidelity fix: search + type/severity filters (list previously had no way to narrow it down).
+    var query by remember { mutableStateOf("") }
+    var typeFilter by remember { mutableStateOf<String?>(null) }
+    var severityFilter by remember { mutableStateOf<String?>(null) }
+    val filteredAllergies = remember(allergies, query, typeFilter, severityFilter) {
+        allergies.filter { a ->
+            val matchesQuery = query.isBlank() ||
+                a.name.contains(query, ignoreCase = true) ||
+                a.symptoms?.contains(query, ignoreCase = true) == true
+            val matchesType = typeFilter == null || a.type == typeFilter
+            val matchesSeverity = severityFilter == null || a.severity == severityFilter
+            matchesQuery && matchesType && matchesSeverity
+        }
+    }
+
     fun resetForm() { editingId = null; name = ""; type = "food"; severity = "moderate"; symptoms = "" }
     fun loadIntoForm(a: Allergy) { editingId = a.id; name = a.name; type = a.type; severity = a.severity; symptoms = a.symptoms ?: "" }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "แก้ไขประวัติภูมิแพ้" else "Edit Allergy History", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "แก้ไขประวัติภูมิแพ้" else "Edit Allergy History",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
@@ -185,6 +203,34 @@ fun AllergyHistoryScreen(
                 }
             }
 
+            if (allergies.isNotEmpty()) {
+                item {
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(if (s.isThai) "ค้นหาสิ่งที่แพ้หรืออาการ..." else "Search allergen or symptom...", color = Outline) },
+                        leadingIcon = { Icon(Icons.Filled.Search, null, tint = Outline) },
+                        singleLine = true, shape = RoundedCornerShape(100.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
+                    )
+                }
+                item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AllergyFilterChip(if (s.isThai) "ทุกประเภท" else "All types", typeFilter == null) { typeFilter = null }
+                        ALLERGY_TYPE_KEYS.forEach { key ->
+                            AllergyFilterChip(typeLabel(key, s.isThai), typeFilter == key) { typeFilter = if (typeFilter == key) null else key }
+                        }
+                    }
+                }
+                item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AllergyFilterChip(if (s.isThai) "ทุกระดับ" else "All severities", severityFilter == null) { severityFilter = null }
+                        SEVERITIES.forEach { (key, label) ->
+                            AllergyFilterChip(label, severityFilter == key) { severityFilter = if (severityFilter == key) null else key }
+                        }
+                    }
+                }
+            }
+
             if (allergies.isEmpty()) {
                 item {
                     val noKnown = childState.child?.noKnownAllergies == true
@@ -205,9 +251,15 @@ fun AllergyHistoryScreen(
                         }
                     }
                 }
+            } else if (filteredAllergies.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
+                        Text(if (s.isThai) "ไม่พบรายการที่ตรงกับตัวกรอง" else "No allergies match this filter", color = Outline)
+                    }
+                }
             } else {
-                items(allergies, key = { it.id }) { a ->
-                    AllergyCard(a, onEdit = { loadIntoForm(a) }, onDelete = { allergyToDelete = a })
+                items(filteredAllergies, key = { it.id }) { a ->
+                    AllergyCard(a, canDelete = canDelete, onEdit = { loadIntoForm(a) }, onDelete = { allergyToDelete = a })
                 }
             }
             item { Spacer(Modifier.height(8.dp)) }
@@ -227,7 +279,15 @@ fun AllergyHistoryScreen(
 }
 
 @Composable
-private fun AllergyCard(a: Allergy, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun AllergyFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected, onClick = onClick, label = { Text(label) }, shape = RoundedCornerShape(100.dp),
+        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Primary, selectedLabelColor = Color.White)
+    )
+}
+
+@Composable
+private fun AllergyCard(a: Allergy, canDelete: Boolean, onEdit: () -> Unit, onDelete: () -> Unit) {
     val s = LocalStrings.current
     val color = severityColor(a.severity)
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
@@ -248,7 +308,9 @@ private fun AllergyCard(a: Allergy, onEdit: () -> Unit, onDelete: () -> Unit) {
             }
             Column {
                 IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "แก้ไข", tint = Primary, modifier = Modifier.size(18.dp)) }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.DeleteOutline, "ลบ", tint = Error, modifier = Modifier.size(18.dp)) }
+                if (canDelete) {
+                    IconButton(onClick = onDelete) { Icon(Icons.Filled.DeleteOutline, "ลบ", tint = Error, modifier = Modifier.size(18.dp)) }
+                }
             }
         }
     }

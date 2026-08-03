@@ -53,21 +53,21 @@ fun FoodHistoryScreen(childViewModel: ChildViewModel, navController: NavControll
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติการทานอาหาร" else "Food History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติการทานอาหาร" else "Food History",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
-                selected = com.lullabyai.app.ui.components.BottomTab.STATS,
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
+                onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -121,7 +121,7 @@ fun FoodHistoryScreen(childViewModel: ChildViewModel, navController: NavControll
                                 }
                                 Column(Modifier.weight(1f)) {
                                     Text(f.itemName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    Text(mealTypeLabel(f.mealType, s.isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
+                                    Text(displayMealLabel(f, s.isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
                                 }
                                 Text("${f.calories ?: "-"} kcal", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -144,12 +144,4 @@ private fun dayLabel(date: LocalDate, isThai: Boolean): String {
             "${date.dayOfWeek.getDisplayName(TextStyle.SHORT, locale)} ${date.dayOfMonth}/${date.monthValue}"
         }
     }
-}
-
-private fun mealTypeLabel(type: String, isThai: Boolean) = when (type) {
-    "breakfast" -> if (isThai) "มื้อเช้า" else "Breakfast"
-    "lunch" -> if (isThai) "มื้อกลางวัน" else "Lunch"
-    "dinner" -> if (isThai) "มื้อเย็น" else "Dinner"
-    "snack" -> if (isThai) "ของว่าง" else "Snack"
-    else -> if (isThai) "อื่นๆ" else "Other"
 }

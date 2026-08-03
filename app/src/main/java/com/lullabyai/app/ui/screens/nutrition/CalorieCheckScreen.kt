@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
@@ -69,10 +70,10 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isThai) "ตรวจสอบแคลอรี่" else "Calorie check", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (isThai) "ตรวจสอบแคลอรี่" else "Calorie check",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
@@ -83,7 +84,7 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
+                onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -117,6 +118,20 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
                 Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                 Text(if (isThai) "ถ่ายรูปอาหาร ให้ AI คำนวณให้" else "Take a photo — AI calculates for you", fontWeight = FontWeight.Bold)
             }
+            // Explicit Cancel for the in-flight photo/AI check — user asked for a real button
+            // rather than relying on the back button while a capture/upload is processing.
+            if (ui.checkLoading) {
+                OutlinedButton(
+                    onClick = { vm.cancelCalorieCheck() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Error),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Error)
+                ) {
+                    Icon(Icons.Filled.Close, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text(if (isThai) "ยกเลิก" else "Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
 
             Text(if (isThai) "ผลลัพธ์การคำนวณ" else "Result", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
 
@@ -140,19 +155,12 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
                 MacroBox(if (isThai) "ไขมัน" else "Fat", r?.fat, Modifier.weight(1f))
             }
 
-            // AI tip
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f))) {
-                Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(20.dp))
-                    Column {
-                        Text("AI Tip", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Primary)
-                        Text(
-                            r?.tip?.takeIf { it.isNotBlank() } ?: (if (isThai) "พิมพ์ชื่ออาหารด้านบน แล้วให้ AI วิเคราะห์สัดส่วนสารอาหารที่เหมาะสมสำหรับคุณ" else "Type a food above and let AI analyze its nutrition for you."),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            AIInsightCard(
+                text = r?.tip?.takeIf { it.isNotBlank() }
+                    ?: (if (isThai) "พิมพ์ชื่ออาหารด้านบน แล้วให้ AI วิเคราะห์สัดส่วนสารอาหารที่เหมาะสมสำหรับคุณ"
+                    else "Type a food above and let AI analyze its nutrition for you."),
+                isLoading = ui.checkLoading
+            )
 
             // Generated photo of the checked dish
             if (r != null && ui.checkedFood.isNotBlank()) {

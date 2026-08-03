@@ -54,15 +54,15 @@ fun ExerciseHistoryScreen(childViewModel: ChildViewModel, navController: NavCont
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติการออกกำลังกาย" else "Exercise History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติการออกกำลังกาย" else "Exercise History",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
-                selected = com.lullabyai.app.ui.components.BottomTab.STATS,
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },

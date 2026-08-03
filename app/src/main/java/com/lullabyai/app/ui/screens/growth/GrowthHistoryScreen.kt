@@ -35,10 +35,12 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.data.model.GrowthRecord
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.GrowthReference
+import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 
 /** Age in months from birthdate to a given ISO date/instant — same simple year/month arithmetic as
@@ -62,14 +64,26 @@ fun ageMonthsAt(birthdate: String, recordedAt: String?): Int = try {
  * detail screens (WhoGrowthDetailScreens.kt), which is what GrowthBandChart below still serves.
  */
 @Composable
-fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavController, onBack: () -> Unit) {
+fun GrowthHistoryScreen(
+    childViewModel: ChildViewModel,
+    chatViewModel: ChatViewModel,
+    navController: NavController,
+    onBack: () -> Unit
+) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val isThai = s.isThai
     val childState by childViewModel.uiState.collectAsState()
+    val chatState by chatViewModel.uiState.collectAsState()
     val child = childState.child
     val records = childState.growthRecords // newest-first
+    val canDelete = childState.isChildOwner
     val ageMonthsNow = childViewModel.getAgeMonths()
     var recordToDelete by remember { mutableStateOf<GrowthRecord?>(null) }
+
+    LaunchedEffect(child?.id, isThai) {
+        val c = child ?: return@LaunchedEffect
+        chatViewModel.loadGrowthInsight(c, isThai)
+    }
 
     val latestWeight = records.firstOrNull { it.weightKg != null }
     val latestHeight = records.firstOrNull { it.heightCm != null }
@@ -81,10 +95,10 @@ fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
     }
 
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "ประวัติการเจริญเติบโต" else "Growth History", onBack = onBack) },
+        topBar = { LullabyTopBar(title = if (isThai) "ประวัติการเจริญเติบโต" else "Growth History", onBack = onBack, navController = navController) },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
-                selected = com.lullabyai.app.ui.components.BottomTab.STATS,
+                selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
@@ -174,9 +188,18 @@ fun GrowthHistoryScreen(childViewModel: ChildViewModel, navController: NavContro
                     val severity = listOfNotNull(weightStatus, heightStatus).maxByOrNull {
                         when (it.color) { Color(0xFFC62828) -> 2; Color(0xFFEF6C00) -> 1; else -> 0 }
                     }
-                    GrowthRecordRow(r, ageMonths, weightStatus, heightStatus, severity, isThai) { recordToDelete = r }
+                    GrowthRecordRow(r, ageMonths, weightStatus, heightStatus, severity, isThai, canDelete) { recordToDelete = r }
                 }
             }
+
+            // Dedicated AI recommendation card (Stitch decision #2 / #13)
+            item {
+                AIInsightCard(
+                    text = chatState.growthInsight ?: "",
+                    isLoading = chatState.growthInsight == null
+                )
+            }
+            item { Spacer(Modifier.height(8.dp)) }
         }
     }
 
@@ -230,7 +253,7 @@ private fun GrowthStatBentoCard(
 private fun GrowthRecordRow(
     r: GrowthRecord, ageMonths: Int,
     weightStatus: GrowthReference.GrowthStatus?, heightStatus: GrowthReference.GrowthStatus?,
-    severity: GrowthReference.GrowthStatus?, isThai: Boolean, onDelete: () -> Unit
+    severity: GrowthReference.GrowthStatus?, isThai: Boolean, canDelete: Boolean, onDelete: () -> Unit
 ) {
     val borderColor = severity?.color ?: Color(0xFF2E7D32)
     val flagged = severity != null && severity.color != Color(0xFF2E7D32)
@@ -250,8 +273,10 @@ private fun GrowthRecordRow(
                         }
                         Text(com.lullabyai.app.util.TimeUtils.localDate(r.recordedAt) ?: "", style = MaterialTheme.typography.labelSmall, color = Outline)
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.Delete, null, tint = Outline, modifier = Modifier.size(18.dp))
+                    if (canDelete) {
+                        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Delete, null, tint = Outline, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -289,8 +314,10 @@ private fun GrowthMiniStat(icon: androidx.compose.ui.graphics.vector.ImageVector
  *  call (that would mean one AI request per flagged history row just to render a list). Honest
  *  rule-based text, not claimed as AI-generated. */
 private fun growthTip(status: GrowthReference.GrowthStatus, isThai: Boolean): String = when (status.color) {
-    Color(0xFFC62828) -> if (isThai) "ค่านี้ผิดปกติมากจากช่วงอ้างอิง ควรพบแพทย์เพื่อตรวจประเมินเพิ่มเติม" else "This value is far outside the reference range — please see a doctor for further evaluation."
-    else -> if (isThai) "ค่านี้อยู่นอกช่วงอ้างอิงเล็กน้อย ลองติดตามต่อและปรึกษาแพทย์หากยังไม่เข้าเกณฑ์" else "This value is slightly outside the reference range — keep monitoring and consult a doctor if it doesn't normalize."
+    Color(0xFFC62828) -> if (isThai) "ข้อมูลจาก AI แนะนำ: ค่านี้ผิดปกติมากจากช่วงอ้างอิง ควรพบแพทย์เพื่อตรวจประเมินเพิ่มเติม"
+        else "AI tip: This value is far outside the reference range — please see a doctor for further evaluation."
+    else -> if (isThai) "ข้อมูลจาก AI แนะนำ: ค่านี้อยู่นอกช่วงอ้างอิงเล็กน้อย ลองติดตามต่อและปรึกษาแพทย์หากยังไม่เข้าเกณฑ์"
+        else "AI tip: This value is slightly outside the reference range — keep monitoring and consult a doctor if it doesn't normalize."
 }
 
 @Composable

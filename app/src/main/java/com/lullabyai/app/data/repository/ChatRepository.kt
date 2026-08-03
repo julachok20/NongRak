@@ -212,6 +212,26 @@ class ChatRepository {
             }.decodeList<com.lullabyai.app.data.model.MedicalHistory>().firstOrNull()
         }.getOrNull()
 
+        // Prefer live tables over denormalized child-row caches so chat never contradicts the hubs.
+        val latestGrowth = runCatching {
+            HealthRepository().getGrowthRecords(child.id).getOrNull()
+                ?.maxByOrNull { it.recordedAt ?: "" }
+        }.getOrNull()
+        val weightKg = latestGrowth?.weightKg ?: child.weightKg
+        val heightCm = latestGrowth?.heightCm ?: child.heightCm
+        val allergyNames = runCatching {
+            HealthRepository().getAllergies(child.id).getOrNull()
+                ?.map { it.name }?.filter { it.isNotBlank() }?.distinct()
+        }.getOrNull().orEmpty()
+        val allergyText = allergyNames.joinToString(", ")
+            .ifBlank { child.allergies?.takeIf { it.isNotBlank() } }
+        val chronicNames = runCatching {
+            HealthRepository().getChronicConditions(child.id).getOrNull()
+                ?.map { it.name }?.filter { it.isNotBlank() }?.distinct()
+        }.getOrNull().orEmpty()
+        val chronicText = chronicNames.joinToString(", ")
+            .ifBlank { medical?.underlyingConditions?.takeIf { it.isNotBlank() } }
+
         // สถิติ (Statistics) snapshot — without this, chat could only see the static profile fields
         // above and had no way to answer questions about actual logged sleep/growth/vaccine/milestone
         // data, even though that's exactly what ข้อมูลลูก/สถิติ show in the app itself.
@@ -225,18 +245,26 @@ class ChatRepository {
             append("- ชื่อเด็ก: ${child.name}\n")
             append("- อายุ: ${calculateAge(child.birthdate)} (วันเกิด ${child.birthdate})\n")
             append("- เพศ: ${if (child.gender == "male") "ชาย" else if (child.gender == "female") "หญิง" else "ไม่ระบุ"}\n")
-            child.weightKg?.let { append("- น้ำหนัก: $it กก.\n") }
-            child.heightCm?.let { append("- ส่วนสูง: $it ซม.\n") }
+            weightKg?.let { append("- น้ำหนัก: $it กก.\n") }
+            heightCm?.let { append("- ส่วนสูง: $it ซม.\n") }
             child.sleepHours?.let { append("- นอนหลับเฉลี่ย: ${it.toInt()} ชม./วัน\n") }
             append("- ระดับกิจกรรม: $activity\n")
-            if (child.allergies?.isNotBlank() == true) append("- ประวัติแพ้: ${child.allergies}\n")
+            if (!allergyText.isNullOrBlank()) append("- ประวัติแพ้: $allergyText\n")
             if (child.notes?.isNotBlank() == true) append("- หมายเหตุ: ${child.notes}\n")
             medical?.let { m ->
                 if (m.hasTakenMedication) append("- เคยได้รับยา: ${m.medicationDetails ?: "เคย"}\n")
-                if (m.underlyingConditions?.isNotBlank() == true) append("- โรคประจำตัว: ${m.underlyingConditions}\n")
-                if (!m.vaccinesGiven.isNullOrEmpty()) append("- วัคซีนที่ได้รับ: ${m.vaccinesGiven.joinToString(", ")}\n")
+                if (!m.vaccinesGiven.isNullOrEmpty()) {
+                    val vaccines = m.vaccinesGiven.orEmpty()
+                    append("- วัคซีนที่ได้รับ (ตอนตั้งค่า): ${vaccines.joinToString(", ")}\n")
+                }
             }
+            if (!chronicText.isNullOrBlank()) append("- โรคประจำตัว: $chronicText\n")
             if (statsBlock.isNotBlank()) append(statsBlock)
+            // Wearables / IoT device metrics (Health Connect + child devices) when present.
+            val deviceBlock = runCatching {
+                WearableRepository().recentSummaryForAi(child.id)
+            }.getOrNull().orEmpty()
+            if (deviceBlock.isNotBlank()) append(deviceBlock)
         }
     }
 
@@ -484,6 +512,20 @@ class ChatRepository {
         val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
         cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 1024, system = analysisSystemPrompt(isThai), jsonMode = false)
             .also { searchCache.save(cacheKey, it, "elimination_insight") }
+    }
+
+    /** Waste Record screen — [summary] is recent urine/stool log rows (type, consistency, color, amount). */
+    suspend fun generateWasteInsight(child: Child, summary: String, forceRefresh: Boolean = false, isThai: Boolean = true): Result<String> = runCatching {
+        val prompt = buildChildContext(child) +
+            "\n\nบันทึกการขับถ่ายล่าสุดของเด็กคนนี้:\n$summary" +
+            "\n\nให้คำแนะนำสั้นๆ สำหรับผู้ปกครองจากบันทึกการขับถ่ายข้างต้นเท่านั้น 2-3 ประโยค " +
+            "เน้นความถี่ ลักษณะ/สี ที่ควรเฝ้าระวัง และเมื่อไรควรปรึกษาแพทย์ " +
+            "ห้ามสมมติตัวเลขหรือเหตุการณ์ที่ไม่ปรากฏในข้อมูลจริง ตอบเนื้อหาโดยตรงทันที ห้ามขึ้นต้นด้วยคำทักทาย " +
+            "หากข้อมูลไม่พอ ให้บอกตรงๆ ว่าควรบันทึกเพิ่มเติม"
+        val cacheKey = "waste_insight_${child.id}_${langTag(isThai)}"
+        val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
+        cached ?: ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 1024, system = analysisSystemPrompt(isThai), jsonMode = false)
+            .also { searchCache.save(cacheKey, it, "waste_insight") }
     }
 
     /** Monthly Summary Report — [summary] is a caller-built plain-text summary of real 30-day

@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.*
@@ -23,10 +22,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.WasteRecord
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.TimeUtils
+import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
+import java.time.LocalDate
 
 private val CONSISTENCY = listOf(
     "soft_normal" to ("นิ่ม/ปกติ" to "Soft/Normal"), "hard_constipated" to ("แข็ง/ท้องผูก" to "Hard/Constipated"),
@@ -45,16 +48,43 @@ private fun colorSwatch(key: String?) = COLORS.find { it.first == key }?.second?
 private fun amountLabel(key: String, isThai: Boolean) = AMOUNTS.find { it.first == key }?.second?.let { if (isThai) it.first else it.second } ?: key
 
 @Composable
-fun WasteRecordScreen(childViewModel: ChildViewModel, navController: NavController, onBack: () -> Unit) {
+fun WasteRecordScreen(
+    childViewModel: ChildViewModel,
+    chatViewModel: ChatViewModel,
+    navController: NavController,
+    onBack: () -> Unit
+) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val isThai = s.isThai
     val childState by childViewModel.uiState.collectAsState()
+    val chatState by chatViewModel.uiState.collectAsState()
+    val child = childState.child
     LaunchedEffect(Unit) { childViewModel.loadWasteRecords() }
+
+    val recentWaste = remember(childState.wasteRecords) { childState.wasteRecords.take(12) }
+    LaunchedEffect(child?.id, recentWaste) {
+        child?.let { c ->
+            if (recentWaste.isNotEmpty()) {
+                val summary = recentWaste.joinToString("\n") { r ->
+                    val type = if (r.wasteType == "urine") "urine" else "stool"
+                    val cons = r.consistency ?: "-"
+                    val col = r.color ?: "-"
+                    val amt = r.amount
+                    val whenStr = TimeUtils.localDate(r.recordedAt) ?: ""
+                    "$whenStr · $type · consistency=$cons · color=$col · amount=$amt"
+                }
+                chatViewModel.loadWasteInsight(c, summary, isThai)
+            }
+        }
+    }
 
     var wasteType by remember { mutableStateOf("stool") }
     var consistency by remember { mutableStateOf<String?>(null) }
     var color by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("medium") }
+    val logsToday = childState.wasteRecords.count {
+        TimeUtils.localDate(it.recordedAt) == LocalDate.now().toString()
+    }
 
     Scaffold(
         topBar = {
@@ -145,19 +175,21 @@ fun WasteRecordScreen(childViewModel: ChildViewModel, navController: NavControll
                 }
             }
 
-            if (childState.wasteRecords.isNotEmpty()) {
-                item {
-                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(18.dp))
-                            Text(
-                                if (isThai) "วันนี้บันทึกแล้ว ${childState.wasteRecords.count { com.lullabyai.app.util.TimeUtils.localDate(it.recordedAt) == java.time.LocalDate.now().toString() }} ครั้ง"
-                                else "${childState.wasteRecords.count { com.lullabyai.app.util.TimeUtils.localDate(it.recordedAt) == java.time.LocalDate.now().toString() }} logs today",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
+            item {
+                AIInsightCard(
+                    text = chatState.wasteInsight.orEmpty(),
+                    isLoading = recentWaste.isNotEmpty() && chatState.wasteInsight == null,
+                    title = if (isThai) "คำแนะนำจาก NongRak AI" else "NongRak AI Insight",
+                    emptyMessage = when {
+                        recentWaste.isEmpty() ->
+                            if (isThai) "บันทึกการขับถ่ายสัก 2–3 ครั้ง เพื่อให้ AI วิเคราะห์แนวโน้มและจุดที่ควรเฝ้าระวัง"
+                            else "Log a few elimination entries so AI can spot trends and what to watch for"
+                        logsToday > 0 ->
+                            if (isThai) "วันนี้บันทึกแล้ว $logsToday ครั้ง — กำลังวิเคราะห์…"
+                            else "$logsToday logs today — analyzing…"
+                        else -> null
                     }
-                }
+                )
             }
 
             item {

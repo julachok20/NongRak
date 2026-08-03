@@ -51,7 +51,7 @@ fun MentalHealthResultScreen(authViewModel: AuthViewModel, navController: androi
     val result = authState.lastMentalHealthResult ?: authState.mentalHealthHistory.firstOrNull()
 
     Scaffold(
-        topBar = { com.lullabyai.app.ui.components.LullabyTopBar(title = if (isThai) "ผลการประเมิน" else "Your Result", onBack = onBackToDashboard) },
+        topBar = { com.lullabyai.app.ui.components.LullabyTopBar(title = if (isThai) "ผลการประเมิน" else "Your Result", onBack = onBackToDashboard, navController = navController) },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.HOME,
@@ -80,18 +80,26 @@ fun MentalHealthResultScreen(authViewModel: AuthViewModel, navController: androi
                 Canvas(Modifier.size(140.dp)) {
                     val stroke = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round)
                     val inset = stroke.width / 2
+                    val max = MentalHealthCatalog.MAX_SCORE.toFloat()
                     drawArc(Color(0xFFE0E3E5), -90f, 360f, false, style = stroke, size = Size(size.width - stroke.width, size.height - stroke.width), topLeft = Offset(inset, inset))
-                    drawArc(color, -90f, 360f * (result.totalScore / 30f).coerceIn(0f, 1f), false, style = stroke, size = Size(size.width - stroke.width, size.height - stroke.width), topLeft = Offset(inset, inset))
+                    drawArc(color, -90f, 360f * (result.totalScore / max).coerceIn(0f, 1f), false, style = stroke, size = Size(size.width - stroke.width, size.height - stroke.width), topLeft = Offset(inset, inset))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("${result.totalScore}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = color)
-                    Text("/ 30", style = MaterialTheme.typography.labelSmall, color = Outline)
+                    Text(MentalHealthCatalog.scoreDenominatorLabel(isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
                 }
             }
             Spacer(Modifier.height(12.dp))
             Surface(shape = RoundedCornerShape(100.dp), color = color.copy(0.12f)) {
                 Text(MentalHealthCatalog.riskTierLabel(result.riskTier, isThai), modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = color, fontWeight = FontWeight.Bold)
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                MentalHealthCatalog.thresholdLegend(isThai),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
 
             if (result.flaggedSelfHarm) {
                 Spacer(Modifier.height(16.dp))
@@ -147,7 +155,7 @@ fun MentalHealthResultScreen(authViewModel: AuthViewModel, navController: androi
 private fun MentalHealthTrendChart(history: List<com.lullabyai.app.data.model.MentalHealthAssessment>) {
     val points = history.reversed() // oldest first
     Canvas(Modifier.fillMaxWidth().height(80.dp)) {
-        val maxScore = 30f
+        val maxScore = MentalHealthCatalog.MAX_SCORE.toFloat()
         val stepX = size.width / (points.size - 1).coerceAtLeast(1)
         val path = Path()
         points.forEachIndexed { i, p ->

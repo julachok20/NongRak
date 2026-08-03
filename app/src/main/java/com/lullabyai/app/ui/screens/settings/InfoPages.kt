@@ -19,17 +19,22 @@ import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.Primary
 
 @Composable
-private fun InfoScaffold(title: String, navController: NavController, onBack: () -> Unit, body: @Composable ColumnScope.() -> Unit) {
+private fun InfoScaffold(title: String, navController: NavController, onBack: () -> Unit, isDoctor: Boolean = false, body: @Composable ColumnScope.() -> Unit) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = title,
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {
-            com.lullabyai.app.ui.components.AppBottomNav(
+            if (isDoctor) {
+                com.lullabyai.app.ui.screens.doctor.DoctorBottomNav(
+                    navController,
+                    com.lullabyai.app.ui.screens.doctor.DoctorTab.SETTINGS
+                )
+            } else com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.SETTINGS,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
@@ -76,7 +81,7 @@ fun AboutUsScreen(navController: NavController, onBack: () -> Unit) = InfoScaffo
 }
 
 @Composable
-fun PrivacyPolicyScreen(navController: NavController, onBack: () -> Unit) = InfoScaffold("นโยบายความเป็นส่วนตัว", navController, onBack) {
+fun PrivacyPolicyScreen(navController: NavController, onBack: () -> Unit, isDoctor: Boolean = false) = InfoScaffold("นโยบายความเป็นส่วนตัว", navController, onBack, isDoctor) {
     Para("นโยบายนี้จัดทำตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA) อธิบายว่าเราเก็บรวบรวม ใช้ เปิดเผย และปกป้องข้อมูลของคุณและบุตรหลานอย่างไร (ปรับปรุงล่าสุด 13 มิถุนายน 2569)")
 
     Heading("1. ผู้ควบคุมข้อมูลส่วนบุคคล")

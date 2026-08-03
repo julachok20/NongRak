@@ -59,4 +59,28 @@ object GrowthReference {
         val (min, max) = bandAt(ageMonths, heightBandsCm)
         return statusFor(h, min, max)
     }
+
+    /**
+     * Approximate Weight-for-Height via BMI (kg/m²). Toddler bands are rough WHO-inspired
+     * ranges for 0–3y — NOT LMS Z-scores / real WHO percentiles. Used for the Stitch
+     * "Weight-for-Height / สมส่วน" card on WHO Weight-for-Age detail.
+     */
+    fun weightForHeightStatus(weightKg: Double?, heightCm: Double?): GrowthStatus? {
+        val w = weightKg ?: return null
+        val h = heightCm ?: return null
+        if (h <= 0.0) return null
+        val meters = h / 100.0
+        val bmi = w / (meters * meters)
+        return when {
+            bmi < 13.0 -> GrowthStatus("ผอมกว่าเกณฑ์", "Below proportional", Color(0xFFEF6C00))
+            bmi > 18.5 -> GrowthStatus("ท้วมกว่าเกณฑ์", "Above proportional", Color(0xFFEF6C00))
+            else -> GrowthStatus("สมส่วน", "Proportional", Color(0xFF2E7D32))
+        }
+    }
+
+    /** Midpoint of the age band — used as a rough "P50-like" next-target label (honest approx). */
+    fun bandMidpoint(ageMonths: Int, isWeight: Boolean): Double {
+        val (min, max) = band(ageMonths, isWeight)
+        return (min + max) / 2.0
+    }
 }

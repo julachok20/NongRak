@@ -4,6 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lullabyai.app.data.model.Profile
 import com.lullabyai.app.data.repository.AuthRepository
+import com.lullabyai.app.data.repository.AuthRepository.AuthPortal
+import com.lullabyai.app.data.model.hasDoctorRole
+import com.lullabyai.app.data.model.hasParentRole
+import com.lullabyai.app.data.settings.SettingsManager
+import com.lullabyai.app.data.doctor.isRegistrationComplete
+import com.lullabyai.app.NongRakApp
+import com.lullabyai.app.util.GoogleAuthHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -31,10 +38,20 @@ class AuthViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState
 
-    fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null, onSuccess: () -> Unit) {
+    /** [phone] must already be normalized by the caller (see `ThaiPhone.normalize`); the repository
+     *  re-validates it anyway. New params go BEFORE `onSuccess` and AFTER `accountType` so existing
+     *  positional call sites keep binding to the same slots. */
+    fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null, accountType: String = "parent", phone: String? = null, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
-            repo.signUp(email, password, fullName, captchaToken)
+            repo.signUp(
+                email = email,
+                password = password,
+                fullName = fullName,
+                captchaToken = captchaToken,
+                accountType = accountType,
+                phone = phone
+            )
                 .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
                 .onFailure { _uiState.value = AuthUiState(error = friendlyAuthError(it.message)) }
         }
@@ -80,12 +97,32 @@ class AuthViewModel : ViewModel() {
         }
     }
 
-    fun signInWithGoogle(context: android.content.Context, onSuccess: () -> Unit) {
+    /** Classic Google Sign-In SDK → Supabase ID token exchange (via [rememberGoogleSignInAction]). */
+    fun completeGoogleSignIn(
+        idToken: String?,
+        isThai: Boolean,
+        onSuccess: () -> Unit,
+        accountType: String = "parent",
+        errorMessage: String? = null
+    ) {
         viewModelScope.launch {
+            if (idToken.isNullOrBlank()) {
+                _uiState.value = AuthUiState(
+                    error = GoogleAuthHelper.friendlyError(
+                        errorMessage ?: "ยกเลิกการเข้าสู่ระบบ",
+                        isThai
+                    )
+                )
+                return@launch
+            }
             _uiState.value = AuthUiState(isLoading = true)
-            repo.signInWithGoogle(context)
+            repo.signInWithGoogleIdToken(idToken, accountType)
                 .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
-                .onFailure { _uiState.value = AuthUiState(error = it.message ?: "เข้าสู่ระบบด้วย Google ไม่สำเร็จ") }
+                .onFailure {
+                    _uiState.value = AuthUiState(
+                        error = GoogleAuthHelper.friendlyError(it.message, isThai)
+                    )
+                }
         }
     }
 
@@ -153,6 +190,123 @@ class AuthViewModel : ViewModel() {
                     val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(p.avatarUrl)
                     _uiState.value = _uiState.value.copy(profile = p, avatarSignedUrl = signed)
                 }
+        }
+    }
+
+    /**
+     * Route after auth using the **portal** the user chose (parent login vs doctor login).
+     * Same email may have both roles; portals stay separate.
+     */
+    fun resolveHomeForPortal(
+        portal: AuthPortal,
+        isThai: Boolean,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            repo.getProfile()
+                .onSuccess { p ->
+                    val portalKey = when (portal) {
+                        AuthPortal.DOCTOR -> SettingsManager.PORTAL_DOCTOR
+                        AuthPortal.PARENT -> SettingsManager.PORTAL_PARENT
+                    }
+                    SettingsManager(NongRakApp.instance).setLastAuthPortal(portalKey)
+                    val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(p.avatarUrl)
+                    _uiState.value = _uiState.value.copy(profile = p, avatarSignedUrl = signed)
+                    val allowed = when (portal) {
+                        AuthPortal.PARENT -> p.hasParentRole()
+                        AuthPortal.DOCTOR -> p.hasDoctorRole()
+                    }
+                    if (allowed) onSuccess()
+                    else {
+                        repo.signOut()
+                        _uiState.value = AuthUiState(error = repo.portalRejectionMessage(portal, isThai))
+                    }
+                }
+                .onFailure {
+                    if (portal == AuthPortal.PARENT) onSuccess() else {
+                        _uiState.value = AuthUiState(error = repo.portalRejectionMessage(portal, isThai))
+                    }
+                }
+        }
+    }
+
+    /**
+     * After Google or email auth on the doctor portal: verify doctor role, then route to profile
+     * completion (Stitch 44.Regis-Google) or dashboard based on [doctor_profiles] row.
+     */
+    fun resolveDoctorPortalAfterAuth(
+        isThai: Boolean,
+        onNeedsRegistration: () -> Unit,
+        onDashboard: () -> Unit,
+        onRejected: (String) -> Unit = { _ -> }
+    ) {
+        viewModelScope.launch {
+            repo.getProfile()
+                .onSuccess { p ->
+                    SettingsManager(NongRakApp.instance).setLastAuthPortal(SettingsManager.PORTAL_DOCTOR)
+                    val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(p.avatarUrl)
+                    _uiState.value = _uiState.value.copy(profile = p, avatarSignedUrl = signed)
+                    if (!p.hasDoctorRole()) {
+                        repo.signOut()
+                        onRejected(repo.portalRejectionMessage(AuthRepository.AuthPortal.DOCTOR, isThai))
+                        return@launch
+                    }
+                    val doctorId = getCurrentUserId()
+                    if (doctorId == null) {
+                        onRejected(if (isThai) "ไม่พบเซสชันแพทย์" else "Doctor session missing")
+                        return@launch
+                    }
+                    val doctorProfile = com.lullabyai.app.data.repository.DoctorRepository()
+                        .getDoctorProfile(doctorId).getOrNull()
+                    if (doctorProfile.isRegistrationComplete()) onDashboard()
+                    else onNeedsRegistration()
+                }
+                .onFailure {
+                    onRejected(repo.portalRejectionMessage(AuthRepository.AuthPortal.DOCTOR, isThai))
+                }
+        }
+    }
+
+    fun signUpDoctor(
+        email: String,
+        password: String,
+        fullName: String,
+        captchaToken: String? = null,
+        /** Normalized by the caller via ThaiPhone.normalize, same contract as [signUp]. */
+        phone: String? = null,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState(isLoading = true)
+            repo.signUpDoctor(email, password, fullName, captchaToken, phone)
+                .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
+                .onFailure { _uiState.value = AuthUiState(error = friendlyAuthError(it.message)) }
+        }
+    }
+
+    /** After Google identity, attach doctor role when registering from the doctor portal. */
+    fun attachDoctorRoleAfterGoogle(onSuccess: () -> Unit, onFailure: (String) -> Unit) {
+        viewModelScope.launch {
+            repo.grantDoctorRole()
+                .onSuccess { onSuccess() }
+                .onFailure { onFailure(it.message ?: "Could not enable doctor access") }
+        }
+    }
+
+    /**
+     * @deprecated Prefer [resolveHomeForPortal] so parent and doctor logins do not cross-route.
+     */
+    fun resolveHomeAfterAuth(onDoctor: () -> Unit, onParent: () -> Unit) {
+        viewModelScope.launch {
+            repo.getProfile()
+                .onSuccess { p ->
+                    val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(p.avatarUrl)
+                    _uiState.value = _uiState.value.copy(profile = p, avatarSignedUrl = signed)
+                    if (p.hasDoctorRole() && !p.hasParentRole()) onDoctor()
+                    else if (p.hasParentRole()) onParent()
+                    else onParent()
+                }
+                .onFailure { onParent() }
         }
     }
 

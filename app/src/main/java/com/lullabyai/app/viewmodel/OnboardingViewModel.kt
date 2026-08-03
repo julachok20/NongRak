@@ -3,6 +3,7 @@ package com.lullabyai.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lullabyai.app.data.model.Child
+import com.lullabyai.app.data.model.GrowthRecord
 import com.lullabyai.app.data.model.MedicalHistory
 import com.lullabyai.app.data.repository.AuthRepository
 import com.lullabyai.app.data.repository.ChildRepository
@@ -148,13 +149,32 @@ class OnboardingViewModel : ViewModel() {
                 // Make the newly-created child the active one (covers both first signup and "add child").
                 com.lullabyai.app.data.settings.ChildSelection.set(savedChild.id)
 
+                // Seed growth_records from Step 2 vitals so Growth History / WHO charts aren't empty
+                // while Summary already shows the child's weight/height from the children row.
+                if (savedChild.weightKg != null || savedChild.heightCm != null) {
+                    healthRepo.addGrowthRecord(
+                        GrowthRecord(
+                            childId = savedChild.id,
+                            weightKg = savedChild.weightKg,
+                            heightCm = savedChild.heightCm,
+                            recordedAt = java.time.LocalDate.now().toString(),
+                            recordType = "onboarding"
+                        )
+                    )
+                }
+
                 // Structured allergy list → allergies table.
+                // (addAllergy also rebuilds children.allergies summary — matches the string we just wrote.)
                 state.allergyEntries.forEach { a ->
                     healthRepo.addAllergy(savedChild.id, a.name, "อื่นๆ", "ไม่ระบุ", a.symptoms.ifBlank { null })
                 }
+                if (state.noKnownAllergies) {
+                    childRepo.setNoKnownAllergies(savedChild.id, true)
+                }
                 // Uploaded medical documents → private bucket + metadata.
                 state.pendingDocs.forEach { d ->
-                    childRepo.uploadMedicalDocument(savedChild.id, d.name, d.mime, d.bytes)
+                    val category = if (d.name.contains("vaccine_book", ignoreCase = true)) "certs" else "other"
+                    childRepo.uploadMedicalDocument(savedChild.id, d.name, d.mime, d.bytes, category = category)
                 }
 
                 val history = MedicalHistory(

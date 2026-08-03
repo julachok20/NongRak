@@ -66,10 +66,10 @@ fun NutritionInsightsScreen(
     }
 
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "สรุปโภชนาการแบบละเอียด" else "Detailed Nutrition Summary", onBack = { navController.popBackStack() }) },
+        topBar = { LullabyTopBar(title = if (isThai) "สรุปโภชนาการแบบละเอียด" else "Detailed Nutrition Summary", onBack = { navController.popBackStack() }, navController = navController) },
         bottomBar = {
             AppBottomNav(
-                selected = BottomTab.STATS,
+                selected = BottomTab.CHILD,
                 onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },

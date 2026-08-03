@@ -22,6 +22,13 @@ class DoctorVisitRepository {
         }.decodeList<DoctorVisit>()
     }
 
+    suspend fun getVisitByAppointment(appointmentId: String): Result<DoctorVisit?> = runCatching {
+        supabase.from("doctor_visits").select {
+            filter { eq("appointment_id", appointmentId) }
+            limit(1)
+        }.decodeList<DoctorVisit>().firstOrNull()
+    }
+
     /** Insert (id == null) a scheduled appointment or a completed visit, or update (id != null)
      *  an existing row — one function for both since RecordVisitScreen edits in place. */
     suspend fun saveVisit(
@@ -44,7 +51,11 @@ class DoctorVisitRepository {
         nextAppointmentDate: String?,
         preparationNotes: String?,
         reminders: List<String>?,
-        status: String
+        status: String,
+        // Set when a real Doctor-role account (not a parent's manual log) authors this visit —
+        // e.g. from DoctorClinicalRecordEntryScreen. Null for parent-authored entries.
+        doctorId: String? = null,
+        appointmentId: String? = null
     ): Result<DoctorVisit> = runCatching {
         val payload = buildJsonObject {
             put("child_id", JsonPrimitive(childId))
@@ -53,6 +64,8 @@ class DoctorVisitRepository {
             put("facility_name", facilityName?.let { JsonPrimitive(it) } ?: JsonNull)
             put("doctor_name", doctorName?.let { JsonPrimitive(it) } ?: JsonNull)
             put("doctor_specialty", doctorSpecialty?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("doctor_id", doctorId?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("appointment_id", appointmentId?.let { JsonPrimitive(it) } ?: JsonNull)
             put("reason", reason?.let { JsonPrimitive(it) } ?: JsonNull)
             put("symptoms", symptoms?.let { syms -> buildJsonArray { syms.forEach { add(JsonPrimitive(it)) } } } ?: JsonNull)
             put("diagnosis", diagnosis?.let { JsonPrimitive(it) } ?: JsonNull)

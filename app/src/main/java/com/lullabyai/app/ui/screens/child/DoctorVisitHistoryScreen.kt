@@ -5,9 +5,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,12 +22,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.DoctorVisit
+import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
 
-private enum class VisitFilter { ALL, THIS_MONTH, LAST_3_MONTHS }
+private enum class VisitFilter { ALL, THIS_MONTH, LAST_3_MONTHS, CUSTOM, SCHEDULED, COMPLETED }
 
 /** "ประวัติการพบแพทย์" — the doctor-visit hub: search + a month/3-month range filter, a vertical
  *  list of visits (scheduled appointments and completed logs mixed, newest first), and a
@@ -37,15 +40,26 @@ fun DoctorVisitHistoryScreen(childViewModel: ChildViewModel, navController: NavC
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(VisitFilter.ALL) }
     var fabExpanded by remember { mutableStateOf(false) }
+    // Custom date-range filter (#3 fidelity fix — presets only covered "this month" / "past 3
+    // months"; a parent looking for a visit outside those windows had no way to narrow it down).
+    var customStart by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    var customEnd by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    var showStartPicker by remember { mutableStateOf(false) }
+    var showEndPicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.child?.id) { childViewModel.loadDoctorVisits() }
+    LaunchedEffect(state.child?.id) {
+        childViewModel.loadDoctorVisits()
+        childViewModel.loadDoctorVisitHistoryInsight(s.isThai)
+    }
 
     val today = remember { java.time.LocalDate.now() }
-    val filtered = remember(state.doctorVisits, query, filter) {
+    val filtered = remember(state.doctorVisits, query, filter, customStart, customEnd) {
         state.doctorVisits.filter { visit ->
             val matchesQuery = query.isBlank() ||
                 visit.doctorName?.contains(query, ignoreCase = true) == true ||
-                visit.facilityName?.contains(query, ignoreCase = true) == true
+                visit.facilityName?.contains(query, ignoreCase = true) == true ||
+                visit.diagnosis?.contains(query, ignoreCase = true) == true ||
+                visit.reason?.contains(query, ignoreCase = true) == true
             val visitDate = com.lullabyai.app.util.TimeUtils.localDate(visit.visitDatetime)?.let {
                 runCatching { java.time.LocalDate.parse(it) }.getOrNull()
             }
@@ -53,6 +67,11 @@ fun DoctorVisitHistoryScreen(childViewModel: ChildViewModel, navController: NavC
                 VisitFilter.ALL -> true
                 VisitFilter.THIS_MONTH -> visitDate != null && visitDate.month == today.month && visitDate.year == today.year
                 VisitFilter.LAST_3_MONTHS -> visitDate != null && !visitDate.isBefore(today.minusMonths(3))
+                VisitFilter.CUSTOM -> visitDate != null &&
+                    (customStart == null || !visitDate.isBefore(customStart)) &&
+                    (customEnd == null || !visitDate.isAfter(customEnd))
+                VisitFilter.SCHEDULED -> visit.status == "scheduled"
+                VisitFilter.COMPLETED -> visit.status == "completed" || visit.status == "follow_up"
             }
             matchesQuery && matchesRange
         }
@@ -60,10 +79,15 @@ fun DoctorVisitHistoryScreen(childViewModel: ChildViewModel, navController: NavC
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติการพบแพทย์" else "Doctor Visit History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติการพบแพทย์" else "Doctor Visit History",
+                onBack = onBack,
+                navController = navController,
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.PdfExport.route) }) {
+                        Icon(Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก" else "Export", tint = Primary)
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -117,11 +141,40 @@ fun DoctorVisitHistoryScreen(childViewModel: ChildViewModel, navController: NavC
                 )
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     FilterChipItem(if (s.isThai) "ทั้งหมด" else "All", filter == VisitFilter.ALL) { filter = VisitFilter.ALL }
                     FilterChipItem(if (s.isThai) "เดือนนี้" else "This month", filter == VisitFilter.THIS_MONTH) { filter = VisitFilter.THIS_MONTH }
                     FilterChipItem(if (s.isThai) "3 เดือนล่าสุด" else "Past 3 months", filter == VisitFilter.LAST_3_MONTHS) { filter = VisitFilter.LAST_3_MONTHS }
+                    FilterChipItem(if (s.isThai) "กำหนดเอง" else "Custom range", filter == VisitFilter.CUSTOM) { filter = VisitFilter.CUSTOM }
+                    FilterChipItem(if (s.isThai) "นัดหมาย" else "Scheduled", filter == VisitFilter.SCHEDULED) { filter = VisitFilter.SCHEDULED }
+                    FilterChipItem(if (s.isThai) "เสร็จสิ้น" else "Completed", filter == VisitFilter.COMPLETED) { filter = VisitFilter.COMPLETED }
                 }
+            }
+
+            if (filter == VisitFilter.CUSTOM) {
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = { showStartPicker = true }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp)) {
+                            Icon(Icons.Filled.CalendarToday, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                            Text(customStart?.toString() ?: (if (s.isThai) "จากวันที่" else "From date"), style = MaterialTheme.typography.labelMedium)
+                        }
+                        OutlinedButton(onClick = { showEndPicker = true }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(100.dp)) {
+                            Icon(Icons.Filled.CalendarToday, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                            Text(customEnd?.toString() ?: (if (s.isThai) "ถึงวันที่" else "To date"), style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
+            item {
+                AIInsightCard(
+                    text = state.doctorVisitHistoryInsight
+                        ?: if (s.isThai) "กำลังวิเคราะห์ประวัติพบแพทย์..." else "Analyzing visit history...",
+                    isLoading = state.doctorVisitHistoryInsightLoading || state.doctorVisitHistoryInsight == null
+                )
             }
 
             if (filtered.isEmpty()) {
@@ -140,6 +193,38 @@ fun DoctorVisitHistoryScreen(childViewModel: ChildViewModel, navController: NavC
                 }
             }
         }
+    }
+
+    if (showStartPicker) {
+        val zone = java.time.ZoneId.systemDefault()
+        val initialMillis = (customStart ?: today).atStartOfDay(zone).toInstant().toEpochMilli()
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showStartPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { ms -> customStart = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate() }
+                    showStartPicker = false
+                }) { Text(if (s.isThai) "ตกลง" else "OK") }
+            },
+            dismissButton = { TextButton(onClick = { showStartPicker = false }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
+        ) { DatePicker(state = pickerState) }
+    }
+
+    if (showEndPicker) {
+        val zone = java.time.ZoneId.systemDefault()
+        val initialMillis = (customEnd ?: today).atStartOfDay(zone).toInstant().toEpochMilli()
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showEndPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { ms -> customEnd = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate() }
+                    showEndPicker = false
+                }) { Text(if (s.isThai) "ตกลง" else "OK") }
+            },
+            dismissButton = { TextButton(onClick = { showEndPicker = false }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
+        ) { DatePicker(state = pickerState) }
     }
 }
 

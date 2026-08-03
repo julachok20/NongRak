@@ -77,9 +77,9 @@ fun AddMedicineScheduleScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "เพิ่มตารางการทานยา" else "Add Medicine Schedule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.Close, null, tint = MaterialTheme.colorScheme.onSurface) } },
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "เพิ่มตารางการทานยา" else "Add Medicine Schedule",
+                onBack = onBack,
                 actions = {
                     TextButton(
                         onClick = {
@@ -96,8 +96,7 @@ fun AddMedicineScheduleScreen(
                         if (state.medicationSaving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Primary)
                         else Text(if (s.isThai) "บันทึก" else "Save", color = Primary, fontWeight = FontWeight.Bold)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                }
             )
         },
         bottomBar = {
@@ -217,6 +216,34 @@ fun AddMedicineScheduleScreen(
                 value = notes, onValueChange = { notes = it }, modifier = Modifier.fillMaxWidth().height(90.dp),
                 shape = RoundedCornerShape(12.dp), colors = amsFieldColors()
             )
+
+            Spacer(Modifier.height(8.dp))
+
+            // Bottom Save button — mirrors AddGrowthRecordScreen's bottom-save-button pattern.
+            // The header TextButton above stays as-is; this is the primary, unmissable way to save.
+            Button(
+                onClick = {
+                    if (medicineName.isNotBlank()) {
+                        childViewModel.addMedicationSchedule(
+                            medicineName.trim(), dosage.toDoubleOrNull(), dosageUnit, frequency,
+                            scheduleType, startDate.ifBlank { null }, endDate.ifBlank { null },
+                            numDoses.toIntOrNull(), notes.ifBlank { null }, onDone = onBack
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                enabled = medicineName.isNotBlank() && !state.medicationSaving,
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                if (state.medicationSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Icon(Icons.Filled.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (s.isThai) "บันทึกตารางทานยา" else "Save Schedule", fontWeight = FontWeight.Bold)
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
         }

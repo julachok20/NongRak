@@ -25,6 +25,7 @@ import com.lullabyai.app.data.settings.AppLanguage
 import com.lullabyai.app.ui.components.HCaptchaVerifyButton
 import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.components.PrimaryButton
+import com.lullabyai.app.ui.components.rememberGoogleSignInAction
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.SettingsViewModel
@@ -59,13 +60,17 @@ fun LoginScreen(
     val uiState by authViewModel.uiState.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
-    val context = androidx.compose.ui.platform.LocalContext.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var captchaToken by remember { mutableStateOf<String?>(null) }
     var formError by remember { mutableStateOf<String?>(null) }
     val isThai = settings.language == AppLanguage.TH
+    val googleSignIn = rememberGoogleSignInAction(
+        authViewModel = authViewModel,
+        isThai = isThai,
+        onSuccess = onLoginSuccess
+    )
     val screenOpenedAtMs = remember { System.currentTimeMillis() }
     var captchaRequired by remember { mutableStateOf(false) }
     var attemptCount by remember { mutableStateOf(0) }
@@ -216,7 +221,7 @@ fun LoginScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { authViewModel.signInWithGoogle(context, onLoginSuccess) },
+                            onClick = googleSignIn,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(100.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)

@@ -19,7 +19,12 @@ import java.io.FileOutputStream
 object DoctorReportGenerator {
 
     // -------- input model (values only; the generator owns all labels) --------
-    data class Vac(val ageGroup: String, val name: String, val dateGiven: String, val place: String, val note: String)
+    data class Vac(
+        val ageGroup: String, val name: String, val dateGiven: String, val place: String, val note: String,
+        // #10 provenance/certification. Raw flags, not text — this file owns all labels.
+        val fromMophBook: Boolean = false,
+        val certified: Boolean = false
+    )
     data class Growth(val date: String, val weight: String, val height: String, val status: String, val note: String)
     /** One development domain row. Order is fixed by the generator (see DEV_DOMAINS). */
     data class DevStatus(val normal: Boolean, val monitor: Boolean, val note: String)
@@ -256,9 +261,17 @@ object DoctorReportGenerator {
         if ("vaccine" in categories) {
             sectionBar("2. วัคซีนที่ได้รับ")
             table(
-                listOf("ช่วงอายุ", "วัคซีนที่ได้รับ", "วันที่ได้รับ", "สถานที่/หน่วยบริการ", "หมายเหตุ"),
-                listOf(80f, 150f, 90f, 110f, CONTENT_W - 80f - 150f - 90f - 110f),
-                data.vaccines.map { listOf(it.ageGroup, it.name, it.dateGiven, it.place, it.note) }
+                listOf("ช่วงอายุ", "วัคซีนที่ได้รับ", "วันที่ได้รับ", "สถานที่/หน่วยบริการ", "การรับรอง", "หมายเหตุ"),
+                listOf(70f, 130f, 80f, 95f, 95f, CONTENT_W - 70f - 130f - 80f - 95f - 95f),
+                data.vaccines.map {
+                    // #10: a doctor reading the PDF needs to know whether a dose was typed in by the
+                    // parent, transcribed from the ministry book, or backed by a real certificate.
+                    val certification = listOfNotNull(
+                        if (it.fromMophBook) "จากสมุดวัคซีน สธ." else null,
+                        if (it.certified) "มีใบรับรอง" else null
+                    ).joinToString(" • ").ifEmpty { "-" }
+                    listOf(it.ageGroup, it.name, it.dateGiven, it.place, certification, it.note)
+                }
             )
         }
 

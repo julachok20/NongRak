@@ -1,25 +1,24 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.nutrition
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BabyChangingStation
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -31,11 +30,16 @@ import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChildViewModel
 import com.lullabyai.app.viewmodel.NutritionViewModel
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private val QUICK_PICKS_ML = listOf(120, 150, 180, 210)
 
-/** Milk feeding log — entry form (breast/formula, volume, side for breastfeeding) plus the history
- *  table the mockup itself didn't include (it was entry-form only, no history view). */
+/** Milk feeding log — Stitch milk_record: type, volume, side, time/date override, notes + history. */
 @Composable
 fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: NutritionViewModel, lang: String, navController: NavController, onBack: () -> Unit) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
@@ -48,16 +52,28 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
     var logs by remember { mutableStateOf<List<MilkLog>>(emptyList()) }
     var milkType by remember { mutableStateOf("breast") }
     var volumeMl by remember { mutableStateOf(150) }
-    var unit by remember { mutableStateOf("ml") } // ml | oz — mockup has a unit toggle, was missing entirely before
+    var unit by remember { mutableStateOf("ml") }
     var side by remember { mutableStateOf("both") }
+    var notes by remember { mutableStateOf("") }
+    var feedDate by remember { mutableStateOf(LocalDate.now()) }
+    var feedTime by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     val mlPerOz = 29.5735f
 
     fun reload() { childId?.let { cid -> scope.launch { logs = repo.getMilkLogs(cid) } } }
     LaunchedEffect(childId) { reload() }
 
+    val last = logs.firstOrNull()
+    val lastSummary = last?.let { log ->
+        val t = com.lullabyai.app.util.TimeUtils.localTime(log.loggedAt) ?: ""
+        val type = if (log.milkType == "breast") (if (isThai) "นมแม่" else "Breast milk") else (if (isThai) "นมผง" else "Formula")
+        if (isThai) "มื้อล่าสุด: $t น. ($type)" else "Last feed: $t ($type)"
+    } ?: if (isThai) "ยังไม่มีมื้อล่าสุด" else "No feeds logged yet"
+
     Scaffold(
-        topBar = { LullabyTopBar(title = if (isThai) "บันทึกการดื่มนม" else "Milk Record", onBack = onBack) },
+        topBar = { LullabyTopBar(title = if (isThai) "บันทึกการดื่มนม" else "Milk Record", onBack = onBack, navController = navController) },
         bottomBar = {
             com.lullabyai.app.ui.components.AppBottomNav(
                 selected = com.lullabyai.app.ui.components.BottomTab.CHILD,
@@ -66,7 +82,7 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                 onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
                 onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onConnect = { navController.navigate(Screen.Maintenance.route) { launchSingleTop = true } }
+                onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -76,10 +92,22 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
             verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Primary.copy(0.12f))
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.Bottom) {
+                        Text(if (isThai) "ติดตามมื้ออาหารวันนี้" else "Track today's feeds", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Primary)
+                        Text(lastSummary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            item {
                 Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        // Grouped pill container (outer border) holding both type buttons with icons —
-                        // was two separate floating pills before, no icons.
+                        Text(if (isThai) "ประเภทน้ำนม" else "Milk type", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Surface(
                             shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f),
                             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -105,29 +133,32 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                             }
                         }
 
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    if (unit == "ml") "$volumeMl ml" else "%.1f oz".format(volumeMl / mlPerOz),
-                                    style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Primary
-                                )
-                                Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                                    Row {
-                                        listOf("ml" to (if (isThai) "มล." else "ml"), "oz" to (if (isThai) "ออนซ์" else "oz")).forEach { (key, label) ->
-                                            val selected = unit == key
-                                            Surface(onClick = { unit = key }, shape = RoundedCornerShape(100.dp), color = if (selected) Primary else Color.Transparent) {
-                                                Text(label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (isThai) "ปริมาณน้ำนม" else "Volume", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                Row {
+                                    listOf("ml" to (if (isThai) "มล." else "ml"), "oz" to (if (isThai) "ออนซ์" else "oz")).forEach { (key, label) ->
+                                        val selected = unit == key
+                                        Surface(onClick = { unit = key }, shape = RoundedCornerShape(6.dp), color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent) {
+                                            Text(label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (selected) Primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                if (unit == "ml") "$volumeMl" else "%.1f".format(volumeMl / mlPerOz),
+                                style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = Primary
+                            )
+                            Text(if (unit == "ml") (if (isThai) "มล." else "ml") else (if (isThai) "ออนซ์" else "oz"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (unit == "ml") {
                                 Slider(value = volumeMl.toFloat(), onValueChange = { volumeMl = it.toInt() }, valueRange = 30f..300f, steps = 26, colors = SliderDefaults.colors(thumbColor = Primary, activeTrackColor = Primary))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     QUICK_PICKS_ML.forEach { ml ->
                                         Surface(onClick = { volumeMl = ml }, shape = RoundedCornerShape(10.dp), color = if (volumeMl == ml) Primary.copy(0.15f) else MaterialTheme.colorScheme.surfaceVariant) {
-                                            Text("${ml}ml", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (volumeMl == ml) Primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${ml} ${if (isThai) "มล." else "ml"}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (volumeMl == ml) Primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -148,16 +179,14 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                         }
 
                         if (milkType == "breast") {
-                            Text(if (isThai) "ข้าง" else "Side", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(if (isThai) "ข้างที่ดื่ม (สำหรับนมแม่)" else "Side (breastfeeding)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(
-                                    Triple("left", Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (isThai) "ซ้าย" else "Left"),
-                                    Triple("right", Icons.AutoMirrored.Filled.KeyboardArrowRight, if (isThai) "ขวา" else "Right"),
+                                    Triple("left", Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (isThai) "ข้างซ้าย" else "Left"),
+                                    Triple("right", Icons.AutoMirrored.Filled.KeyboardArrowRight, if (isThai) "ข้างขวา" else "Right"),
                                     Triple("both", Icons.Filled.SwapHoriz, if (isThai) "ทั้งสองข้าง" else "Both")
                                 ).forEach { (key, icon, label) ->
                                     val selected = side == key
-                                    // Selected = solid Primary fill (matches the mockup's bold
-                                    // primary-container treatment), not a light tint.
                                     Surface(
                                         onClick = { side = key }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
                                         color = if (selected) Primary else MaterialTheme.colorScheme.surface,
@@ -172,13 +201,63 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                             }
                         }
 
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Surface(
+                                onClick = { showTimePicker = true }, modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Text(if (isThai) "เวลา" else "Time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(feedTime.format(DateTimeFormatter.ofPattern("HH:mm")) + if (isThai) " น." else "", style = MaterialTheme.typography.bodyMedium)
+                                        Icon(Icons.Filled.Schedule, null, tint = Primary, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                            Surface(
+                                onClick = { showDatePicker = true }, modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Text(if (isThai) "วันที่" else "Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            if (feedDate == LocalDate.now()) (if (isThai) "วันนี้" else "Today") else feedDate.toString(),
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Icon(Icons.Filled.CalendarToday, null, tint = Primary, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(if (isThai) "บันทึกเพิ่มเติม" else "Notes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedTextField(
+                            value = notes, onValueChange = { notes = it },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                            placeholder = { Text(if (isThai) "ตัวอย่าง: น้องดื่มได้เยอะเป็นพิเศษ..." else "e.g. drank well, fell asleep mid-feed...", color = Outline) },
+                            trailingIcon = { Icon(Icons.Filled.EditNote, null, tint = Outline) },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary)
+                        )
+
                         Button(
                             onClick = {
                                 val cid = childId ?: return@Button
                                 saving = true
+                                val loggedAt = LocalDateTime.of(feedDate, feedTime)
+                                    .atZone(ZoneId.systemDefault()).toInstant().toString()
                                 scope.launch {
-                                    repo.addMilkLog(cid, milkType, volumeMl, if (milkType == "breast") side else null, null)
+                                    repo.addMilkLog(
+                                        cid, milkType, volumeMl,
+                                        if (milkType == "breast") side else null,
+                                        notes.takeIf { it.isNotBlank() },
+                                        loggedAt
+                                    )
                                     saving = false
+                                    notes = ""
                                     reload()
                                     nutritionViewModel.load(lang)
                                 }
@@ -200,6 +279,37 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
             }
         }
     }
+
+    if (showDatePicker) {
+        val zone = ZoneId.systemDefault()
+        val initialMillis = feedDate.atStartOfDay(zone).toInstant().toEpochMilli()
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { ms -> feedDate = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate() }
+                    showDatePicker = false
+                }) { Text(if (isThai) "ตกลง" else "OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text(if (isThai) "ยกเลิก" else "Cancel") } }
+        ) { DatePicker(state = pickerState) }
+    }
+
+    if (showTimePicker) {
+        val pickerState = rememberTimePickerState(initialHour = feedTime.hour, initialMinute = feedTime.minute, is24Hour = true)
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    feedTime = LocalTime.of(pickerState.hour, pickerState.minute)
+                    showTimePicker = false
+                }) { Text(if (isThai) "ตกลง" else "OK") }
+            },
+            dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text(if (isThai) "ยกเลิก" else "Cancel") } },
+            text = { TimePicker(state = pickerState) }
+        )
+    }
 }
 
 @Composable
@@ -217,6 +327,10 @@ private fun MilkLogRow(log: MilkLog, isThai: Boolean) {
                     com.lullabyai.app.util.TimeUtils.localDate(log.loggedAt)?.let { d -> "$d ${com.lullabyai.app.util.TimeUtils.localTime(log.loggedAt) ?: ""}" } ?: "",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!log.notes.isNullOrBlank()) {
+                    val noteText = log.notes.orEmpty()
+                    Text(noteText, style = MaterialTheme.typography.labelSmall, color = Outline, maxLines = 2)
+                }
             }
             Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
                 Text("${log.volumeMl} ml", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)

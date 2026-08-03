@@ -61,13 +61,10 @@ fun DevelopmentHistoryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (s.isThai) "ประวัติพัฒนาการ" else "Development History", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = Primary) } },
-                actions = {
-                    IconButton(onClick = { navController.navigate(Screen.Notifications.route) }) { Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            com.lullabyai.app.ui.components.LullabyTopBar(
+                title = if (s.isThai) "ประวัติพัฒนาการ" else "Development History",
+                onBack = onBack,
+                navController = navController
             )
         },
         bottomBar = {

@@ -21,7 +21,6 @@ class NotificationViewModel : ViewModel() {
 
     fun load() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
             val list = repo.getNotifications()
             _uiState.value = NotificationUiState(all = list, isLoading = false)
             repo.markAllRead()
