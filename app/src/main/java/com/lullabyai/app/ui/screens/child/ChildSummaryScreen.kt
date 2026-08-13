@@ -179,6 +179,68 @@ fun ChildSummaryScreen(
                 }
             }
 
+            // Same button, destination by role: someone whose job here is the daily log lands on
+            // the update form, everyone else on the history. Full width and high on the page —
+            // for a nanny this is the screen's primary action, not one tile among fourteen.
+            val careRoleVm: com.lullabyai.app.viewmodel.CareRoleViewModel =
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            LaunchedEffect(Unit) { careRoleVm.load() }
+            val amCaregiver by careRoleVm.amCaregiver.collectAsState()
+
+            Card(
+                onClick = {
+                    navController.navigate(
+                        if (amCaregiver) Screen.CaregiverUpdate.route else Screen.ActivityHistory.route
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = Primary),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Row(
+                    Modifier.padding(18.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(48.dp)
+                            .background(Color.White.copy(0.18f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (amCaregiver) Icons.Filled.EditNote else Icons.Filled.Timeline,
+                            null, tint = Color.White, modifier = Modifier.size(26.dp)
+                        )
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when {
+                                amCaregiver && s.isThai -> "อัปเดตข้อมูลลูก"
+                                amCaregiver -> "Child update"
+                                s.isThai -> "ประวัติกิจกรรม"
+                                else -> "Activity history"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            when {
+                                amCaregiver && s.isThai -> "บันทึกกิจกรรมประจำวันและรายงานให้ผู้ปกครอง"
+                                amCaregiver -> "Log the day's care and report it to the parents"
+                                s.isThai -> "ดูทุกบันทึกของลูก พร้อมชื่อผู้บันทึก"
+                                else -> "Every record for this child, with who wrote it"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(0.85f)
+                        )
+                    }
+                    Icon(Icons.Filled.ChevronRight, null, tint = Color.White.copy(0.7f))
+                }
+            }
+
             childState.dailyQuestion?.let {
                 if (!tourPreview) {
                     com.lullabyai.app.ui.components.DailyQuestionBanner(
@@ -481,6 +543,8 @@ fun ChildSummaryScreen(
                     Secondary,
                     Modifier.weight(1f)
                 ) { navController.navigate(Screen.PermissionAccess.route) }
+                // The activity/update entry point lives as a full-width card near the top of the
+                // page instead of a tile here — it is the primary action, not a fourteenth option.
                 Spacer(Modifier.weight(1f))
             }
             }

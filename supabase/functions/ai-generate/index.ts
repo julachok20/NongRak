@@ -167,15 +167,78 @@ async function tryOpenRouter(prompt: string, maxTokens: number, system: string, 
   return null;
 }
 
+// --- Text to speech -------------------------------------------------------------------------
+// Gemini's TTS models return raw 24kHz mono PCM as base64, not a container format. The client
+// feeds it straight to AudioTrack, so no decoding step is needed on the device.
+const TTS_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
+const TTS_DEFAULT_VOICE = "Leda";          // warm and youthful; suits a childcare companion
+const TTS_MAX_CHARS = 700;                 // caps latency and cost on a long reply
+
+function geminiKeys(): { key: string; slot: number }[] {
+  return [
+    Deno.env.get("GEMINI_API_KEY_1"),
+    Deno.env.get("GEMINI_API_KEY_2"),
+    Deno.env.get("GEMINI_API_KEY_3"),
+    Deno.env.get("GEMINI_API_KEY_4"),
+    Deno.env.get("GEMINI_API_KEY_5"),
+  ]
+    .map((key, idx) => ({ key: key ?? "", slot: idx + 1 }))
+    .filter((k) => k.key && k.key !== "null");
+}
+
+// Gemini TTS takes direction as plain language in the prompt itself — there is no rate/pitch
+// parameter. Without a direction it reads like a screen reader; this is what makes it sound
+// like a person talking to a parent.
+const TTS_DEFAULT_STYLE =
+  "พูดด้วยน้ำเสียงอบอุ่น นุ่มนวล เป็นธรรมชาติ เหมือนเพื่อนที่ห่วงใยกำลังคุยด้วย ไม่ต้องอ่านเหมือนหุ่นยนต์";
+
+async function tryGeminiTts(text: string, voice: string, style: string) {
+  const directed = `${style}: ${text}`;
+  for (const { key, slot } of geminiKeys()) {
+    for (const model of TTS_MODELS) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: directed }] }],
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+              },
+            }),
+          },
+        );
+        const data = await res.json();
+        const inline = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+        if (inline?.data) {
+          return {
+            audioBase64: inline.data as string,
+            mimeType: (inline.mimeType as string) ?? "audio/L16;codec=pcm;rate=24000",
+            provider: `Gemini TTS ${slot} (${model})`,
+          };
+        }
+      } catch (_) { /* try next model/key */ }
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "POST only" }), { status: 405, headers: { "Content-Type": "application/json" } });
   }
   let prompt = "", useSearch = false, maxTokens = 1024, system = SYSTEM_PROMPT, jsonMode = false;
   let image: ImageInput = null;
+  let mode = "text", voice = TTS_DEFAULT_VOICE, style = TTS_DEFAULT_STYLE;
   try {
     const b = await req.json();
     prompt = b.prompt ?? "";
+    if (typeof b.mode === "string") mode = b.mode;
+    if (typeof b.voice === "string" && b.voice.trim()) voice = b.voice;
+    if (typeof b.style === "string" && b.style.trim()) style = b.style;
     useSearch = !!b.useSearch;
     maxTokens = typeof b.maxTokens === "number" ? b.maxTokens : 1024;
     // A per-request system override replaces the persona; jsonMode is independent (see header note).
@@ -187,6 +250,20 @@ Deno.serve(async (req: Request) => {
       image = { data: b.imageBase64, mimeType: typeof b.imageMimeType === "string" ? b.imageMimeType : "image/jpeg" };
     }
   } catch (_) { /* ignore */ }
+
+  // Speech synthesis is a separate contract: audio out, no provider fallback chain. If Gemini
+  // cannot speak, the caller falls back to the device's own TTS rather than to another model.
+  if (mode === "tts") {
+    const line = String(prompt).trim().slice(0, TTS_MAX_CHARS);
+    if (!line) {
+      return new Response(JSON.stringify({ error: "missing prompt" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const audio = await tryGeminiTts(line, voice, style);
+    if (!audio) {
+      return new Response(JSON.stringify({ error: "tts unavailable" }), { status: 503, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify(audio), { headers: { "Content-Type": "application/json" } });
+  }
 
   // Text is required unless an image is attached (user may send just a photo).
   if (!prompt && !image) {

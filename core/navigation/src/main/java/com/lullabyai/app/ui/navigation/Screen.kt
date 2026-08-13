@@ -14,6 +14,7 @@ sealed class Screen(val route: String) {
     object OnboardingStep2 : Screen("onboarding_step2")
     object OnboardingStep3 : Screen("onboarding_step3")
     object LastSetup : Screen("last_setup")
+    object MascotSelect : Screen("mascot_select")
     object FirstRunTour : Screen("first_run_tour")
     object DoctorFirstRunTour : Screen("doctor_first_run_tour")
     object Dashboard : Screen("dashboard")
@@ -200,5 +201,10 @@ sealed class Screen(val route: String) {
     // --- Child sync + QR approval (#4). A scan raises a PENDING request; the owner approves or
     // denies it via a Realtime popup, or from PendingAccessRequests if the app was closed. ---
     object SyncChildProfile : Screen("sync_child_profile")
+    object ActivityHistory : Screen("activity_history")
+    object CaregiverUpdate : Screen("caregiver_update")
+    object CareChat : Screen("care_chat/{peerId}") {
+        fun route(peerId: String) = "care_chat/$peerId"
+    }
     object PendingAccessRequests : Screen("pending_access_requests")
 }

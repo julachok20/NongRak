@@ -19,7 +19,9 @@ data class AppSettings(
     val language: AppLanguage = AppLanguage.TH,
     val dailyReport: Boolean = true,
     val healthAlert: Boolean = true,
-    val aiTips: Boolean = false
+    val aiTips: Boolean = false,
+    /** true = the AI logs what it understood without asking; false = it asks first. */
+    val autoRecord: Boolean = false
 )
 
 class SettingsManager(private val context: Context) {
@@ -109,6 +111,21 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             if (value == null) prefs.remove(SELECTED_CHILD) else prefs[SELECTED_CHILD] = value
         }
+    }
+
+    private val AUTO_RECORD = booleanPreferencesKey("auto_record")
+
+    suspend fun setAutoRecord(value: Boolean) {
+        context.dataStore.edit { it[AUTO_RECORD] = value }
+    }
+
+    private val SELECTED_MASCOT = stringPreferencesKey("selected_mascot")
+
+    /** The AI companion the parent picked at the end of onboarding. Null = never chose. */
+    val selectedMascot: Flow<String?> = context.dataStore.data.map { it[SELECTED_MASCOT] }
+
+    suspend fun setSelectedMascot(value: String) {
+        context.dataStore.edit { it[SELECTED_MASCOT] = value }
     }
 
     private val SERVICE_USAGE = stringPreferencesKey("service_usage")
@@ -219,7 +236,10 @@ class SettingsManager(private val context: Context) {
             language = if (prefs[LANGUAGE] == "EN") AppLanguage.EN else AppLanguage.TH,
             dailyReport = prefs[DAILY_REPORT] ?: true,
             healthAlert = prefs[HEALTH_ALERT] ?: true,
-            aiTips = prefs[AI_TIPS] ?: false
+            aiTips = prefs[AI_TIPS] ?: false,
+            // Defaults to off: the AI asking before it writes is the safe starting point, and
+            // the parent opts in to unattended logging once they trust it.
+            autoRecord = prefs[AUTO_RECORD] ?: false
         )
     }
 

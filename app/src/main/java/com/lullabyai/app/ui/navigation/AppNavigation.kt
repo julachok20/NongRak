@@ -60,6 +60,7 @@ import com.lullabyai.app.ui.screens.help.HelpFaqScreen
 import com.lullabyai.app.ui.screens.onboarding.AddChildChoiceScreen
 import com.lullabyai.app.ui.screens.onboarding.UploadBirthCertificateScreen
 import com.lullabyai.app.ui.screens.onboarding.LastSetupScreen
+import com.lullabyai.app.ui.screens.onboarding.MascotSelectScreen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep1Screen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep2Screen
 import com.lullabyai.app.ui.screens.onboarding.OnboardingStep3Screen
@@ -449,7 +450,15 @@ fun AppNavigation(
                 LastSetupScreen(
                     onboardingViewModel = onboardingViewModel,
                     authViewModel = authViewModel,
-                    onComplete = { navController.navigate(Screen.FirstRunTour.route) { popUpTo(0) } },
+                    onComplete = { navController.navigate(Screen.MascotSelect.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.MascotSelect.route) {
+            OnboardingFlowTheme(onboardingViewModel, settingsViewModel) {
+                MascotSelectScreen(
+                    onSelected = { navController.navigate(Screen.FirstRunTour.route) { popUpTo(0) } },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -705,6 +714,32 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.access.PermissionAccessScreen(
                 viewModel = viewModel(), navController = navController,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.ActivityHistory.route) {
+            com.lullabyai.app.ui.screens.access.ActivityHistoryScreen(
+                viewModel = viewModel(), navController = navController,
+                onBack = { navController.popBackStack() },
+                // The screen only offers this to owners/co-owners, and only against caregivers.
+                onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
+            )
+        }
+        composable(
+            Screen.CareChat.route,
+            arguments = listOf(navArgument("peerId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val peerId = backStackEntry.arguments?.getString("peerId") ?: return@composable
+            com.lullabyai.app.ui.screens.access.CareChatScreen(
+                viewModel = viewModel(), navController = navController,
+                peerId = peerId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.CaregiverUpdate.route) {
+            com.lullabyai.app.ui.screens.access.CaregiverUpdateScreen(
+                viewModel = viewModel(), navController = navController,
+                onBack = { navController.popBackStack() },
+                onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
             )
         }
         composable(Screen.AddUserAccessActivity.route) {

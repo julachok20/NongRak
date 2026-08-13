@@ -2,6 +2,10 @@ package com.lullabyai.app.data.repository
 
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChildAccessActivity
+import com.lullabyai.app.data.model.ChildActivityEntry
+import com.lullabyai.app.data.model.CareLog
+import com.lullabyai.app.data.model.CareMessage
+import com.lullabyai.app.data.model.InviteCandidate
 import com.lullabyai.app.data.model.ChildAccessInvite
 import com.lullabyai.app.data.model.ChildAccessMember
 import com.lullabyai.app.data.model.ChildRole
@@ -220,6 +224,155 @@ class ChildRepository {
             }
         ).decodeList<ChildAccessActivity>()
     }
+
+    /**
+     * Sets the "helps care for this child" tick. Kept off [updateMemberPermissions] on purpose:
+     * that call is the permission grid, and this flag survives even when the grid is locked —
+     * owners and co-owners already hold every permission, but may or may not be the daily carer.
+     * The RPC rejects anyone who is not an owner/co-owner and writes its own audit row.
+     */
+    suspend fun setMemberCaregiver(
+        childId: String,
+        userId: String,
+        isCaregiver: Boolean
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "set_child_member_caregiver",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_user_id", JsonPrimitive(userId))
+                put("p_is_caregiver", JsonPrimitive(isCaregiver))
+            }
+        )
+        Unit
+    }
+
+    /**
+     * Every record written for this child — growth, vaccine, milk, food, waste, sleep, symptom,
+     * medicine — merged newest-first, each carrying who wrote it.
+     */
+    suspend fun listActivityFeed(childId: String, limit: Int = 80): Result<List<ChildActivityEntry>> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "list_child_activity_feed",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_limit", JsonPrimitive(limit))
+                }
+            ).decodeList<ChildActivityEntry>()
+        }
+
+    /** One parent↔caregiver conversation about this child, oldest first. */
+    suspend fun listCareMessages(
+        childId: String,
+        peerId: String,
+        limit: Int = 200
+    ): Result<List<CareMessage>> = runCatching {
+        supabase.postgrest.rpc(
+            "list_care_messages",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_peer_id", JsonPrimitive(peerId))
+                put("p_limit", JsonPrimitive(limit))
+            }
+        ).decodeList<CareMessage>()
+    }
+
+    /** The RPC orders the pair and checks both sides really belong to this child. */
+    suspend fun sendCareMessage(
+        childId: String,
+        peerId: String,
+        body: String,
+        replyTo: String? = null
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "send_care_message",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_peer_id", JsonPrimitive(peerId))
+                put("p_body", JsonPrimitive(body))
+                put("p_reply_to", replyTo?.let { JsonPrimitive(it) } ?: JsonNull)
+            }
+        )
+        Unit
+    }
+
+    /**
+     * Withdraws a message. Sender-only, and the original text stays readable by design — see
+     * [CareMessage.deletedAt]. Whoever calls this must have told the user that first.
+     */
+    suspend fun unsendCareMessage(messageId: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "unsend_care_message",
+            buildJsonObject { put("p_message_id", JsonPrimitive(messageId)) }
+        )
+        Unit
+    }
+
+    /** When I accepted the "this chat is not private" notice for this child, or null if never. */
+    suspend fun chatAiConsentAt(childId: String): Result<String?> = runCatching {
+        val raw = supabase.postgrest.rpc(
+            "my_chat_ai_consent",
+            buildJsonObject { put("p_child_id", JsonPrimitive(childId)) }
+        ).data
+        raw.trim().trim('"').takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    suspend fun acceptChatAiPolicy(childId: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "accept_chat_ai_policy",
+            buildJsonObject { put("p_child_id", JsonPrimitive(childId)) }
+        )
+        Unit
+    }
+
+    /** Records one caregiver activity. `logged_at` and `created_by` are filled server-side. */
+    suspend fun addCareLog(
+        childId: String,
+        kind: String,
+        note: String? = null,
+        mood: String? = null,
+        abnormal: String? = null
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.from("care_logs").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(childId))
+                put("kind", JsonPrimitive(kind))
+                put("note", note?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("mood", mood?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("abnormal", abnormal?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+            }
+        )
+        Unit
+    }
+
+    /** Care log inside a half-open window — `[fromIso, toIso)` — newest first. */
+    suspend fun listCareLogs(childId: String, fromIso: String, toIso: String): Result<List<CareLog>> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "list_care_logs",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_from", JsonPrimitive(fromIso))
+                    put("p_to", JsonPrimitive(toIso))
+                }
+            ).decodeList<CareLog>()
+        }
+
+    /**
+     * People who could be invited. The RPC refuses anyone who is not an owner/co-owner and
+     * returns nothing under 3 characters, so this is safe to call on every keystroke.
+     */
+    suspend fun searchInviteCandidates(childId: String, query: String): Result<List<InviteCandidate>> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "search_invite_candidates",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_query", JsonPrimitive(query))
+                }
+            ).decodeList<InviteCandidate>()
+        }
 
     suspend fun updateMemberPermissions(
         childId: String,

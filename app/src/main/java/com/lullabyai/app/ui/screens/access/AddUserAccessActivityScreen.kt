@@ -2,6 +2,7 @@
 package com.lullabyai.app.ui.screens.access
 
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,19 +97,104 @@ fun AddUserAccessActivityScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            // Granting access is an owner/co-owner action. The form stays visible but inert for
+            // everyone else, so a doctor or nanny can see what exists without being able to
+            // widen the circle around the child. The RPC refuses them regardless — this is the
+            // matching UI, not the enforcement.
+            if (!state.canInvite) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Error.copy(0.08f), RoundedCornerShape(14.dp))
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Filled.Lock, null, tint = Error, modifier = Modifier.size(20.dp))
+                    Text(
+                        if (isThai) "เฉพาะเจ้าของและผู้ปกครองร่วมเท่านั้นที่เชิญบุคคลอื่นได้"
+                        else "Only the owner and co-owners can invite people",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = {
+                    name = it
+                    viewModel.searchCandidates(it)
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                enabled = state.canInvite,
                 label = { Text(if (isThai) "ชื่อผู้ถูกเชิญ" else "Invitee name") },
-                leadingIcon = { Icon(Icons.Filled.Person, null) }
+                leadingIcon = { Icon(Icons.Filled.Person, null) },
+                trailingIcon = {
+                    if (state.searching) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Primary)
+                    }
+                },
+                supportingText = {
+                    Text(
+                        if (isThai) "พิมพ์อย่างน้อย 3 ตัวอักษรเพื่อค้นหาผู้ใช้ที่มีบัญชีอยู่แล้ว"
+                        else "Type at least 3 characters to find an existing account"
+                    )
+                }
             )
+
+            // Matches for what has been typed. Tapping one fills the form; the invite still goes
+            // out as a code, so the person confirms on their side before gaining any access.
+            state.candidates.forEach { c ->
+                Card(
+                    onClick = {
+                        name = c.displayName
+                        email = c.email.orEmpty()
+                        viewModel.clearCandidates()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Primary.copy(0.06f))
+                ) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        AccessAvatar(c.avatarUrl, c.displayName)
+                        Column(Modifier.weight(1f)) {
+                            Text(c.displayName, fontWeight = FontWeight.Bold)
+                            c.email?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Icon(Icons.Filled.PersonAdd, null, tint = Primary)
+                    }
+                }
+            }
+
+            if (state.canInvite && state.candidates.isEmpty() && !state.searching &&
+                name.trim().length >= 3
+            ) {
+                Text(
+                    if (isThai) "ไม่พบผู้ใช้ที่ตรงกัน — ยังส่งคำเชิญด้วยรหัสได้"
+                    else "No matching account — you can still send a code invite",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                enabled = state.canInvite,
                 label = { Text(if (isThai) "อีเมล (ถ้ามี)" else "Email (optional)") },
                 leadingIcon = { Icon(Icons.Filled.Email, null) }
             )
@@ -122,6 +208,7 @@ fun AddUserAccessActivityScreen(
                 val selected = role == r
                 Card(
                     onClick = { role = r },
+                    enabled = state.canInvite,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
@@ -129,7 +216,14 @@ fun AddUserAccessActivityScreen(
                     )
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = selected, onClick = { role = r }, colors = RadioButtonDefaults.colors(selectedColor = Primary))
+                        RadioButton(
+                            selected = selected,
+                            onClick = { role = r },
+                            // The Card's own click is already gated; the radio needs saying too,
+                            // or it stays tappable inside a disabled card.
+                            enabled = state.canInvite,
+                            colors = RadioButtonDefaults.colors(selectedColor = Primary)
+                        )
                         Column(Modifier.weight(1f)) {
                             Text(AccessRoleLabels.title(r, isThai), fontWeight = FontWeight.Bold)
                             Text(
@@ -153,7 +247,7 @@ fun AddUserAccessActivityScreen(
                     )
                 },
                 isLoading = state.saving,
-                enabled = !state.saving
+                enabled = state.canInvite && !state.saving
             )
 
             state.error?.let {

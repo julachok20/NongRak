@@ -91,6 +91,14 @@ fun SettingsScreen(
                     ToggleRow(Icons.Filled.HealthAndSafety, s.healthAlert, settings.healthAlert) { settingsViewModel.setHealthAlert(it) }
                     Divider52()
                     ToggleRow(Icons.Outlined.Lightbulb, s.aiTips, settings.aiTips) { settingsViewModel.setAiTips(it) }
+                    Divider52()
+                    // Auto Record vs Confirm before Record. Off means the AI still proposes the
+                    // record — it just waits for a tap before writing it.
+                    ToggleRow(
+                        Icons.Filled.AutoMode,
+                        if (s.isThai) "บันทึกอัตโนมัติ (ไม่ต้องกดยืนยัน)" else "Auto record (no confirmation)",
+                        settings.autoRecord
+                    ) { settingsViewModel.setAutoRecord(it) }
                 }
             }
 

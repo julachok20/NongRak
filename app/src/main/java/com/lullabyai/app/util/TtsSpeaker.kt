@@ -1,6 +1,9 @@
 package com.lullabyai.app.util
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.compose.runtime.Composable
@@ -10,6 +13,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.lullabyai.app.data.remote.AiProxyClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 private val THAI = Locale("th", "TH")
@@ -34,7 +47,15 @@ class TtsSpeaker(context: Context) {
     var thaiVoiceAvailable by mutableStateOf(true)
         private set
 
+    /** true once Gemini has actually spoken — the missing-Thai-voice warning is moot then. */
+    var cloudVoiceReady by mutableStateOf(false)
+        private set
+
     private data class Utterance(val text: String, val isThai: Boolean, val rate: Float, val pitch: Float)
+
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var speechJob: Job? = null
+    private var track: AudioTrack? = null
 
     private var engine: TextToSpeech? = null
     private var ready = false
@@ -65,11 +86,70 @@ class TtsSpeaker(context: Context) {
      * Speaks [text] in Thai or English per the caller's `LocalStrings.isThai`.
      * [rate]/[pitch] carry the mode's speech style (slower for storytelling, brighter for a child).
      */
-    fun speak(text: String, isThai: Boolean, rate: Float = 1f, pitch: Float = 1f) {
+    fun speak(text: String, isThai: Boolean, rate: Float = 1f, pitch: Float = 1f, style: String? = null) {
         if (text.isBlank()) return
         val u = Utterance(text, isThai, rate, pitch)
-        if (!ready) { pending = u; return }
-        enqueue(u)
+        stop()
+        // Gemini first — it speaks Thai properly and does not care whether the device has Thai
+        // voice data installed. The platform engine stays as the offline/failure path.
+        speechJob = scope.launch {
+            val speech = AiProxyClient.synthesize(text, style = style)
+            if (speech == null || speech.pcm.isEmpty()) {
+                cloudVoiceReady = false
+                if (!ready) { pending = u; return@launch }
+                enqueue(u)
+                return@launch
+            }
+            cloudVoiceReady = true
+            isSpeaking = true
+            runCatching { play(speech, u.rate) }
+            isSpeaking = false
+        }
+    }
+
+    /** Streams the PCM straight out; [speed] carries the mode's pacing (storytelling is slower). */
+    private suspend fun play(speech: AiProxyClient.Speech, speed: Float) = withContext(Dispatchers.IO) {
+        val minBuffer = AudioTrack.getMinBufferSize(
+            speech.sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(8192)
+        val audio = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(speech.sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(minBuffer)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+        track = audio
+        try {
+            if (speed != 1f) {
+                runCatching { audio.playbackParams = audio.playbackParams.setSpeed(speed) }
+            }
+            audio.play()
+            var offset = 0
+            while (offset < speech.pcm.size && isActive) {
+                val written = audio.write(speech.pcm, offset, minOf(minBuffer, speech.pcm.size - offset))
+                if (written <= 0) break
+                offset += written
+            }
+            // write() returns once the data is queued, not once it is heard — wait for the tail
+            // so isSpeaking (and the avatar's mouth) stays true until the voice actually stops.
+            val totalFrames = speech.pcm.size / 2
+            while (isActive && audio.playbackHeadPosition < totalFrames) delay(40)
+        } finally {
+            runCatching { audio.stop() }
+            runCatching { audio.release() }
+            if (track === audio) track = null
+        }
     }
 
     private fun enqueue(u: Utterance) {
@@ -84,14 +164,19 @@ class TtsSpeaker(context: Context) {
 
     fun stop() {
         pending = null
+        speechJob?.cancel()
+        speechJob = null
+        runCatching { track?.pause() }
+        runCatching { track?.flush() }
         runCatching { engine?.stop() }
         isSpeaking = false
     }
 
     fun shutdown() {
-        pending = null
-        isSpeaking = false
-        runCatching { engine?.stop() }
+        stop()
+        scope.cancel()
+        runCatching { track?.release() }
+        track = null
         runCatching { engine?.shutdown() }
         engine = null
         ready = false

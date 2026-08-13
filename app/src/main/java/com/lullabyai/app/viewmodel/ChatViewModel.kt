@@ -44,7 +44,9 @@ data class ChatUiState(
     val analysisChildId: String? = null,  // which child the AI analyses below belong to (multi-child)
     val parentRelationship: String? = null, // profiles.relationship — how the chatbot addresses the user
     val lastProvider: String = "",   // which AI model answered the latest message (debug indicator)
-    val mode: ChatMode = ChatMode.NORMAL  // persona/speech style: normal, เล่านิทาน, คุยกับเด็ก
+    val mode: ChatMode = ChatMode.NORMAL,  // persona/speech style: normal, เล่านิทาน, คุยกับเด็ก
+    /** Mirrors the Auto Record setting; the screen pushes it in so the ViewModel needs no Context. */
+    val autoRecord: Boolean = false
 )
 
 class ChatViewModel : ViewModel() {
@@ -166,6 +168,15 @@ class ChatViewModel : ViewModel() {
                         isLoading = false,
                         lastProvider = com.lullabyai.app.data.remote.ClaudeClient.lastProvider
                     )
+                    // Auto Record mode: run the proposed write straight away instead of waiting
+                    // for a tap. The card still appears and still reports the outcome, so the
+                    // parent can see what was logged and undo it from the record screens.
+                    val childId = child?.id
+                    if (action != null && childId != null &&
+                        _uiState.value.autoRecord && isAutoRecordable(action)
+                    ) {
+                        confirmAgentAction(aiMsg.id, childId)
+                    }
                     // Refresh session list (title/updated order may change)
                     repo.getSessions().onSuccess { _uiState.value = _uiState.value.copy(sessions = it) }
                 }
@@ -203,6 +214,22 @@ class ChatViewModel : ViewModel() {
                 }
             )
         }
+    }
+
+    fun setAutoRecord(value: Boolean) {
+        if (_uiState.value.autoRecord != value) _uiState.value = _uiState.value.copy(autoRecord = value)
+    }
+
+    /**
+     * Which proposed actions may run unattended in Auto Record mode: additive logging only.
+     *
+     * Deletes always wait for a tap — an unattended delete loses data the parent may not know was
+     * there. Navigation waits too: firing it without a tap would yank the screen out from under
+     * someone mid-sentence, and it is resolved in the UI layer anyway.
+     */
+    private fun isAutoRecordable(action: com.lullabyai.app.data.model.AgentAction): Boolean {
+        val t = normalizeType(action.type)
+        return "delete" !in t && "remove" !in t && "navigate" !in t
     }
 
     fun cancelAgentAction(messageId: String) {

@@ -258,7 +258,78 @@ data class ChildAccessMember(
     val capabilities: List<String> = emptyList(),
     @SerialName("role_id") val roleId: String? = null,
     @SerialName("role_name_th") val roleNameTh: String? = null,
-    @SerialName("role_name_en") val roleNameEn: String? = null
+    @SerialName("role_name_en") val roleNameEn: String? = null,
+    // "บุคคลที่ช่วยดูแลเด็ก" — deliberately not one of the can_* permissions. It answers
+    // "does this person physically care for the child", which is what decides who appears in
+    // the caregiver chat row and who lands on the daily-update screen instead of the history.
+    @SerialName("is_caregiver") val isCaregiver: Boolean = false
+)
+
+/** One message in a parent↔caregiver conversation about a child. */
+@Serializable
+data class CareMessage(
+    val id: String = "",
+    @SerialName("sender_id") val senderId: String? = null,
+    @SerialName("sender_name") val senderName: String? = null,
+    val body: String = "",
+    @SerialName("created_at") val createdAt: String = "",
+    /** Server-computed, so the bubble side never depends on the client knowing its own id. */
+    val mine: Boolean = false,
+    /**
+     * When the sender withdrew this message. [body] stays populated on purpose — an unsend in a
+     * childcare record is a withdrawal ON the record, not an erasure of it.
+     */
+    @SerialName("deleted_at") val deletedAt: String? = null,
+    @SerialName("reply_to_id") val replyToId: String? = null,
+    @SerialName("reply_to_body") val replyToBody: String? = null,
+    @SerialName("reply_to_sender") val replyToSender: String? = null
+) {
+    val isUnsent: Boolean get() = !deletedAt.isNullOrBlank()
+}
+
+/** One tap on the caregiver's quick-record grid. [abnormal] non-null is what a parent must see. */
+@Serializable
+data class CareLog(
+    val id: String = "",
+    val kind: String = "",
+    val note: String? = null,
+    val mood: String? = null,
+    val abnormal: String? = null,
+    @SerialName("logged_at") val loggedAt: String = "",
+    @SerialName("author_name") val authorName: String? = null
+)
+
+/**
+ * A person who could be invited to a child. Returned only to owners/co-owners, only for queries
+ * of 3+ characters, and only on a name prefix or a full email — an address can be confirmed
+ * but never discovered.
+ */
+@Serializable
+data class InviteCandidate(
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("display_name") val displayName: String = "",
+    val email: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null
+)
+
+/**
+ * One row of the child's activity history — a record of any kind, with who wrote it.
+ *
+ * [detail] arrives pre-composed from the server in units that read the same in both languages
+ * (kg, cm, ml, min); the human-facing title is derived from [kind] on the client so it stays
+ * bilingual. [category] is what the filter chips match on: growth / medical / nutrition / daily.
+ */
+@Serializable
+data class ChildActivityEntry(
+    @SerialName("source_id") val sourceId: String = "",
+    val kind: String = "",
+    val category: String = "",
+    @SerialName("occurred_at") val occurredAt: String = "",
+    val detail: String? = null,
+    val note: String? = null,
+    @SerialName("author_id") val authorId: String? = null,
+    @SerialName("author_name") val authorName: String? = null,
+    @SerialName("author_avatar") val authorAvatar: String? = null
 )
 
 /**
