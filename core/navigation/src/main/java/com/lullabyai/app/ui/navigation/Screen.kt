@@ -203,8 +203,19 @@ sealed class Screen(val route: String) {
     object SyncChildProfile : Screen("sync_child_profile")
     object ActivityHistory : Screen("activity_history")
     object CaregiverUpdate : Screen("caregiver_update")
-    object CareChat : Screen("care_chat/{peerId}") {
-        fun route(peerId: String) = "care_chat/$peerId"
+    object Expenses : Screen("expenses")
+    object AddExpense : Screen("add_expense")
+    /** The full searchable list behind the summary's "ดูทั้งหมด". */
+    object ExpenseHistory : Screen("expense_history")
+    object CareCircle : Screen("care_circle")
+    /**
+     * `quote` is optional context carried in from an activity entry, so a reply arrives saying
+     * which update it is about instead of a bare "?".
+     */
+    object CareChat : Screen("care_chat/{peerId}?quote={quote}") {
+        fun route(peerId: String) = "care_chat/$peerId?quote="
+        fun route(peerId: String, quote: String) =
+            "care_chat/$peerId?quote=" + java.net.URLEncoder.encode(quote, "UTF-8")
     }
     object PendingAccessRequests : Screen("pending_access_requests")
 }

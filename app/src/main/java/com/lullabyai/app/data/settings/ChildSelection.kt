@@ -44,4 +44,19 @@ object ChildSelection {
     }
 
     fun current(): String? = _id.value
+
+    /**
+     * Drops the selected child on sign-out.
+     *
+     * The back stack is already cleared when logging out, but this selection is a device-level
+     * singleton backed by DataStore — without clearing it the next account starts out pointed at
+     * the previous user's child, which they may not even have access to. `_loaded` resets too, so
+     * the next sign-in waits for that account's own persisted value rather than reusing the stale
+     * one.
+     */
+    fun clearForSignOut() {
+        _id.value = null
+        _loaded.value = false
+        manager?.let { m -> scope.launch { m.setSelectedChildId(null) } }
+    }
 }

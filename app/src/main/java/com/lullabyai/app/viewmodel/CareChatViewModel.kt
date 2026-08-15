@@ -8,6 +8,7 @@ import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.data.repository.ChildRepository
 import com.lullabyai.app.data.settings.ChildSelection
 import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +26,12 @@ data class CareChatUiState(
     val peerName: String = "",
     val messages: List<CareMessage> = emptyList(),
     val draft: String = "",
-    /** The message being quoted, or null for an ordinary send. */
+    /**
+     * What is being quoted, or null for an ordinary send. Usually a real message; a quote carried
+     * in from ประวัติกิจกรรม is a stand-in with a blank [CareMessage.id], because the activity feed
+     * is assembled from eight record tables and has no message row to point at. Both kinds draw
+     * the same composer banner and the same bubble quote block — see [isActivityQuote].
+     */
     val replyingTo: CareMessage? = null,
     /** Ids of withdrawn messages the reader expanded. Per-session, never persisted. */
     val revealed: Set<String> = emptySet(),
@@ -45,6 +51,13 @@ data class CareChatUiState(
     val needsConsent: Boolean get() = consentChecked && consentAt == null
 }
 
+/**
+ * True for a quote that stands in for an activity-history entry rather than a real message.
+ * Only a row that came back from the server carries an id, so a blank one can only be the
+ * stand-in [CareChatViewModel.quoteActivity] built.
+ */
+val CareMessage.isActivityQuote: Boolean get() = id.isBlank()
+
 class CareChatViewModel(
     private val childRepo: ChildRepository = ChildRepository()
 ) : ViewModel() {
@@ -53,6 +66,13 @@ class CareChatViewModel(
     val uiState: StateFlow<CareChatUiState> = _uiState.asStateFlow()
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /** Live thread subscription; held so re-opening the chat does not stack channels. */
+    private var watchJob: Job? = null
+
+    /** path -> signed URL. Signing costs a round trip, so each picture is signed once per view. */
+    private val signedImages = MutableStateFlow<Map<String, String>>(emptyMap())
+    val imageUrls: StateFlow<Map<String, String>> = signedImages.asStateFlow()
 
     fun load(peerId: String, childId: String? = null) {
         viewModelScope.launch {
@@ -81,6 +101,8 @@ class CareChatViewModel(
                 )
             }
             refresh()
+            // Needs the child id this load just resolved, so it starts here rather than in the UI.
+            startWatching()
         }
     }
 
@@ -94,6 +116,79 @@ class CareChatViewModel(
                 return@launch
             }
             _uiState.update { it.copy(loading = false, messages = msgs) }
+            // Opening the thread is what "read" means, so it is marked here rather than on a
+            // scroll gesture — a message you can see is a message you have received.
+            if (msgs.any { !it.mine }) {
+                childRepo.markCareMessagesRead(childId, s.peerId)
+            }
+            signMissingImages(msgs)
+        }
+    }
+
+    /** Signs any picture path we have not signed yet, leaving already-signed ones alone. */
+    private suspend fun signMissingImages(msgs: List<CareMessage>) {
+        val pending = msgs.mapNotNull { it.imageUrl }
+            .filter { it.isNotBlank() && it !in signedImages.value }
+            .distinct()
+        if (pending.isEmpty()) return
+        val signed = pending.mapNotNull { path ->
+            childRepo.signedChatImageUrl(path)?.let { path to it }
+        }
+        if (signed.isNotEmpty()) signedImages.update { it + signed }
+    }
+
+    /**
+     * Keeps the thread live so a reply lands without the reader touching anything. Idempotent —
+     * the screen can call it on every entry.
+     */
+    fun startWatching() {
+        if (watchJob?.isActive == true) return
+        val s = _uiState.value
+        val childId = s.childId ?: return
+        watchJob = viewModelScope.launch {
+            runCatching { childRepo.watchCareMessages(childId, s.peerId).collect { refresh() } }
+        }
+    }
+
+    fun stopWatching() {
+        watchJob?.cancel()
+        watchJob = null
+    }
+
+    override fun onCleared() {
+        stopWatching()
+        super.onCleared()
+    }
+
+    /**
+     * Uploads a picture, then sends it as a message. The upload happens first on purpose: a
+     * message row pointing at an object that failed to upload would render as a broken bubble
+     * forever, and there is no way to repair it from the client.
+     */
+    fun sendImage(bytes: ByteArray, ext: String = "jpg") {
+        val s = _uiState.value
+        val childId = s.childId ?: return
+        if (s.sending) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(sending = true, error = null) }
+            val path = childRepo.uploadChatImage(childId, bytes, ext).getOrElse { e ->
+                _uiState.update { it.copy(sending = false, error = e.message) }
+                return@launch
+            }
+            childRepo.sendCareMessage(
+                childId = childId,
+                peerId = s.peerId,
+                body = s.draft.trim(),
+                replyTo = s.replyingTo?.takeIf { !it.isActivityQuote }?.id,
+                imageUrl = path,
+                quoteText = s.replyingTo?.takeIf { it.isActivityQuote }?.body,
+                quoteAuthor = s.replyingTo?.takeIf { it.isActivityQuote }?.senderName
+            ).onSuccess {
+                _uiState.update { it.copy(sending = false, draft = "", replyingTo = null) }
+                refresh()
+            }.onFailure { e ->
+                _uiState.update { it.copy(sending = false, error = e.message) }
+            }
         }
     }
 
@@ -113,6 +208,15 @@ class CareChatViewModel(
 
     fun startReply(m: CareMessage) = _uiState.update { it.copy(replyingTo = m) }
     fun cancelReply() = _uiState.update { it.copy(replyingTo = null) }
+
+    /**
+     * Quote a ประวัติกิจกรรม entry. The author of that entry is whoever this conversation is with —
+     * the history screen opens the chat with them — so the peer's name is the quote's attribution.
+     */
+    fun quoteActivity(subject: String) = _uiState.update {
+        if (subject.isBlank()) it
+        else it.copy(replyingTo = CareMessage(body = subject, senderName = it.peerName))
+    }
 
     /** Expanding a withdrawn message is a per-reader choice, so it lives only in UI state. */
     fun toggleReveal(id: String) = _uiState.update {
@@ -141,7 +245,14 @@ class CareChatViewModel(
         if (body.isEmpty() || s.sending) return
         viewModelScope.launch {
             _uiState.update { it.copy(sending = true, error = null, draft = "") }
-            childRepo.sendCareMessage(childId, s.peerId, body, s.replyingTo?.id)
+            childRepo.sendCareMessage(
+                childId = childId,
+                peerId = s.peerId,
+                body = body,
+                replyTo = s.replyingTo?.takeIf { !it.isActivityQuote }?.id,
+                quoteText = s.replyingTo?.takeIf { it.isActivityQuote }?.body,
+                quoteAuthor = s.replyingTo?.takeIf { it.isActivityQuote }?.senderName
+            )
                 .onSuccess {
                     _uiState.update { it.copy(sending = false, replyingTo = null) }
                     refresh()

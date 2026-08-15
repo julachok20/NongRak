@@ -12,9 +12,14 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,13 +42,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lullabyai.app.R
 import com.lullabyai.app.data.settings.AppLanguage
-import com.lullabyai.app.ui.components.LanguageToggleButton
-import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.SettingsViewModel
 import kotlinx.coroutines.delay
 
+/**
+ * Stitch: "Pro Health-Tech Welcome - Clinical Variant".
+ *
+ * The first screen anyone sees, so it has one job: say what this is and get a parent to sign up.
+ * The clinical framing — trust badge, HIPAA/AES/ISO row, a separate doctor entrance — is the
+ * design saying "this is a medical tool, not a toy" before a word of copy is read.
+ *
+ * ponytail: the new copy is inline bilingual rather than added to LocalStrings — it appears
+ * nowhere else, and that strings file is shared by ~90 screens.
+ */
 @Composable
 fun WelcomeScreen(
     onSignUp: () -> Unit,
@@ -53,168 +67,307 @@ fun WelcomeScreen(
     onDoctorMode: () -> Unit = {}
 ) {
     val s = LocalStrings.current
+    val isThai = s.isThai
     val settings by settingsViewModel.settings.collectAsState()
 
-    // Staggered reveal: logo pops first, then headline, then chips, then the CTAs —
-    // reads as a small "intro" instead of everything dumping in at once.
+    // Staggered reveal: logo first, then the headline, then the CTAs — reads as a small intro
+    // rather than everything landing at once.
     var showLogo by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
-    var showChips by remember { mutableStateOf(false) }
     var showButtons by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         showLogo = true
-        delay(450)
+        delay(400)
         showText = true
-        delay(300)
-        showChips = true
-        delay(200)
+        delay(250)
         showButtons = true
     }
 
-    // Slow continuous breathing glow behind the logo — keeps the screen feeling alive
-    // without competing with the entrance animation above.
     val pulse = rememberInfiniteTransition(label = "welcomePulse")
     val glowScale by pulse.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(2200, easing = EaseOutCubic), RepeatMode.Reverse),
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = EaseOutCubic), RepeatMode.Reverse),
         label = "glowScale"
     )
 
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(PrimaryContainer.copy(alpha = 0.12f), Color.White)
+                    listOf(Color(0xFFE8EEFF), Color(0xFFF6F8FF), Color.White)
                 )
             )
     ) {
-        LanguageToggleButton(
-            isThai = settings.language == AppLanguage.TH,
-            onToggle = { settingsViewModel.toggleLanguage() },
-            modifier = Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(20.dp)
-        )
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp)
-                .systemBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .verticalScroll(rememberScrollState())
+                .systemBarsPadding()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(12.dp))
 
-            AnimatedVisibility(
-                visible = showText,
-                enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { -it / 3 }
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = s.welcomeTitle,
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = s.welcomeSubtitle,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(Primary))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "CLINICAL EDITION",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.6.sp,
+                    color = Primary
+                )
+                Spacer(Modifier.weight(1f))
+                LanguagePill(
+                    isThai = settings.language == AppLanguage.TH,
+                    onPick = { wantThai ->
+                        // toggleLanguage() flips; only call it when the tapped side differs, or
+                        // tapping the active half would switch away from itself.
+                        if (wantThai != (settings.language == AppLanguage.TH)) {
+                            settingsViewModel.toggleLanguage()
+                        }
+                    }
+                )
             }
 
-            // Brand logo with a soft pulsing glow behind it
+            Spacer(Modifier.height(28.dp))
+
             Box(contentAlignment = Alignment.Center) {
                 Box(
-                    modifier = Modifier
-                        .size(240.dp)
+                    Modifier
+                        .size(260.dp)
                         .scale(glowScale)
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
-                                listOf(PrimaryContainer.copy(alpha = 0.25f), Color.Transparent)
+                                listOf(Primary.copy(alpha = 0.14f), Color.Transparent)
                             )
                         )
                 )
+                // Fully qualified: inside BoxScope the ColumnScope overload is not applicable,
+                // and Kotlin will not fall back to the top-level one on its own.
                 androidx.compose.animation.AnimatedVisibility(
                     visible = showLogo,
-                    enter = fadeIn(tween(700)) + scaleIn(tween(700, easing = EaseOutCubic), initialScale = 0.6f)
+                    enter = fadeIn(tween(700)) +
+                        scaleIn(tween(700, easing = EaseOutCubic), initialScale = 0.7f)
                 ) {
                     Image(
-                        painter = painterResource(R.drawable.nongrak_logo),
+                        painter = painterResource(R.drawable.nongrak_logo_modern),
                         contentDescription = "NongRak AI",
-                        modifier = Modifier.size(280.dp)
+                        modifier = Modifier.size(230.dp)
                     )
                 }
             }
 
-            // Buttons
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                AnimatedVisibility(
-                    visible = showButtons,
-                    enter = fadeIn(tween(450)) + slideInVertically(tween(450)) { it / 3 }
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        PrimaryButton(text = "${s.signUp} →", onClick = onSignUp)
+            Spacer(Modifier.height(20.dp))
 
-                        TextButton(onClick = onLogin) {
+            AnimatedVisibility(
+                visible = showText,
+                enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { it / 4 }
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.VerifiedUser, null,
+                            tint = Primary, modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (isThai) "มาตรฐานการแพทย์ที่วางใจได้"
+                            else "Medical-grade standards you can trust",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Text(
+                        if (isThai) "นวัตกรรม AI เพื่อดูแล\nสุขภาพลูกน้อย"
+                        else "AI built to care for\nyour child's health",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 40.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        if (isThai) "เทคโนโลยีการติดตามผลระดับคลินิก พร้อมคำแนะนำที่แม่นยำจากผู้เชี่ยวชาญ"
+                        else "Clinical-grade tracking, with precise guidance from specialists",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            AnimatedVisibility(
+                visible = showButtons,
+                enter = fadeIn(tween(450)) + slideInVertically(tween(450)) { it / 3 }
+            ) {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Button(
+                        onClick = onSignUp,
+                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
+                    ) {
+                        Text(
+                            if (isThai) "เริ่มต้นใช้งานสำหรับผู้ปกครอง" else "Get started as a parent",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Icon(
+                            Icons.Filled.ArrowForward, null,
+                            tint = Color.White, modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Surface(
+                        onClick = onLogin,
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        color = Color.White,
+                        shadowElevation = 1.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = "${s.haveAccount} ${s.login}",
-                                color = Primary,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
+                                if (isThai) "เข้าสู่ระบบ" else "Sign in",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
-                }
 
-                AnimatedVisibility(
-                    visible = showChips,
-                    enter = fadeIn(tween(400)) + slideInVertically(tween(400)) { it / 3 }
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        FeatureChip("AI-Powered Insights")
-                        FeatureChip("🔒 Secure Data")
+                    Spacer(Modifier.height(22.dp))
+
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        HorizontalDivider(Modifier.weight(1f), color = Outline.copy(0.35f))
+                        Text(
+                            if (isThai) "หรือ" else "or",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+                        HorizontalDivider(Modifier.weight(1f), color = Outline.copy(0.35f))
+                    }
+
+                    Spacer(Modifier.height(22.dp))
+
+                    // Doctors get their own entrance rather than a buried text link — a separate
+                    // audience with a separate account type, not a footnote.
+                    Surface(
+                        onClick = onDoctorMode,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                        color = Color.White,
+                        shadowElevation = 1.dp
+                    ) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(48.dp)
+                                    .background(Primary.copy(0.10f), RoundedCornerShape(14.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.MedicalServices, null,
+                                    tint = Primary, modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (isThai) "เข้าสู่ระบบสำหรับแพทย์" else "Sign in as a clinician",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Primary
+                                )
+                                Text(
+                                    "Doctor & Provider Portal",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Icon(Icons.Filled.ChevronRight, null, tint = Outline)
+                        }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = onDoctorMode) {
-                    Text(
-                        text = "คุณเป็นแพทย์ใช่ไหม?",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
+            Spacer(Modifier.height(32.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                TrustMark(Icons.Filled.HealthAndSafety, "HIPAA SECURE")
+                TrustMark(Icons.Filled.Lock, "AES-256 BIT")
+                TrustMark(Icons.Filled.Article, "ISO 27001")
+            }
+
+            Spacer(Modifier.height(28.dp))
+        }
+    }
+}
+
+/** The TH | EN segmented control from the design — one pill, the active half filled. */
+@Composable
+private fun LanguagePill(isThai: Boolean, onPick: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .background(Color.White, RoundedCornerShape(20.dp))
+            .padding(4.dp)
+    ) {
+        listOf(true, false).forEach { thai ->
+            val active = thai == isThai
+            Box(
+                Modifier
+                    .background(
+                        if (active) Primary else Color.Transparent,
+                        RoundedCornerShape(16.dp)
                     )
-                }
-
-                Spacer(Modifier.height(16.dp))
+                    .clickable { onPick(thai) }
+                    .padding(horizontal = 16.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    if (thai) "TH" else "EN",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 }
 
+/** Compliance marks. Deliberately quiet — reassurance, not decoration. */
 @Composable
-private fun FeatureChip(text: String) {
-    Surface(
-        shape = RoundedCornerShape(100.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
+private fun TrustMark(icon: ImageVector, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, tint = Outline, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+            color = Outline
         )
     }
 }

@@ -4,7 +4,12 @@ import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChildAccessActivity
 import com.lullabyai.app.data.model.ChildActivityEntry
 import com.lullabyai.app.data.model.CareLog
+import com.lullabyai.app.data.model.CareConversation
 import com.lullabyai.app.data.model.CareMessage
+import com.lullabyai.app.data.model.BudgetLine
+import com.lullabyai.app.data.model.ChildExpense
+import com.lullabyai.app.data.model.ExpenseCategoryTotal
+import com.lullabyai.app.data.model.ExpenseTrendPoint
 import com.lullabyai.app.data.model.InviteCandidate
 import com.lullabyai.app.data.model.ChildAccessInvite
 import com.lullabyai.app.data.model.ChildAccessMember
@@ -24,6 +29,7 @@ import io.github.jan.supabase.postgrest.query.filter.FilterOperator
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.presenceDataFlow
 import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.NonCancellable
@@ -262,6 +268,92 @@ class ChildRepository {
             ).decodeList<ChildActivityEntry>()
         }
 
+    /** Records one cost. [amountSatang] is THB × 100 — the caller parses; this never sees a float. */
+    suspend fun addExpense(
+        childId: String,
+        amountSatang: Long,
+        category: String,
+        spentOn: String,
+        note: String? = null,
+        hasWarranty: Boolean = false,
+        warrantyExpiresOn: String? = null,
+        hasExpiration: Boolean = false,
+        expiresOn: String? = null,
+        alreadyUsed: Boolean = false,
+        usageNote: String? = null,
+        receiptUrl: String? = null
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.from("child_expenses").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(childId))
+                put("amount_satang", JsonPrimitive(amountSatang))
+                put("category", JsonPrimitive(category))
+                put("spent_on", JsonPrimitive(spentOn))
+                put("note", note?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("has_warranty", JsonPrimitive(hasWarranty))
+                put("has_expiration", JsonPrimitive(hasExpiration))
+                put("already_used", JsonPrimitive(alreadyUsed))
+                // A switch that is off must not leave its field behind, or the table's own
+                // "date needs its switch" checks reject the row.
+                put(
+                    "expires_on",
+                    expiresOn?.ifBlank { null }?.takeIf { hasExpiration }
+                        ?.let { JsonPrimitive(it) } ?: JsonNull
+                )
+                put(
+                    "usage_note",
+                    usageNote?.ifBlank { null }?.takeIf { alreadyUsed }
+                        ?.let { JsonPrimitive(it) } ?: JsonNull
+                )
+                put(
+                    "warranty_expires_on",
+                    warrantyExpiresOn?.ifBlank { null }?.takeIf { hasWarranty }
+                        ?.let { JsonPrimitive(it) } ?: JsonNull
+                )
+                put("receipt_url", receiptUrl?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+            }
+        )
+        Unit
+    }
+
+    /** Recorded costs, newest spend first. */
+    suspend fun listExpenses(childId: String, limit: Int = 200): Result<List<ChildExpense>> =
+        runCatching {
+            supabase.postgrest.from("child_expenses").select {
+                filter { eq("child_id", childId) }
+                order("spent_on", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                limit(limit.toLong())
+            }.decodeList<ChildExpense>()
+        }
+
+    /** Category totals over `[from, to)`. Dates are plain `yyyy-MM-dd`. */
+    suspend fun expenseSummary(
+        childId: String,
+        from: String,
+        to: String
+    ): Result<List<ExpenseCategoryTotal>> = runCatching {
+        supabase.postgrest.rpc(
+            "child_expense_summary",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_from", JsonPrimitive(from))
+                put("p_to", JsonPrimitive(to))
+            }
+        ).decodeList<ExpenseCategoryTotal>()
+    }
+
+    /** Live warranties expiring inside the window — the reason to record one at all. */
+    suspend fun expiringWarranties(childId: String, withinDays: Int = 60): Result<List<ChildExpense>> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "child_expiring_warranties",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_within_days", JsonPrimitive(withinDays))
+                }
+            ).decodeList<ChildExpense>()
+        }
+
     /** One parent↔caregiver conversation about this child, oldest first. */
     suspend fun listCareMessages(
         childId: String,
@@ -283,7 +375,16 @@ class ChildRepository {
         childId: String,
         peerId: String,
         body: String,
-        replyTo: String? = null
+        replyTo: String? = null,
+        imageUrl: String? = null,
+        /**
+         * Quoting an activity-history entry rather than a message. The feed is assembled from
+         * eight record tables, so there is no message id to point [replyTo] at — the quoted line
+         * and its author are snapshotted instead. The two are mutually exclusive; the RPC rejects
+         * a message that tries to carry both.
+         */
+        quoteText: String? = null,
+        quoteAuthor: String? = null
     ): Result<Unit> = runCatching {
         supabase.postgrest.rpc(
             "send_care_message",
@@ -292,9 +393,240 @@ class ChildRepository {
                 put("p_peer_id", JsonPrimitive(peerId))
                 put("p_body", JsonPrimitive(body))
                 put("p_reply_to", replyTo?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("p_image_url", imageUrl?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("p_quote_text", quoteText?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("p_quote_author", quoteAuthor?.let { JsonPrimitive(it) } ?: JsonNull)
             }
         )
         Unit
+    }
+
+    /**
+     * Uploads a chat picture and returns its bucket path. The path starts with the child id
+     * because that is exactly what the storage policy checks — membership in that child.
+     */
+    suspend fun uploadChatImage(
+        childId: String,
+        bytes: ByteArray,
+        ext: String = "jpg"
+    ): Result<String> = runCatching {
+        val uid = supabase.auth.currentUserOrNull()?.id ?: error("not signed in")
+        val path = "$childId/$uid/${java.util.UUID.randomUUID()}.$ext"
+        supabase.storage.from(CHAT_IMAGE_BUCKET).upload(path, bytes)
+        path
+    }
+
+    /** Chat pictures live in a private bucket, so they are only ever read through a signed URL. */
+    suspend fun signedChatImageUrl(path: String?): String? {
+        if (path.isNullOrBlank()) return null
+        return runCatching {
+            supabase.storage.from(CHAT_IMAGE_BUCKET).createSignedUrl(path, 3600.seconds)
+        }.getOrNull()
+    }
+
+    /**
+     * Budget beside spend for [month] (any day in it). The last row, with a null category, is the
+     * month's overall figure.
+     */
+    suspend fun budgetOverview(childId: String, month: String): Result<List<BudgetLine>> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "child_budget_overview",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_month", JsonPrimitive(month))
+                }
+            ).decodeList<BudgetLine>()
+        }
+
+    /**
+     * Replaces the whole month's budget in one call. [categories] maps a category key to satang;
+     * a category left out of the map is cleared, which is how the sheet deletes one.
+     */
+    suspend fun setBudget(
+        childId: String,
+        month: String,
+        totalSatang: Long,
+        categories: Map<String, Long> = emptyMap()
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "set_child_budget",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_month", JsonPrimitive(month))
+                put("p_total_satang", JsonPrimitive(totalSatang))
+                put("p_categories", buildJsonObject {
+                    categories.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+                })
+            }
+        )
+        Unit
+    }
+
+    /** Monthly totals for the trend chart, oldest first. Empty months come back as zero. */
+    suspend fun expenseTrend(childId: String, months: Int = 3): Result<List<ExpenseTrendPoint>> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "child_expense_trend",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_months", JsonPrimitive(months))
+                }
+            ).decodeList<ExpenseTrendPoint>()
+        }
+
+    /** Same private-bucket shape as chat pictures — a receipt can carry a name and a card tail. */
+    suspend fun uploadReceipt(
+        childId: String,
+        bytes: ByteArray,
+        ext: String = "jpg"
+    ): Result<String> = runCatching {
+        val uid = supabase.auth.currentUserOrNull()?.id ?: error("not signed in")
+        val path = "$childId/$uid/${java.util.UUID.randomUUID()}.$ext"
+        supabase.storage.from(RECEIPT_BUCKET).upload(path, bytes)
+        path
+    }
+
+    suspend fun signedReceiptUrl(path: String?): String? {
+        if (path.isNullOrBlank()) return null
+        return runCatching {
+            supabase.storage.from(RECEIPT_BUCKET).createSignedUrl(path, 3600.seconds)
+        }.getOrNull()
+    }
+
+    /** Every person I can talk to about this child, newest conversation first. */
+    suspend fun careConversations(childId: String): Result<List<CareConversation>> = runCatching {
+        supabase.postgrest.rpc(
+            "care_conversations",
+            buildJsonObject { put("p_child_id", JsonPrimitive(childId)) }
+        ).decodeList<CareConversation>()
+    }
+
+    /**
+     * Announces me as present on this child's care channel and emits the current set of online
+     * user ids.
+     *
+     * Presence is per-connection: it vanishes when the socket drops, which is exactly how a green
+     * dot should behave. Nothing is persisted, so a crashed app cannot leave a stale "online".
+     */
+    fun watchPresence(childId: String): Flow<Set<String>> = flow {
+        ensureRealtimeConnected()
+        val me = supabase.auth.currentUserOrNull()?.id ?: return@flow
+        val channel = supabase.channel("presence:care:$childId")
+        // presenceDataFlow re-emits the WHOLE current roster on every join and leave, so the
+        // green dots are derived from one authoritative list rather than accumulated deltas.
+        val roster = channel.presenceDataFlow<PresenceUser>()
+        channel.subscribe(blockUntilSubscribed = true)
+        runCatching { channel.track(buildJsonObject { put("user_id", JsonPrimitive(me)) }) }
+        try {
+            roster.collect { list -> emit(list.map { it.userId }.filter { it.isNotBlank() }.toSet()) }
+        } finally {
+            withContext(NonCancellable) {
+                runCatching { channel.untrack() }
+                supabase.realtime.removeChannel(channel)
+            }
+        }
+    }
+
+    /** What each client publishes about itself on a presence channel. */
+    @kotlinx.serialization.Serializable
+    data class PresenceUser(
+        @kotlinx.serialization.SerialName("user_id") val userId: String = ""
+    )
+
+    /** Marks everything the peer sent me in this conversation as seen. */
+    suspend fun markCareMessagesRead(childId: String, peerId: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "mark_care_messages_read",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_peer_id", JsonPrimitive(peerId))
+            }
+        )
+        Unit
+    }
+
+    /** Puts a conversation back to unread on purpose — the long-press affordance in the hub. */
+    suspend fun markCareConversationUnread(childId: String, peerId: String): Result<Unit> =
+        runCatching {
+            supabase.postgrest.rpc(
+                "mark_care_conversation_unread",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_peer_id", JsonPrimitive(peerId))
+                }
+            )
+            Unit
+        }
+
+    /** Unread counts keyed by the person who sent them — drives the header badge and picker rows. */
+    suspend fun careUnreadByPeer(childId: String): Result<Map<String, Int>> = runCatching {
+        supabase.postgrest.rpc(
+            "care_unread_by_peer",
+            buildJsonObject { put("p_child_id", JsonPrimitive(childId)) }
+        ).decodeList<PeerUnread>().associate { it.peerId to it.unread }
+    }
+
+    @kotlinx.serialization.Serializable
+    private data class PeerUnread(
+        @kotlinx.serialization.SerialName("peer_id") val peerId: String = "",
+        val unread: Int = 0
+    )
+
+    /** Emits whenever this conversation changes, so the thread updates without polling. */
+    fun watchCareMessages(childId: String, peerId: String): Flow<Unit> = flow {
+        ensureRealtimeConnected()
+        val channel = supabase.channel("care-messages:$childId:$peerId")
+        // Filtered on child only — Realtime allows one filter per subscription, and the pair
+        // columns get checked by the reload that follows anyway.
+        val inserts = channel.postgresChangeFlow<PostgresAction.Insert>(schema = "public") {
+            table = "care_messages"
+            filter("child_id", FilterOperator.EQ, childId)
+        }
+        val updates = channel.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
+            table = "care_messages"
+            filter("child_id", FilterOperator.EQ, childId)
+        }
+        channel.subscribe()
+        try {
+            coroutineScope {
+                launch { inserts.collect { emit(Unit) } }
+                launch { updates.collect { emit(Unit) } }
+            }
+        } finally {
+            withContext(NonCancellable) { supabase.realtime.removeChannel(channel) }
+        }
+    }
+
+    /**
+     * Emits whenever a caregiver records, edits or removes a care log for this child — what makes
+     * the parent's activity history update the moment the nanny saves.
+     */
+    fun watchCareLogs(childId: String): Flow<Unit> = flow {
+        ensureRealtimeConnected()
+        val channel = supabase.channel("care-logs:$childId")
+        val inserts = channel.postgresChangeFlow<PostgresAction.Insert>(schema = "public") {
+            table = "care_logs"
+            filter("child_id", FilterOperator.EQ, childId)
+        }
+        val updates = channel.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
+            table = "care_logs"
+            filter("child_id", FilterOperator.EQ, childId)
+        }
+        val deletes = channel.postgresChangeFlow<PostgresAction.Delete>(schema = "public") {
+            table = "care_logs"
+            filter("child_id", FilterOperator.EQ, childId)
+        }
+        channel.subscribe()
+        try {
+            coroutineScope {
+                launch { inserts.collect { emit(Unit) } }
+                launch { updates.collect { emit(Unit) } }
+                launch { deletes.collect { emit(Unit) } }
+            }
+        } finally {
+            withContext(NonCancellable) { supabase.realtime.removeChannel(channel) }
+        }
     }
 
     /**
@@ -496,6 +828,10 @@ class ChildRepository {
     companion object {
         /** Roles `request_child_sync` accepts; anything else is clamped to co_owner server-side. */
         const val DEFAULT_REQUEST_ROLE = "co_owner"
+
+        /** Private bucket for chat pictures; read only through short-lived signed URLs. */
+        const val CHAT_IMAGE_BUCKET = "chat-images"
+        const val RECEIPT_BUCKET = "expense-receipts"
 
         /** Accepts raw 6-char codes or nongrak://access?code=XXXXXX / URL payloads from QR. */
         fun extractInviteCode(raw: String): String {

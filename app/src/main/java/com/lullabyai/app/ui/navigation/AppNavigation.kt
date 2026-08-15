@@ -39,6 +39,7 @@ import com.lullabyai.app.data.settings.SettingsManager
 import kotlinx.coroutines.delay
 import com.lullabyai.app.NongRakApp
 import com.lullabyai.app.ui.components.LocalAvatarUrl
+import com.lullabyai.app.ui.components.clearSavedTabStacks
 import com.lullabyai.app.ui.screens.auth.LoginScreen
 import com.lullabyai.app.ui.screens.auth.SignUpScreen
 import com.lullabyai.app.ui.screens.chat.AIChatScreen
@@ -693,6 +694,12 @@ fun AppNavigation(
                 onNavigateToEditProfile = { navController.navigate(Screen.EditProfile.route) },
                 onLogout = {
                     chatViewModel.clearForSignOut()
+                    // Device-level singleton: without this the next account inherits the previous
+                    // user's selected child, so "switch account" lands somewhere it should not.
+                    com.lullabyai.app.data.settings.ChildSelection.clearForSignOut()
+                    // popUpTo(0) below only empties the live stack; the footer's saved per-tab
+                    // stacks survive it and would resurface under the next account.
+                    navController.clearSavedTabStacks()
                     navController.navigate(Screen.Welcome.route) { popUpTo(0) }
                 }
             )
@@ -721,17 +728,54 @@ fun AppNavigation(
                 viewModel = viewModel(), navController = navController,
                 onBack = { navController.popBackStack() },
                 // The screen only offers this to owners/co-owners, and only against caregivers.
-                onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
+                onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) },
+                onReplyToEntry = { peerId, subject ->
+                    navController.navigate(Screen.CareChat.route(peerId, subject))
+                },
+                onOpenHub = { navController.navigate(Screen.CareCircle.route) }
+            )
+        }
+        composable(Screen.CareCircle.route) {
+            com.lullabyai.app.ui.screens.access.CareCircleScreen(
+                viewModel = viewModel(), navController = navController,
+                onBack = { navController.popBackStack() },
+                onOpenChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
             )
         }
         composable(
             Screen.CareChat.route,
-            arguments = listOf(navArgument("peerId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("peerId") { type = NavType.StringType },
+                navArgument("quote") {
+                    type = NavType.StringType; defaultValue = ""; nullable = true
+                }
+            )
         ) { backStackEntry ->
             val peerId = backStackEntry.arguments?.getString("peerId") ?: return@composable
             com.lullabyai.app.ui.screens.access.CareChatScreen(
                 viewModel = viewModel(), navController = navController,
                 peerId = peerId,
+                quote = backStackEntry.arguments?.getString("quote").orEmpty(),
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.ExpenseHistory.route) {
+            com.lullabyai.app.ui.screens.expense.ExpenseHistoryScreen(
+                viewModel = viewModel(), navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.Expenses.route) {
+            com.lullabyai.app.ui.screens.expense.ExpenseScreen(
+                viewModel = viewModel(), navController = navController,
+                onBack = { navController.popBackStack() },
+                onAdd = { navController.navigate(Screen.AddExpense.route) },
+                onSeeAll = { navController.navigate(Screen.ExpenseHistory.route) }
+            )
+        }
+        composable(Screen.AddExpense.route) {
+            com.lullabyai.app.ui.screens.expense.AddExpenseScreen(
+                viewModel = viewModel(), navController = navController,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -940,7 +984,11 @@ fun AppNavigation(
                 settingsViewModel = settingsViewModel,
                 doctorViewModel = doctorViewModel,
                 navController = navController,
-                onLogout = { navController.navigate(Screen.Welcome.route) { popUpTo(0) } }
+                onLogout = {
+                    com.lullabyai.app.data.settings.ChildSelection.clearForSignOut()
+                    navController.clearSavedTabStacks()
+                    navController.navigate(Screen.Welcome.route) { popUpTo(0) }
+                }
             )
         }
         composable(Screen.DoctorEditProfile.route) {

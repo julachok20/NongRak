@@ -503,50 +503,48 @@ fun ChildSummaryScreen(
                 Modifier.fillMaxWidth().tourAnchor("parent_child_actions"),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DashboardActionButton(
-                    Icons.Filled.AddCircle, if (s.isThai) "บันทึกสุขภาพ" else "Health Log", Primary, Modifier.weight(1f)
-                ) { navController.navigate(Screen.HealthLog.route) }
-                DashboardActionButton(
-                    Icons.Filled.BarChart, if (s.isThai) "ดูสถิติ" else "Stats", Primary, Modifier.weight(1f)
-                ) { navController.navigate(Screen.StatisticsInsights.route) }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DashboardActionButton(
-                    Icons.Filled.MenuBook,
-                    if (s.isThai) "สมุดแห่งความทรงจำ" else "Memory book",
-                    Color(0xFFFFC107),
-                    Modifier.weight(1f)
-                ) { navController.navigate(Screen.ChildDiary.route) }
-                DashboardActionButton(
-                    Icons.Filled.PictureAsPdf, if (s.isThai) "ส่งออก PDF" else "Export PDF", Error, Modifier.weight(1f)
-                ) { navController.navigate(Screen.PdfExport.route) }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DashboardActionButton(
-                    Icons.Filled.FolderOpen,
-                    if (s.isThai) "คลังเอกสาร" else "Document vault",
-                    Color(0xFF43A047),
-                    Modifier.weight(1f)
-                ) { navController.navigate(Screen.MedicalDataVault.route) }
-                DashboardActionButton(
-                    Icons.Filled.Bolt,
-                    if (s.isThai) "บันทึกด่วน" else "Quick log",
-                    PrimaryContainer,
-                    Modifier.weight(1f)
-                ) { navController.navigate(Screen.QuickLogHub.route) }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DashboardActionButton(
-                    Icons.Filled.LockPerson,
-                    if (s.isThai) "สิทธิ์การเข้าถึง" else "Access",
-                    Secondary,
-                    Modifier.weight(1f)
-                ) { navController.navigate(Screen.PermissionAccess.route) }
-                // The activity/update entry point lives as a full-width card near the top of the
-                // page instead of a tile here — it is the primary action, not a fourteenth option.
-                Spacer(Modifier.weight(1f))
-            }
+                // Stitch "Child Summary with Suggestion Button": the actions split into two named
+                // groups — things you record, then things you export or administer. The old flat
+                // run of tiles gave "บันทึกสุขภาพ" and "สิทธิ์การเข้าถึง" identical weight, which
+                // is why the screen read as a wall.
+                ChildActionGroup(
+                    title = if (s.isThai) "สุขภาพและบันทึก" else "Health & records",
+                    tiles = listOf(
+                        ChildTile(Icons.Filled.AddCircle,
+                            if (s.isThai) "บันทึกสุขภาพ" else "Health log", Screen.HealthLog.route),
+                        ChildTile(Icons.Filled.Analytics,
+                            if (s.isThai) "ดูสถิติ" else "Stats", Screen.StatisticsInsights.route),
+                        ChildTile(Icons.Filled.EventNote,
+                            if (s.isThai) "สมุดความจำ" else "Memory book", Screen.ChildDiary.route),
+                        ChildTile(Icons.Filled.Bolt,
+                            if (s.isThai) "บันทึกด่วน" else "Quick log", Screen.QuickLogHub.route),
+                        ChildTile(Icons.Filled.Payments,
+                            if (s.isThai) "ค่าใช้จ่าย" else "Expenses", Screen.Expenses.route),
+                        // The design's sixth tile is "ปฏิทิน". There is no calendar screen in this
+                        // app, so it points at the appointment record and is named for what it
+                        // actually opens — a tile that lies is worse than one that is plain.
+                        ChildTile(Icons.Filled.CalendarMonth,
+                            if (s.isThai) "นัดหมาย" else "Appointments", Screen.RecordAppointment.route)
+                    ),
+                    onNavigate = { navController.navigate(it) }
+                )
+
+                ChildActionGroup(
+                    title = if (s.isThai) "รายงานและการจัดการ" else "Reports & management",
+                    tiles = listOf(
+                        ChildTile(Icons.Filled.PictureAsPdf,
+                            if (s.isThai) "ส่งออก PDF" else "Export PDF", Screen.PdfExport.route),
+                        ChildTile(Icons.Filled.FolderOpen,
+                            if (s.isThai) "คลังเอกสาร" else "Document vault", Screen.MedicalDataVault.route),
+                        ChildTile(Icons.Filled.LockPerson,
+                            if (s.isThai) "สิทธิ์การเข้าถึง" else "Access", Screen.PermissionAccess.route),
+                        // Every role with access to this child gets a way to reach the parents —
+                        // a doctor or grandparent needs it as much as the nanny does.
+                        ChildTile(Icons.Filled.ChatBubble,
+                            if (s.isThai) "แชทกับผู้ดูแล" else "Chat", Screen.CareCircle.route)
+                    ),
+                    onNavigate = { navController.navigate(it) }
+                )
             }
 
             Spacer(Modifier.height(8.dp))
@@ -632,26 +630,67 @@ private fun ChildSwitcherSheet(
     }
 }
 
-/** One cell of the child dashboard's main 4-button grid (Health Log / Stats / Disease Risk / PDF). */
+/** One tile in a Child-info action group. */
+private data class ChildTile(val icon: ImageVector, val label: String, val route: String)
+
+/**
+ * A named group of action tiles, two per row — the Stitch Child-info arrangement. The heading is
+ * what does the work: it tells you which half of the screen you are in before you read any label.
+ */
 @Composable
-private fun DashboardActionButton(icon: ImageVector, label: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = modifier, shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(1.dp)
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(100.dp)).background(tint.copy(0.12f)), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+private fun ChildActionGroup(
+    title: String,
+    tiles: List<ChildTile>,
+    onNavigate: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        tiles.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                pair.forEach { t ->
+                    Card(
+                        onClick = { onNavigate(t.route) },
+                        modifier = Modifier.weight(1f).height(118.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(1.dp)
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize().padding(14.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(48.dp)
+                                    .background(PrimaryContainer.copy(0.45f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(t.icon, null, tint = Primary, modifier = Modifier.size(24.dp))
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                t.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                // An odd tile count keeps its half-width instead of stretching across the row.
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
-            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }
+
 
 @Composable
 internal fun ProfileCard(content: @Composable ColumnScope.() -> Unit) {

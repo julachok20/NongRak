@@ -89,6 +89,26 @@ private fun NavController.switchToTab(tab: BottomTab, isReselect: Boolean) {
     }
 }
 
+/**
+ * Throw away every parked per-tab back stack. Call on sign-out.
+ *
+ * `saveState = true` above parks the tab's inner stack inside the NavController, keyed by
+ * destination id. `popUpTo(0)` at logout empties the *live* stack but does not touch those parked
+ * copies — androidx only drops them on restore or on [NavController.clearBackStack] — and the
+ * NavController outlives the session. So the next account to sign in would land straight back on
+ * the previous account's page the first time it tapped that tab.
+ */
+fun NavController.clearSavedTabStacks() {
+    val roots = BottomTab.entries.map(::tabRootRoute) + listOf(
+        Screen.DoctorDashboard.route,
+        Screen.DoctorPatientManagement.route,
+        Screen.DoctorSettings.route
+    )
+    // A route with nothing parked under it is a no-op, but this runs mid-sign-out: a nav-internal
+    // failure must not be what stops someone from logging out.
+    roots.distinct().forEach { runCatching { clearBackStack(it) } }
+}
+
 /** The tabs of the app-wide bottom navigation. CHATBOT is launched from the center floating button, not a bar item. */
 enum class BottomTab { HOME, CHATBOT, CHILD, STATS, CONNECT, SETTINGS }
 

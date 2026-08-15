@@ -265,6 +265,89 @@ data class ChildAccessMember(
     @SerialName("is_caregiver") val isCaregiver: Boolean = false
 )
 
+/**
+ * One recorded cost for a child.
+ *
+ * [amountSatang] is THB × 100 as an integer — money in a Double eventually rounds wrong, and a
+ * budget that quietly drifts is worse than none. Format at the edges; never store the format.
+ */
+@Serializable
+data class ChildExpense(
+    val id: String = "",
+    @SerialName("amount_satang") val amountSatang: Long = 0,
+    val category: String = "other",
+    @SerialName("spent_on") val spentOn: String = "",
+    val note: String? = null,
+    /**
+     * The design's three switches. They are independent on purpose: something can be under
+     * warranty and already used, and a tin of formula can have an expiry date and no warranty.
+     * Each date is only meaningful while its own switch is on — the table enforces that.
+     */
+    @SerialName("has_warranty") val hasWarranty: Boolean = false,
+    @SerialName("warranty_expires_on") val warrantyExpiresOn: String? = null,
+    @SerialName("has_expiration") val hasExpiration: Boolean = false,
+    @SerialName("expires_on") val expiresOn: String? = null,
+    @SerialName("already_used") val alreadyUsed: Boolean = false,
+    @SerialName("usage_note") val usageNote: String? = null,
+    @SerialName("receipt_url") val receiptUrl: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+) {
+    val baht: Double get() = amountSatang / 100.0
+}
+
+/** One row of the spending summary — a category and what it cost over the window. */
+@Serializable
+data class ExpenseCategoryTotal(
+    val category: String = "",
+    @SerialName("total_satang") val totalSatang: Long = 0,
+    val entries: Int = 0
+)
+
+/**
+ * Budget beside spend for one slot of a month. A null [category] is the month's overall figure,
+ * so the same row shape drives both the headline bar and the per-category breakdown.
+ */
+@Serializable
+data class BudgetLine(
+    val category: String? = null,
+    @SerialName("budget_satang") val budgetSatang: Long = 0,
+    @SerialName("spent_satang") val spentSatang: Long = 0
+) {
+    val hasBudget: Boolean get() = budgetSatang > 0
+    /** 0f..1f, clamped: a bar drawn past its end reads as a rendering bug, not as overspending. */
+    val progress: Float
+        get() = if (budgetSatang <= 0) 0f
+        else (spentSatang.toFloat() / budgetSatang).coerceIn(0f, 1f)
+    val overBudget: Boolean get() = budgetSatang > 0 && spentSatang > budgetSatang
+    val remainingSatang: Long get() = budgetSatang - spentSatang
+}
+
+/** One bar of the trend chart. [month] is the first day of that month, `yyyy-MM-dd`. */
+@Serializable
+data class ExpenseTrendPoint(
+    val month: String = "",
+    @SerialName("total_satang") val totalSatang: Long = 0
+)
+
+/**
+ * One row of the Care Circle hub: a person you can talk to about this child, plus the last thing
+ * said. Everyone with access appears even with no history, so the hub doubles as the contact picker.
+ */
+@Serializable
+data class CareConversation(
+    @SerialName("peer_id") val peerId: String = "",
+    @SerialName("peer_name") val peerName: String = "",
+    @SerialName("peer_avatar") val peerAvatar: String? = null,
+    @SerialName("peer_role") val peerRole: String = "",
+    @SerialName("last_body") val lastBody: String? = null,
+    @SerialName("last_at") val lastAt: String? = null,
+    @SerialName("last_from_me") val lastFromMe: Boolean = false,
+    @SerialName("last_has_image") val lastHasImage: Boolean = false,
+    val unread: Int = 0
+) {
+    val hasHistory: Boolean get() = !lastAt.isNullOrBlank()
+}
+
 /** One message in a parent↔caregiver conversation about a child. */
 @Serializable
 data class CareMessage(
@@ -282,10 +365,27 @@ data class CareMessage(
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("reply_to_id") val replyToId: String? = null,
     @SerialName("reply_to_body") val replyToBody: String? = null,
-    @SerialName("reply_to_sender") val replyToSender: String? = null
+    @SerialName("reply_to_sender") val replyToSender: String? = null,
+    /** Bucket path in the private `chat-images` bucket, signed at render time. */
+    @SerialName("image_url") val imageUrl: String? = null,
+    /** Set when the recipient's device fetched this message. */
+    @SerialName("delivered_at") val deliveredAt: String? = null,
+    /** Set when the recipient actually opened the conversation. */
+    @SerialName("read_at") val readAt: String? = null
 ) {
     val isUnsent: Boolean get() = !deletedAt.isNullOrBlank()
+
+    /** WhatsApp's three states. Only meaningful for messages I sent. */
+    val status: DeliveryStatus
+        get() = when {
+            !readAt.isNullOrBlank() -> DeliveryStatus.READ
+            !deliveredAt.isNullOrBlank() -> DeliveryStatus.DELIVERED
+            else -> DeliveryStatus.SENT
+        }
 }
+
+/** One tick = sent, two grey = delivered, two blue = read. */
+enum class DeliveryStatus { SENT, DELIVERED, READ }
 
 /** One tap on the caregiver's quick-record grid. [abnormal] non-null is what a parent must see. */
 @Serializable

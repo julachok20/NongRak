@@ -22,18 +22,25 @@ data class CaregiverUpdateUiState(
     /** Which grid tile is armed. Saving needs a kind, so this doubles as the submit guard. */
     val selectedKind: String? = null,
     val note: String = "",
+    /** What "อื่นๆ" actually was. Folded into the note, since the kind stays "other". */
+    val otherLabel: String = "",
     val mood: String? = null,
     val abnormal: String = "",
     /** Everything logged for the child today, by anyone — the daily summary reads this. */
     val today: List<CareLog> = emptyList(),
     /** Owners and co-owners of this child: who the carer is allowed to message. */
     val parents: List<ChildAccessMember> = emptyList(),
+    /** Unread message count keyed by sender — the header badge and each picker row. */
+    val unreadByPeer: Map<String, Int> = emptyMap(),
     val loading: Boolean = false,
     val saving: Boolean = false,
     val savedOk: Boolean = false,
     val error: String? = null
 ) {
-    val canSubmit: Boolean get() = selectedKind != null && !saving
+    /** "อื่นๆ" is not a record until it has been named, so the save stays disabled until it is. */
+    val canSubmit: Boolean
+        get() = selectedKind != null && !saving &&
+            (selectedKind != "other" || otherLabel.isNotBlank())
 
     /** kind -> how many times today, for the summary sheet. */
     val summary: List<Pair<String, Int>>
@@ -43,6 +50,18 @@ data class CaregiverUpdateUiState(
 
     /** Flagged concerns come first in the summary — that is the whole reason a parent opens it. */
     val concerns: List<CareLog> get() = today.filter { !it.abnormal.isNullOrBlank() }
+
+    val totalUnread: Int get() = unreadByPeer.values.sum()
+
+    /**
+     * Most recent log per activity, so each tile can say when it last happened instead of
+     * looking identical to one that has never been done today.
+     */
+    val lastByKind: Map<String, CareLog>
+        get() = today.groupBy { it.kind }
+            .mapValues { (_, logs) -> logs.maxByOrNull { it.loggedAt } }
+            .filterValues { it != null }
+            .mapValues { (_, v) -> requireNotNull(v) }
 }
 
 class CaregiverUpdateViewModel(
@@ -75,7 +94,14 @@ class CaregiverUpdateViewModel(
     private suspend fun refreshToday(childId: String) {
         val (from, to) = localDayBounds()
         val logs = childRepo.listCareLogs(childId, from, to).getOrDefault(emptyList())
-        _uiState.update { it.copy(loading = false, today = logs) }
+        val unread = childRepo.careUnreadByPeer(childId).getOrDefault(emptyMap())
+        _uiState.update { it.copy(loading = false, today = logs, unreadByPeer = unread) }
+    }
+
+    /** Re-reads counts and today's log — cheap enough to call whenever the screen is resumed. */
+    fun refresh() {
+        val id = _uiState.value.childId ?: return
+        viewModelScope.launch { refreshToday(id) }
     }
 
     fun selectKind(kind: String) = _uiState.update {
@@ -84,11 +110,15 @@ class CaregiverUpdateViewModel(
     }
 
     fun setNote(v: String) = _uiState.update { it.copy(note = v) }
+    fun setOtherLabel(v: String) = _uiState.update { it.copy(otherLabel = v) }
     fun setMood(v: String) = _uiState.update { it.copy(mood = if (it.mood == v) null else v) }
     fun setAbnormal(v: String) = _uiState.update { it.copy(abnormal = v) }
 
     fun clearForm() = _uiState.update {
-        it.copy(selectedKind = null, note = "", mood = null, abnormal = "", savedOk = false)
+        it.copy(
+            selectedKind = null, note = "", otherLabel = "",
+            mood = null, abnormal = "", savedOk = false
+        )
     }
 
     fun submit() {
@@ -97,17 +127,24 @@ class CaregiverUpdateViewModel(
         val kind = s.selectedKind ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(saving = true, error = null, savedOk = false) }
+            // The typed name leads the note, so the parent's history reads "ไปสวนสาธารณะ"
+            // rather than a bare "อื่นๆ".
+            val note = if (kind == "other" && s.otherLabel.isNotBlank()) {
+                listOf(s.otherLabel.trim(), s.note.trim()).filter { it.isNotEmpty() }
+                    .joinToString(" — ")
+            } else s.note
+
             childRepo.addCareLog(
                 childId = childId,
                 kind = kind,
-                note = s.note,
+                note = note,
                 mood = s.mood,
                 abnormal = s.abnormal
             ).onSuccess {
                 _uiState.update {
                     it.copy(
                         saving = false, savedOk = true, selectedKind = null,
-                        note = "", mood = null, abnormal = ""
+                        note = "", otherLabel = "", mood = null, abnormal = ""
                     )
                 }
                 refreshToday(childId)
@@ -158,23 +195,35 @@ object CareKinds {
 
     data class Kind(val kind: String, val emoji: String, val th: String, val en: String)
 
-    /** Order matches the Stitch grid. */
+    /** Order matches the redesigned Stitch grid. */
     val ALL = listOf(
-        Kind("feed", "🍼", "ป้อนนม", "Feeding"),
         Kind("nap", "😴", "นอนหลับ", "Sleep"),
-        Kind("diaper", "🧷", "เปลี่ยนผ้าอ้อม", "Diaper"),
+        Kind("meal", "🥣", "ทานอาหาร", "Meal"),
         Kind("play", "🧸", "เล่น", "Play"),
         Kind("bath", "🛁", "อาบน้ำ", "Bath"),
-        Kind("meal", "🥣", "ทานอาหาร", "Meal"),
-        Kind("exercise", "⚽", "ออกกำลังกาย", "Exercise"),
-        Kind("read", "📚", "อ่านหนังสือ", "Reading"),
+        Kind("learn", "📚", "เรียนรู้", "Learning"),
+        Kind("outdoor", "🌳", "กิจกรรมนอกบ้าน", "Outdoors"),
         Kind("other", "➕", "อื่นๆ", "Other")
     )
 
-    fun label(kind: String, isThai: Boolean): String =
-        ALL.find { it.kind == kind }?.let { if (isThai) it.th else it.en } ?: kind
+    /**
+     * Kinds the grid no longer offers but that older rows may still carry. Kept so a log written
+     * before the redesign still renders as words instead of a raw key in the parent's history.
+     */
+    private val RETIRED = listOf(
+        Kind("feed", "🍼", "ป้อนนม", "Feeding"),
+        Kind("diaper", "🧷", "เปลี่ยนผ้าอ้อม", "Diaper"),
+        Kind("exercise", "⚽", "ออกกำลังกาย", "Exercise"),
+        Kind("read", "📚", "อ่านหนังสือ", "Reading")
+    )
 
-    fun emoji(kind: String): String = ALL.find { it.kind == kind }?.emoji ?: "•"
+    private fun find(kind: String): Kind? =
+        ALL.find { it.kind == kind } ?: RETIRED.find { it.kind == kind }
+
+    fun label(kind: String, isThai: Boolean): String =
+        find(kind)?.let { if (isThai) it.th else it.en } ?: kind
+
+    fun emoji(kind: String): String = find(kind)?.emoji ?: "•"
 
     /** mood key, Thai, English — matches "วันนี้น้องเป็นอย่างไรบ้าง?" in the design. */
     val MOODS = listOf(

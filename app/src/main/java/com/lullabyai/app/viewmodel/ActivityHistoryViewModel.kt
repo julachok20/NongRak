@@ -9,6 +9,7 @@ import com.lullabyai.app.data.repository.ChildRepository
 import com.lullabyai.app.data.settings.ChildSelection
 import com.lullabyai.app.util.TimeUtils
 import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,8 +20,13 @@ data class ActivityHistoryUiState(
     val childId: String? = null,
     val childName: String = "",
     val entries: List<ChildActivityEntry> = emptyList(),
-    /** Only members with the "helps care for this child" tick — the chat row's whole population. */
+    /**
+     * Who the viewer can open a conversation with: everyone holding the "helps care for this
+     * child" tick, plus the other full-access parents, minus themselves.
+     */
     val caregivers: List<ChildAccessMember> = emptyList(),
+    /** Conversations for this child, so the design's preview card has something to show. */
+    val conversations: List<com.lullabyai.app.data.model.CareConversation> = emptyList(),
     val myUserId: String? = null,
     val myRole: String? = null,
     val category: String = ALL,
@@ -35,6 +41,14 @@ data class ActivityHistoryUiState(
      * except owner/co-owner".
      */
     val canChat: Boolean get() = AccessRoleLabels.isFullAccess(myRole)
+
+    /**
+     * The one conversation the preview card shows: whatever is unread first, else the most
+     * recent. Anything more would duplicate the Care Circle hub sitting one tap away.
+     */
+    val topConversation: com.lullabyai.app.data.model.CareConversation?
+        get() = conversations.firstOrNull { it.unread > 0 }
+            ?: conversations.firstOrNull { it.hasHistory }
 
     /** What the list actually renders, after the chip, the search box and the sort. */
     val visible: List<ChildActivityEntry>
@@ -85,6 +99,9 @@ class ActivityHistoryViewModel(
     private val _uiState = MutableStateFlow(ActivityHistoryUiState())
     val uiState: StateFlow<ActivityHistoryUiState> = _uiState.asStateFlow()
 
+    /** The live care-log subscription; held so re-entering the screen does not stack channels. */
+    private var watchJob: Job? = null
+
     fun load(childId: String? = null) {
         viewModelScope.launch {
             val id = childId ?: ChildSelection.id.value
@@ -98,6 +115,7 @@ class ActivityHistoryViewModel(
 
             val me = runCatching { supabase.auth.currentUserOrNull()?.id }.getOrNull()
             val members = childRepo.listAccessMembers(id).getOrDefault(emptyList())
+            val convos = childRepo.careConversations(id).getOrDefault(emptyList())
             val entries = childRepo.listActivityFeed(id).getOrElse { e ->
                 _uiState.update { it.copy(loading = false, error = e.message) }
                 return@launch
@@ -107,12 +125,46 @@ class ActivityHistoryViewModel(
                     loading = false,
                     entries = entries,
                     // Never offer to chat with yourself.
-                    caregivers = members.filter { m -> m.isCaregiver && m.userId != me },
+                    // Who this viewer may open a conversation with: caregivers, plus the other
+                    // parents — an owner and a co-owner need to talk to each other too.
+                    caregivers = members.filter { m ->
+                        m.userId != me &&
+                            (m.isCaregiver || AccessRoleLabels.isFullAccess(m.role))
+                    },
+                    conversations = convos,
                     myUserId = me,
                     myRole = members.find { m -> m.userId == me }?.role
                 )
             }
+            // Started here, not from the screen: the subscription needs the child id that this
+            // load just resolved, so sequencing it anywhere else invites a silent no-op.
+            startWatching()
         }
+    }
+
+    /**
+     * Keeps the feed live. A caregiver's save reaches the parent's screen the moment it lands
+     * rather than on the next manual open — that immediacy is the point of the feature.
+     *
+     * ponytail: reloads the feed instead of splicing the changed row in. The realtime payload
+     * carries no author name, so a splice would read "ผู้ดูแล" until the next refresh anyway.
+     */
+    fun startWatching() {
+        if (watchJob?.isActive == true) return
+        val id = _uiState.value.childId ?: return
+        watchJob = viewModelScope.launch {
+            runCatching { childRepo.watchCareLogs(id).collect { load(id) } }
+        }
+    }
+
+    fun stopWatching() {
+        watchJob?.cancel()
+        watchJob = null
+    }
+
+    override fun onCleared() {
+        stopWatching()
+        super.onCleared()
     }
 
     fun setCategory(value: String) = _uiState.update { it.copy(category = value) }

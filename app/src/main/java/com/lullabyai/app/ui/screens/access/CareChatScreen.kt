@@ -4,10 +4,14 @@
 )
 package com.lullabyai.app.ui.screens.access
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,8 +23,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +55,8 @@ fun CareChatScreen(
     viewModel: CareChatViewModel,
     navController: NavController,
     peerId: String,
+    /** Context carried in from an activity entry; seeds the draft once, then behaves normally. */
+    quote: String = "",
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -54,11 +64,36 @@ fun CareChatScreen(
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
+    val signed by viewModel.imageUrls.collectAsState()
+    val context = LocalContext.current
+    // Reads the picked image's bytes here rather than handing a content URI to the repository —
+    // the permission grant on that URI does not outlive this composable.
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val bytes = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }.getOrNull() ?: return@rememberLauncherForActivityResult
+        val ext = when (context.contentResolver.getType(uri)) {
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            else -> "jpg"
+        }
+        viewModel.sendImage(bytes, ext)
+    }
     // Held rather than acted on immediately: unsend keeps the text readable, and the sender has
     // to be told that before it happens, not after.
     var pendingUnsend by remember { mutableStateOf<CareMessage?>(null) }
 
     LaunchedEffect(peerId) { viewModel.load(peerId) }
+
+    // Attached once per arrival, after load() has resolved peerName — the quote is attributed to
+    // the peer, and an empty name would render an anonymous quote block. Keyed on the quote so
+    // returning to a chat you opened normally does not re-attach an old subject line.
+    LaunchedEffect(quote, state.peerName) {
+        if (quote.isNotBlank() && state.peerName.isNotBlank()) viewModel.quoteActivity(quote)
+    }
 
     // Keep the newest message in view as the conversation grows.
     LaunchedEffect(state.messages.size) {
@@ -114,6 +149,7 @@ fun CareChatScreen(
                     MessageBubble(
                         m = m,
                         isThai = isThai,
+                        imageUrl = m.imageUrl?.let { signed[it] },
                         revealed = m.id in state.revealed,
                         onToggleReveal = { viewModel.toggleReveal(m.id) },
                         onReply = { viewModel.startReply(m) },
@@ -195,6 +231,16 @@ fun CareChatScreen(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    IconButton(
+                        onClick = { pickImage.launch("image/*") },
+                        enabled = !state.sending
+                    ) {
+                        Icon(
+                            Icons.Filled.AddPhotoAlternate,
+                            contentDescription = if (isThai) "แนบรูปภาพ" else "Attach image",
+                            tint = Primary
+                        )
+                    }
                     OutlinedTextField(
                         value = state.draft,
                         onValueChange = viewModel::setDraft,
@@ -346,10 +392,33 @@ private fun InfoBanner(icon: ImageVector, tint: Color, text: String, onDismiss: 
     }
 }
 
+/**
+ * One tick sent, two ticks delivered, two blue ticks read — the convention people already know,
+ * so it needs no legend. Drawn as two overlapping checks rather than a single glyph because
+ * Material has no done_all equivalent in the bundled icon set.
+ */
+@Composable
+private fun DeliveryTicks(status: com.lullabyai.app.data.model.DeliveryStatus) {
+    val tint = when (status) {
+        com.lullabyai.app.data.model.DeliveryStatus.READ -> Color(0xFF53BDEB)
+        else -> Color.White.copy(0.75f)
+    }
+    Box(Modifier.width(if (status == com.lullabyai.app.data.model.DeliveryStatus.SENT) 12.dp else 17.dp)) {
+        Icon(Icons.Filled.Check, null, tint = tint, modifier = Modifier.size(12.dp))
+        if (status != com.lullabyai.app.data.model.DeliveryStatus.SENT) {
+            Icon(
+                Icons.Filled.Check, null, tint = tint,
+                modifier = Modifier.size(12.dp).offset(x = 5.dp)
+            )
+        }
+    }
+}
+
 @Composable
 private fun MessageBubble(
     m: CareMessage,
     isThai: Boolean,
+    imageUrl: String?,
     revealed: Boolean,
     onToggleReveal: () -> Unit,
     onReply: () -> Unit,
@@ -455,14 +524,48 @@ private fun MessageBubble(
                         )
                     }
                 } else {
-                    Text(m.body, color = onTint, style = MaterialTheme.typography.bodyMedium)
+                    // A picture with no caption should not leave an empty line above it.
+                    if (imageUrl != null) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = if (isThai) "รูปภาพในแชท" else "Chat image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 220.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                        if (m.body.isNotBlank()) Spacer(Modifier.height(6.dp))
+                    } else if (m.imageUrl != null) {
+                        // Path known, signed URL not back yet.
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Outline.copy(0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
+                        if (m.body.isNotBlank()) Spacer(Modifier.height(6.dp))
+                    }
+                    if (m.body.isNotBlank()) {
+                        Text(m.body, color = onTint, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
 
-                Text(
-                    TimeUtils.localTime(m.createdAt).orEmpty(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (m.mine && !m.isUnsent) Color.White.copy(0.7f) else Outline
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        TimeUtils.localTime(m.createdAt).orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (m.mine && !m.isUnsent) Color.White.copy(0.7f) else Outline
+                    )
+                    // Only my own messages carry a receipt: showing one on a message I received
+                    // would be telling me something I already know.
+                    if (m.mine && !m.isUnsent) {
+                        Spacer(Modifier.width(4.dp))
+                        DeliveryTicks(m.status)
+                    }
+                }
             }
 
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
