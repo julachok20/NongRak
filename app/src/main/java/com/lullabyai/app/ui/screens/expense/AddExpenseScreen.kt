@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,8 +33,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.screens.child.ChildBottomNav
+import androidx.compose.material.icons.filled.Warning
 import com.lullabyai.app.viewmodel.ExpenseCategories
+import com.lullabyai.app.viewmodel.ExpenseErrors
 import com.lullabyai.app.viewmodel.ExpenseViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -51,6 +56,8 @@ import java.time.ZoneOffset
 fun AddExpenseScreen(
     viewModel: ExpenseViewModel,
     navController: NavController,
+    /** Which child to book this cost against; blank means the one selected app-wide. */
+    childId: String = "",
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -58,11 +65,22 @@ fun AddExpenseScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) { viewModel.load() }
+    // Preselect before load so this screen opens on the child whose record you came from.
+    LaunchedEffect(childId) {
+        viewModel.preselectChild(childId)
+        viewModel.load()
+    }
+
+    /** The child the cost lands on. Starts from what was carried in, then follows the picker. */
+    var targetChild by remember(childId, state.childId) {
+        mutableStateOf(childId.ifBlank { null } ?: state.scopeChildId ?: state.childId)
+    }
 
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("other") }
     var spentOn by remember { mutableStateOf(LocalDate.now()) }
+    /** What was bought — becomes the row's title in the list. */
+    var productName by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
     var hasWarranty by remember { mutableStateOf(false) }
@@ -106,6 +124,7 @@ fun AddExpenseScreen(
             amountText = amount,
             category = category,
             spentOn = spentOn,
+            name = productName,
             note = note,
             hasWarranty = hasWarranty,
             warrantyExpiresOn = warrantyExpiresOn,
@@ -114,40 +133,23 @@ fun AddExpenseScreen(
             alreadyUsed = alreadyUsed,
             usageNote = usageNote,
             receipt = receiptBytes,
+            targetChildId = targetChild,
             onDone = onBack
         )
     }
 
     Scaffold(
         containerColor = ScBackground,
+        // Standard header, like every other screen. The design's top-bar Save lives on the
+        // full-width button at the foot of the form instead — one Save, not two.
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (isThai) "เพิ่มรายการ" else "Add Expense",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = ScPrimary
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, null, tint = ScPrimary)
-                    }
-                },
-                // The design puts Save in the bar as well as at the foot of the form.
-                actions = {
-                    TextButton(onClick = save, enabled = canSave) {
-                        Text(
-                            if (isThai) "บันทึก" else "Save",
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (canSave) ScPrimary else ScOutline
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ScBackground)
+            LullabyTopBar(
+                title = if (isThai) "เพิ่มรายการ" else "Add expense",
+                onBack = onBack,
+                navController = navController
             )
-        }
+        },
+        bottomBar = { ChildBottomNav(navController = navController, currentTab = "child") }
     ) { padding ->
         Column(
             Modifier
@@ -157,6 +159,42 @@ fun AddExpenseScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
+            // Whose cost is this? Shown whenever there is more than one child, so a cost can be
+            // booked to a sibling without leaving this screen or switching the whole app over.
+            if (state.children.size > 1) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SectionLabel(if (isThai) "บันทึกให้ (Child)" else "Record for")
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        state.children.forEach { c ->
+                            val selected = c.id == targetChild
+                            Box(
+                                Modifier
+                                    .clip(CircleShape)
+                                    .background(if (selected) ScPrimary else ScSurfaceContainer)
+                                    .border(
+                                        if (selected) 2.dp else 1.dp,
+                                        if (selected) ScPrimary else ScOutlineVariant.copy(0.4f),
+                                        CircleShape
+                                    )
+                                    .clickable { targetChild = c.id }
+                                    .padding(horizontal = 16.dp, vertical = 9.dp)
+                            ) {
+                                Text(
+                                    c.name,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) Color.White else ScOnSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             AmountField(amount, isThai) { amount = it }
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -179,8 +217,24 @@ fun AddExpenseScreen(
                 }
             }
 
-            // Date and note share one white card, as in the design.
+            // Name, date and note share one white card, as in the design.
             CardPanel {
+                FieldLabel(if (isThai) "ชื่อสินค้า/รายการ (Item name)" else "Item name")
+                OutlinedTextField(
+                    value = productName,
+                    onValueChange = { productName = it },
+                    placeholder = {
+                        Text(
+                            if (isThai) "เช่น นมผง, วัคซีน MMR" else "e.g. Milk powder, MMR vaccine",
+                            color = ScOutline
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = fieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(16.dp))
                 FieldLabel(if (isThai) "วันที่ (Date)" else "Date")
                 DateField(
                     value = spentOn,
@@ -301,14 +355,18 @@ fun AddExpenseScreen(
                 }
             }
 
-            if (state.error == "invalid_amount") {
-                Text(
-                    if (isThai) "กรุณาระบุจำนวนเงินที่มากกว่า 0" else "Enter an amount above 0",
-                    color = ScError,
-                    fontSize = 13.sp
-                )
-            } else state.error?.let {
-                Text(it, color = ScError, fontSize = 13.sp)
+            ExpenseErrors.message(state.error, isThai)?.let { msg ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(ScErrorContainer, RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(Icons.Filled.Warning, null, tint = ScError, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(msg, color = ScError, fontSize = 13.sp)
+                }
             }
 
             Button(

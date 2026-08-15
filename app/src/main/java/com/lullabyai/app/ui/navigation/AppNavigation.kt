@@ -769,13 +769,21 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.expense.ExpenseScreen(
                 viewModel = viewModel(), navController = navController,
                 onBack = { navController.popBackStack() },
-                onAdd = { navController.navigate(Screen.AddExpense.route) },
+                onAdd = { childId -> navController.navigate(Screen.AddExpense.route(childId)) },
                 onSeeAll = { navController.navigate(Screen.ExpenseHistory.route) }
             )
         }
-        composable(Screen.AddExpense.route) {
+        composable(
+            Screen.AddExpense.route,
+            arguments = listOf(
+                navArgument("childId") {
+                    type = NavType.StringType; defaultValue = ""; nullable = true
+                }
+            )
+        ) { backStackEntry ->
             com.lullabyai.app.ui.screens.expense.AddExpenseScreen(
                 viewModel = viewModel(), navController = navController,
+                childId = backStackEntry.arguments?.getString("childId").orEmpty(),
                 onBack = { navController.popBackStack() }
             )
         }

@@ -218,13 +218,17 @@ class AccessPermissionViewModel(
 /** Shared bilingual labels for access roles (Stitch). */
 object AccessRoleLabels {
     /**
-     * Every role an invite may grant, widest access first. Must stay a subset of the server's
-     * `valid_child_roles()` — that function is the authority, and the invite RPC rejects anything
-     * outside it (and always rejects 'owner', which cannot be handed out).
+     * The starter roles every family gets, widest access first. Deliberately only three — anything
+     * else is a role the family creates for itself in Manage Roles, rather than a long list of
+     * guesses nobody picks. Mirrors the system rows in `child_roles`.
+     *
+     * Must stay a subset of the server's `valid_child_roles()`, which is the authority and rejects
+     * anything outside it (and always rejects 'owner', which cannot be handed out). That function
+     * still accepts more keys than these: 'doctor' is granted through the doctor-connect flow
+     * rather than from this picker, and older members may hold 'member' or 'other'. [title] keeps
+     * labels for every key, so an existing member never renders as a bare role string.
      */
-    val ROLES = listOf(
-        "co_owner", "grandparent", "relative", "nanny", "teacher", "doctor", "viewer", "other"
-    )
+    val ROLES = listOf("co_owner", "relative", "nanny")
 
     /**
      * Roles that hold every permission by definition. Their permission grid is read-only —

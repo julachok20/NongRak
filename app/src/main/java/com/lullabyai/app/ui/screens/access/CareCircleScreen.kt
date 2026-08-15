@@ -62,6 +62,10 @@ fun CareCircleScreen(
                 navController = navController
             )
         },
+        // The hub is a place you browse from, so it keeps the footer. The conversation itself
+        // deliberately does not — a composer and a nav bar competing for the bottom edge is how
+        // you send a message by trying to switch tabs.
+        bottomBar = { AccessPermissionBottomNav(navController) },
         floatingActionButton = {
             if (startable.isNotEmpty()) {
                 FloatingActionButton(

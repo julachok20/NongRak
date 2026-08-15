@@ -23,7 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.screens.child.ChildBottomNav
 import com.lullabyai.app.viewmodel.ExpenseCategories
 import com.lullabyai.app.viewmodel.ExpenseViewModel
 import java.time.LocalDate
@@ -54,23 +56,13 @@ fun ExpenseHistoryScreen(
     Scaffold(
         containerColor = ScBackground,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (isThai) "สรุปค่าใช้จ่าย" else "Expenses",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = ScPrimary
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, null, tint = ScPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ScBackground)
+            LullabyTopBar(
+                title = if (isThai) "ประวัติค่าใช้จ่าย" else "Expense history",
+                onBack = onBack,
+                navController = navController
             )
-        }
+        },
+        bottomBar = { ChildBottomNav(navController = navController, currentTab = "child") }
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),

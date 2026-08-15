@@ -4,17 +4,20 @@ package com.lullabyai.app.ui.screens.expense
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
@@ -33,8 +36,12 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.lullabyai.app.data.model.BudgetLine
 import com.lullabyai.app.data.model.ChildExpense
+import androidx.compose.ui.draw.clip
+import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.screens.child.ChildBottomNav
 import com.lullabyai.app.viewmodel.ExpenseCategories
+import com.lullabyai.app.viewmodel.ExpenseErrors
 import com.lullabyai.app.viewmodel.ExpenseViewModel
 import java.time.LocalDate
 
@@ -100,7 +107,8 @@ fun ExpenseScreen(
     viewModel: ExpenseViewModel,
     navController: NavController,
     onBack: () -> Unit,
-    onAdd: () -> Unit,
+    /** Carries the scoped child so the new cost is booked against whoever is on screen. */
+    onAdd: (String?) -> Unit,
     onSeeAll: (() -> Unit)? = null
 ) {
     val s = LocalStrings.current
@@ -111,44 +119,27 @@ fun ExpenseScreen(
 
     var showBudgetSheet by remember { mutableStateOf(false) }
     var showMonthMenu by remember { mutableStateOf(false) }
+    /** The expense whose receipt sheet is open — view it, or attach one if it has none. */
+    var receiptTarget by remember { mutableStateOf<ChildExpense?>(null) }
 
     Scaffold(
         containerColor = ScBackground,
+        // Standard app header (back — title — bell — avatar), same as every other screen. The
+        // month filter moved onto the budget card's own month chip, which is where the design
+        // puts it anyway.
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (isThai) "สรุปค่าใช้จ่าย" else "Expense summary",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = ScPrimary
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, null, tint = ScPrimary)
-                    }
-                },
-                actions = {
-                    Box {
-                        IconButton(onClick = { showMonthMenu = true }) {
-                            Icon(Icons.Filled.FilterList, null, tint = ScOnSurfaceVariant)
-                        }
-                        MonthMenu(
-                            expanded = showMonthMenu,
-                            current = state.month,
-                            isThai = isThai,
-                            onDismiss = { showMonthMenu = false },
-                            onPick = { showMonthMenu = false; viewModel.setMonth(it) }
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ScBackground)
+            LullabyTopBar(
+                title = if (isThai) "สรุปค่าใช้จ่าย" else "Expense summary",
+                onBack = onBack,
+                navController = navController
             )
         },
+        bottomBar = { ChildBottomNav(navController = navController, currentTab = "child") },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = onAdd,
+                // Null while "ทั้งหมด" is showing: no single child is implied, so the Add screen
+                // asks rather than guessing.
+                onClick = { onAdd(state.scopeChildId?.takeIf { state.singleChild }) },
                 containerColor = ScPrimary,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(12.dp)
@@ -160,6 +151,17 @@ fun ExpenseScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            if (state.children.size > 1) {
+                item {
+                    ChildScopeStrip(
+                        children = state.children,
+                        selected = if (state.singleChild) state.scopeChildId else null,
+                        isThai = isThai,
+                        onPick = viewModel::setScope
+                    )
+                }
+            }
+
             item {
                 BudgetCard(
                     budget = state.overallBudget,
@@ -167,7 +169,10 @@ fun ExpenseScreen(
                     month = state.month,
                     isThai = isThai,
                     onEdit = { showBudgetSheet = true },
-                    onPickMonth = { showMonthMenu = true }
+                    onPickMonth = { showMonthMenu = true },
+                    menuOpen = showMonthMenu,
+                    onDismissMenu = { showMonthMenu = false },
+                    onPickMonthValue = { showMonthMenu = false; viewModel.setMonth(it) }
                 )
             }
 
@@ -232,12 +237,39 @@ fun ExpenseScreen(
                 }
             }
 
-            state.error?.let { msg ->
-                item { Text(msg, color = ScError, style = MaterialTheme.typography.bodySmall) }
+            // Shown here too: ticking "used" on a frozen row fails from the list, not the sheet.
+            ExpenseErrors.message(state.error, isThai)?.let { msg ->
+                item {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(ScErrorContainer, RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(Icons.Filled.Warning, null, tint = ScError, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(msg, color = ScError, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text(
+                            if (isThai) "ปิด" else "Dismiss",
+                            color = ScError,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.clickable { viewModel.clearSaved() }
+                        )
+                    }
+                }
             }
 
             items(state.expenses.take(5), key = { it.id }) { e ->
-                ExpenseRow(e, isThai)
+                ExpenseRow(
+                    e = e,
+                    isThai = isThai,
+                    childName = if (state.singleChild) null
+                    else state.children.find { c -> c.id == e.childId }?.name,
+                    onToggleUsed = { viewModel.toggleUsed(e) },
+                    onReceipt = { receiptTarget = e }
+                )
             }
 
             if (!state.loading && state.expenses.isEmpty() && state.error == null) {
@@ -254,13 +286,83 @@ fun ExpenseScreen(
         }
     }
 
+    receiptTarget?.let { target ->
+        ReceiptSheet(
+            expense = target,
+            isThai = isThai,
+            saving = state.saving,
+            resolveUrl = { viewModel.receiptUrl(it) },
+            onAttach = { bytes -> viewModel.attachReceipt(target, bytes); receiptTarget = null },
+            onDismiss = { receiptTarget = null }
+        )
+    }
+
+    // Sits above the sheet: the numbers being compared are the whole point, so they are stated
+    // rather than summarised as "too big".
+    state.overTotalPrompt?.let { p ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissOverTotal,
+            containerColor = ScSurface,
+            icon = { Icon(Icons.Filled.Warning, null, tint = ScError) },
+            title = {
+                Text(
+                    if (isThai) "งบรวมต่ำกว่างบของลูก" else "Total goal is below the child goals",
+                    fontWeight = FontWeight.Bold,
+                    color = ScOnSurface
+                )
+            },
+            text = {
+                Text(
+                    if (isThai)
+                        "งบของลูกทุกคนรวมกันคือ ${ExpenseErrors.bahtText(p.allocatedSatang)} ฿ " +
+                            "เทียบกับงบรวมที่ตั้งใหม่ ${ExpenseErrors.bahtText(p.attemptedSatang)} ฿\n\n" +
+                            "ต้องการล้างงบของลูกทุกคนในเดือนนี้ แล้วใช้งบรวมใหม่หรือไม่? " +
+                            "(รายการค่าใช้จ่ายจะไม่ถูกลบ)"
+                    else
+                        "The children's goals total ${ExpenseErrors.bahtText(p.allocatedSatang)} ฿, " +
+                            "compared with the new total goal of ${ExpenseErrors.bahtText(p.attemptedSatang)} ฿.\n\n" +
+                            "Clear every child goal for this month and use the new total? " +
+                            "(Recorded expenses are not deleted.)",
+                    color = ScOnSurfaceVariant,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.confirmOverTotal { showBudgetSheet = false } }
+                ) {
+                    Text(
+                        if (isThai) "ล้างงบของลูก" else "Clear child goals",
+                        color = ScError,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissOverTotal) {
+                    Text(if (isThai) "ยกเลิก" else "Cancel", color = ScOnSurfaceVariant)
+                }
+            }
+        )
+    }
+
     if (showBudgetSheet) {
         BudgetSheet(
             current = state.budget,
             month = state.month,
             isThai = isThai,
             saving = state.saving,
-            onDismiss = { showBudgetSheet = false },
+            error = state.error,
+            scopeLabel = if (!state.singleChild) (if (isThai) "ทั้งหมด" else "All children")
+            else state.children.find { it.id == state.scopeChildId }?.name ?: state.childName,
+            isTotal = !state.singleChild,
+            children = state.children,
+            selectedChildId = if (state.singleChild) state.scopeChildId else null,
+            // Reuses the page's own scope switch, so the figures behind the sheet and the ones in
+            // it can never describe different children.
+            onPickScope = viewModel::setScope,
+            onClearError = viewModel::clearSaved,
+            onDismiss = { showBudgetSheet = false; viewModel.clearSaved() },
             onSave = { total, cats ->
                 viewModel.saveBudget(total, cats) { showBudgetSheet = false }
             }
@@ -301,7 +403,10 @@ private fun BudgetCard(
     month: LocalDate,
     isThai: Boolean,
     onEdit: () -> Unit,
-    onPickMonth: () -> Unit
+    onPickMonth: () -> Unit,
+    menuOpen: Boolean,
+    onDismissMenu: () -> Unit,
+    onPickMonthValue: (LocalDate) -> Unit
 ) {
     Column(
         Modifier
@@ -337,26 +442,37 @@ private fun BudgetCard(
                             )
                         }
                     }
-                    Surface(
-                        onClick = onPickMonth,
-                        shape = RoundedCornerShape(8.dp),
-                        color = ScPrimary.copy(0.08f)
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    // The menu is anchored here rather than in the app bar, so it drops from the
+                    // control that opens it.
+                    Box {
+                        Surface(
+                            onClick = onPickMonth,
+                            shape = RoundedCornerShape(8.dp),
+                            color = ScPrimary.copy(0.08f)
                         ) {
-                            Text(
-                                monthLabel(month, isThai).substringBefore(' '),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = ScPrimary
-                            )
-                            Icon(
-                                Icons.Filled.ExpandMore, null,
-                                tint = ScPrimary, modifier = Modifier.size(16.dp)
-                            )
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    monthLabel(month, isThai).substringBefore(' '),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = ScPrimary
+                                )
+                                Icon(
+                                    Icons.Filled.ExpandMore, null,
+                                    tint = ScPrimary, modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
+                        MonthMenu(
+                            expanded = menuOpen,
+                            current = month,
+                            isThai = isThai,
+                            onDismiss = onDismissMenu,
+                            onPick = onPickMonthValue
+                        )
                     }
                 }
 
@@ -569,9 +685,43 @@ private fun CategoryBreakdown(lines: List<BudgetLine>, isThai: Boolean) {
     }
 }
 
-/** One purchase. The chips below the title are the three switches, read back. */
+/**
+ * How long an expense stays editable after it is ticked as used. Mirrors the database trigger; the
+ * UI only greys the controls, Postgres is what actually refuses the write.
+ */
+private const val USED_EDIT_WINDOW_MINUTES = 30L
+
+/** True once the 30-minute window has closed. Unticked rows are never locked. */
+internal fun ChildExpense.isLocked(): Boolean {
+    val stamped = runCatching { java.time.OffsetDateTime.parse(usedAt.orEmpty()) }.getOrNull()
+        ?: return false
+    return stamped.plusMinutes(USED_EDIT_WINDOW_MINUTES).isBefore(java.time.OffsetDateTime.now())
+}
+
+/** Whole minutes left in the edit window, or null when the row is not counting down. */
+internal fun ChildExpense.minutesLeft(): Long? {
+    val stamped = runCatching { java.time.OffsetDateTime.parse(usedAt.orEmpty()) }.getOrNull()
+        ?: return null
+    val left = java.time.temporal.ChronoUnit.MINUTES.between(
+        java.time.OffsetDateTime.now(),
+        stamped.plusMinutes(USED_EDIT_WINDOW_MINUTES)
+    )
+    return left.takeIf { it >= 0 }
+}
+
+/**
+ * One purchase. The leading checkbox is "used?" — ticking it starts the 30-minute window, after
+ * which the row freezes and the checkbox goes read-only with a padlock.
+ */
 @Composable
-internal fun ExpenseRow(e: ChildExpense, isThai: Boolean) {
+internal fun ExpenseRow(
+    e: ChildExpense,
+    isThai: Boolean,
+    childName: String? = null,
+    onToggleUsed: (() -> Unit)? = null,
+    onReceipt: (() -> Unit)? = null
+) {
+    val locked = e.isLocked()
     Row(
         Modifier
             .fillMaxWidth()
@@ -581,6 +731,28 @@ internal fun ExpenseRow(e: ChildExpense, isThai: Boolean) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (onToggleUsed != null) {
+            Box(contentAlignment = Alignment.Center) {
+                Checkbox(
+                    checked = e.alreadyUsed,
+                    onCheckedChange = { if (!locked) onToggleUsed() },
+                    enabled = !locked,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = ScPrimary,
+                        uncheckedColor = ScOutlineVariant,
+                        disabledCheckedColor = ScOutline
+                    )
+                )
+                if (locked) {
+                    Icon(
+                        Icons.Filled.Lock, null,
+                        tint = ScOutline,
+                        modifier = Modifier.size(12.dp).offset(x = 12.dp, y = 12.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(4.dp))
+        }
         Box(
             Modifier.size(44.dp).background(ScSurfaceHighest, CircleShape),
             contentAlignment = Alignment.Center
@@ -590,7 +762,11 @@ internal fun ExpenseRow(e: ChildExpense, isThai: Boolean) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                e.note?.takeIf { it.isNotBlank() } ?: ExpenseCategories.label(e.category, isThai),
+                // Product name first — that is the design's row title. Note, then category, are
+                // only fallbacks for rows saved before the name field existed.
+                e.name?.takeIf { it.isNotBlank() }
+                    ?: e.note?.takeIf { it.isNotBlank() }
+                    ?: ExpenseCategories.label(e.category, isThai),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = ScOnSurface,
@@ -598,7 +774,19 @@ internal fun ExpenseRow(e: ChildExpense, isThai: Boolean) {
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(2.dp))
-            Text(thaiDate(e.spentOn, isThai), fontSize = 12.sp, color = ScOnSurfaceVariant)
+            Text(
+                thaiDate(e.spentOn, isThai) + (childName?.let { " • $it" } ?: ""),
+                fontSize = 12.sp,
+                color = ScOnSurfaceVariant
+            )
+            // Only while it is actually ticking — a countdown on a row nobody is editing is noise.
+            e.minutesLeft()?.takeIf { e.alreadyUsed && !locked }?.let { left ->
+                Text(
+                    if (isThai) "แก้ไขได้อีก $left นาที" else "editable for $left more min",
+                    fontSize = 11.sp,
+                    color = ScTertiary
+                )
+            }
 
             val chips = buildList {
                 if (e.hasWarranty) {
@@ -648,12 +836,197 @@ internal fun ExpenseRow(e: ChildExpense, isThai: Boolean) {
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text(
-            "${baht(e.amountSatang)} ฿",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = ScOnSurface
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "${baht(e.amountSatang)} ฿",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScOnSurface
+            )
+            // Always offered: with a receipt it opens one, without it invites you to add one.
+            onReceipt?.let { open ->
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier.clickable(onClick = open),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Receipt, null,
+                        tint = if (e.receiptUrl.isNullOrBlank()) ScOutline else ScSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        when {
+                            !e.receiptUrl.isNullOrBlank() && isThai -> "ดูใบเสร็จ"
+                            !e.receiptUrl.isNullOrBlank() -> "View receipt"
+                            isThai -> "แนบใบเสร็จ"
+                            else -> "Add receipt"
+                        },
+                        fontSize = 11.sp,
+                        color = if (e.receiptUrl.isNullOrBlank()) ScOutline else ScSecondary
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The design's avatar strip: each child, plus "ทั้งหมด" for everyone at once. */
+@Composable
+private fun ChildScopeStrip(
+    children: List<com.lullabyai.app.data.model.Child>,
+    selected: String?,
+    isThai: Boolean,
+    onPick: (String?) -> Unit
+) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ScopeChip(
+            label = if (isThai) "ทั้งหมด" else "All",
+            selected = selected == null,
+            onClick = { onPick(null) }
         )
+        children.forEach { c ->
+            ScopeChip(
+                label = c.name,
+                selected = selected == c.id,
+                onClick = { onPick(c.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScopeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(if (selected) ScPrimary else ScSurfaceContainer)
+            .border(
+                if (selected) 2.dp else 1.dp,
+                if (selected) ScPrimary else ScOutlineVariant.copy(0.4f),
+                CircleShape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) Color.White else ScOnSurfaceVariant,
+            maxLines = 1
+        )
+    }
+}
+
+/**
+ * "ดูใบเสร็จ" — the receipt for one expense, or the way to add one when it has none.
+ *
+ * The path is resolved to a signed URL on open rather than stored: the bucket is private and the
+ * signature expires, so a URL held in state would eventually render a broken image.
+ */
+@Composable
+private fun ReceiptSheet(
+    expense: ChildExpense,
+    isThai: Boolean,
+    saving: Boolean,
+    resolveUrl: suspend (String?) -> String?,
+    onAttach: (ByteArray) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var url by remember(expense.id) { mutableStateOf<String?>(null) }
+    var tooBig by remember { mutableStateOf(false) }
+    val locked = expense.isLocked()
+
+    LaunchedEffect(expense.id, expense.receiptUrl) {
+        url = expense.receiptUrl?.let { resolveUrl(it) }
+    }
+
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val bytes = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (bytes != null && bytes.size <= 5 * 1024 * 1024) { tooBig = false; onAttach(bytes) }
+        else tooBig = bytes != null
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ScBackground) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                if (isThai) "ใบเสร็จ" else "Receipt",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScPrimary
+            )
+
+            if (!expense.receiptUrl.isNullOrBlank()) {
+                if (url == null) {
+                    CircularProgressIndicator(color = ScPrimary)
+                } else {
+                    coil.compose.AsyncImage(
+                        model = url,
+                        contentDescription = if (isThai) "ใบเสร็จ" else "Receipt",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 460.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                }
+            } else {
+                Text(
+                    if (isThai) "ยังไม่มีใบเสร็จสำหรับรายการนี้"
+                    else "No receipt on this expense yet",
+                    fontSize = 14.sp,
+                    color = ScOnSurfaceVariant
+                )
+                if (locked) {
+                    // Honest about why the button is missing rather than just hiding it.
+                    Text(
+                        if (isThai)
+                            "รายการนี้ถูกล็อกแล้ว (ทำเครื่องหมายว่าใช้แล้วเกิน 30 นาที) จึงแนบใบเสร็จไม่ได้"
+                        else "This expense is locked (marked used over 30 minutes ago), so a receipt can no longer be attached.",
+                        fontSize = 12.sp,
+                        color = ScError
+                    )
+                } else {
+                    Button(
+                        onClick = { pick.launch("image/*") },
+                        enabled = !saving,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ScPrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.AddAPhoto, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (isThai) "อัปโหลดใบเสร็จ" else "Upload a receipt")
+                    }
+                    Text(
+                        if (isThai) "PNG, JPG สูงสุด 5MB" else "PNG, JPG up to 5MB",
+                        fontSize = 12.sp,
+                        color = ScOutline
+                    )
+                }
+                if (tooBig) {
+                    Text(
+                        if (isThai) "ไฟล์ใหญ่เกิน 5MB" else "That file is larger than 5MB",
+                        color = ScError,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -683,18 +1056,32 @@ private fun BudgetSheet(
     month: LocalDate,
     isThai: Boolean,
     saving: Boolean,
+    error: String?,
+    scopeLabel: String,
+    isTotal: Boolean,
+    /** Whose goal can be set from here — every child, plus ทั้งหมด for the overall goal. */
+    children: List<com.lullabyai.app.data.model.Child>,
+    selectedChildId: String?,
+    onPickScope: (String?) -> Unit,
+    onClearError: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (String, Map<String, String>) -> Unit
 ) {
     // Seeded from what is already stored, so opening the sheet and saving without editing is a
     // no-op rather than a way to silently wipe the month's budget.
-    var total by remember {
+    //
+    // Keyed on both the scope and the loaded figures. Without the keys the fields keep whatever
+    // they were first seeded with, so switching child and reopening showed the previous child's
+    // goal — the goals were always separate on the server, the form just never re-read them. The
+    // data key matters too: the scope changes the moment the strip is tapped, while the new
+    // child's budget arrives a round trip later.
+    var total by remember(scopeLabel, current) {
         mutableStateOf(
             current.find { it.category == null }?.takeIf { it.hasBudget }
                 ?.let { (it.budgetSatang / 100).toString() } ?: ""
         )
     }
-    val perCategory = remember {
+    val perCategory = remember(scopeLabel, current) {
         mutableStateMapOf<String, String>().apply {
             ExpenseCategories.ALL.forEach { c ->
                 put(
@@ -710,27 +1097,79 @@ private fun BudgetSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                // Nine fields plus a wrapped error line outgrow the sheet. Without this the lower
+                // categories and the Save button are pushed off the bottom and cannot be reached —
+                // which looks exactly like the form refusing further input.
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                if (isThai) "ตั้งค่างบประมาณ" else "Set budget",
+                if (isThai) "ตั้งค่างบประมาณ · $scopeLabel" else "Set budget · $scopeLabel",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = ScPrimary
             )
+
+            // Pick whose goal to set without closing the sheet and switching the page first. The
+            // fields re-seed from the chosen child's stored goal as it arrives.
+            if (children.size > 1) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ScopeChip(
+                        label = if (isThai) "ทั้งหมด" else "All",
+                        selected = selectedChildId == null,
+                        onClick = { onPickScope(null) }
+                    )
+                    children.forEach { c ->
+                        ScopeChip(
+                            label = c.name,
+                            selected = selectedChildId == c.id,
+                            onClick = { onPickScope(c.id) }
+                        )
+                    }
+                }
+            }
+            // Naming the scope matters here: the total goal and each child's goal are separate
+            // figures, and the sheet looks identical either way.
             Text(
-                if (isThai)
-                    "กำหนดงบประมาณสำหรับ ${monthLabel(month, true)} เพื่อให้คุณควบคุมค่าใช้จ่ายได้ดีขึ้น"
-                else "Set a budget for ${monthLabel(month, false)} to keep spending in view.",
+                when {
+                    isTotal && isThai ->
+                        "งบรวมของ ${monthLabel(month, true)} ใช้กับมุมมองทั้งหมดเท่านั้น ไม่ใช่ผลรวมของงบลูกแต่ละคน"
+                    isTotal ->
+                        "The overall goal for ${monthLabel(month, false)}. It applies to the all-children view only — it is not the sum of each child's goal."
+                    isThai ->
+                        "งบของ $scopeLabel สำหรับ ${monthLabel(month, true)} รวมกันทุกคนต้องไม่เกินงบรวม"
+                    else ->
+                        "$scopeLabel's goal for ${monthLabel(month, false)}. All children's goals together cannot exceed the overall goal."
+                },
                 fontSize = 14.sp,
                 color = ScOnSurfaceVariant
             )
+            ExpenseErrors.message(error, isThai)?.let { msg ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(ScErrorContainer, RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Filled.Warning, null,
+                        tint = ScError, modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(msg, fontSize = 13.sp, color = ScError, fontWeight = FontWeight.Medium)
+                }
+            }
 
             OutlinedTextField(
                 value = total,
-                onValueChange = { total = it },
+                // Editing is the user answering the complaint, so the complaint goes away.
+                onValueChange = { total = it; onClearError() },
                 label = { Text(if (isThai) "งบประมาณรวม (฿)" else "Total budget (฿)") },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp),
@@ -755,7 +1194,7 @@ private fun BudgetSheet(
                     Spacer(Modifier.width(12.dp))
                     OutlinedTextField(
                         value = perCategory[c.key].orEmpty(),
-                        onValueChange = { perCategory[c.key] = it },
+                        onValueChange = { perCategory[c.key] = it; onClearError() },
                         placeholder = { Text(if (isThai) c.th else c.en) },
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp),

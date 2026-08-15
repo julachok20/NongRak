@@ -274,6 +274,7 @@ class ChildRepository {
         amountSatang: Long,
         category: String,
         spentOn: String,
+        name: String? = null,
         note: String? = null,
         hasWarranty: Boolean = false,
         warrantyExpiresOn: String? = null,
@@ -289,6 +290,7 @@ class ChildRepository {
                 put("amount_satang", JsonPrimitive(amountSatang))
                 put("category", JsonPrimitive(category))
                 put("spent_on", JsonPrimitive(spentOn))
+                put("name", name?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("note", note?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("has_warranty", JsonPrimitive(hasWarranty))
                 put("has_expiration", JsonPrimitive(hasExpiration))
@@ -317,25 +319,49 @@ class ChildRepository {
     }
 
     /** Recorded costs, newest spend first. */
-    suspend fun listExpenses(childId: String, limit: Int = 200): Result<List<ChildExpense>> =
+    /**
+     * A null [childId] is the design's "ทั้งหมด" — every child at once. Dropping the filter is safe
+     * rather than broad: the table's read policy is already `is_child_member(child_id)`, so the
+     * unfiltered select returns exactly the children this user could have asked for one by one.
+     */
+    suspend fun listExpenses(childId: String?, limit: Int = 200): Result<List<ChildExpense>> =
         runCatching {
             supabase.postgrest.from("child_expenses").select {
-                filter { eq("child_id", childId) }
+                if (childId != null) filter { eq("child_id", childId) }
                 order("spent_on", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                 limit(limit.toLong())
             }.decodeList<ChildExpense>()
         }
 
+    /**
+     * Ticks or un-ticks "used". The 30-minute lock lives in a database trigger, so a request that
+     * arrives too late fails here rather than being quietly dropped by the UI.
+     */
+    suspend fun setExpenseUsed(expenseId: String, used: Boolean): Result<Unit> = runCatching {
+        supabase.postgrest.from("child_expenses").update(
+            buildJsonObject { put("already_used", JsonPrimitive(used)) }
+        ) { filter { eq("id", expenseId) } }
+        Unit
+    }
+
+    /** Attaches a receipt to an expense that was saved without one. */
+    suspend fun attachReceipt(expenseId: String, path: String): Result<Unit> = runCatching {
+        supabase.postgrest.from("child_expenses").update(
+            buildJsonObject { put("receipt_url", JsonPrimitive(path)) }
+        ) { filter { eq("id", expenseId) } }
+        Unit
+    }
+
     /** Category totals over `[from, to)`. Dates are plain `yyyy-MM-dd`. */
     suspend fun expenseSummary(
-        childId: String,
+        childId: String?,
         from: String,
         to: String
     ): Result<List<ExpenseCategoryTotal>> = runCatching {
         supabase.postgrest.rpc(
             "child_expense_summary",
             buildJsonObject {
-                put("p_child_id", JsonPrimitive(childId))
+                put("p_child_id", childId?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("p_from", JsonPrimitive(from))
                 put("p_to", JsonPrimitive(to))
             }
@@ -428,12 +454,12 @@ class ChildRepository {
      * Budget beside spend for [month] (any day in it). The last row, with a null category, is the
      * month's overall figure.
      */
-    suspend fun budgetOverview(childId: String, month: String): Result<List<BudgetLine>> =
+    suspend fun budgetOverview(childId: String?, month: String): Result<List<BudgetLine>> =
         runCatching {
             supabase.postgrest.rpc(
                 "child_budget_overview",
                 buildJsonObject {
-                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_child_id", childId?.let { JsonPrimitive(it) } ?: JsonNull)
                     put("p_month", JsonPrimitive(month))
                 }
             ).decodeList<BudgetLine>()
@@ -443,33 +469,55 @@ class ChildRepository {
      * Replaces the whole month's budget in one call. [categories] maps a category key to satang;
      * a category left out of the map is cleared, which is how the sheet deletes one.
      */
+    /**
+     * A null [childId] sets the "ทั้งหมด" goal, which is a separate figure owned by this user —
+     * not the children's goals added together. The database refuses a child goal that would push
+     * the children past that total, and refuses a total below what the children already hold, so
+     * either rejection arrives here as a failed Result rather than a silently clamped number.
+     */
     suspend fun setBudget(
-        childId: String,
+        childId: String?,
         month: String,
         totalSatang: Long,
-        categories: Map<String, Long> = emptyMap()
+        categories: Map<String, Long> = emptyMap(),
+        /**
+         * Only meaningful for the total goal, and only ever true because the user confirmed the
+         * prompt: it clears that month's per-child goals so the new total can stand.
+         */
+        force: Boolean = false
     ): Result<Unit> = runCatching {
-        supabase.postgrest.rpc(
-            "set_child_budget",
-            buildJsonObject {
-                put("p_child_id", JsonPrimitive(childId))
-                put("p_month", JsonPrimitive(month))
-                put("p_total_satang", JsonPrimitive(totalSatang))
-                put("p_categories", buildJsonObject {
-                    categories.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
-                })
-            }
-        )
+        val cats = buildJsonObject { categories.forEach { (k, v) -> put(k, JsonPrimitive(v)) } }
+        if (childId == null) {
+            supabase.postgrest.rpc(
+                "set_total_budget",
+                buildJsonObject {
+                    put("p_month", JsonPrimitive(month))
+                    put("p_total_satang", JsonPrimitive(totalSatang))
+                    put("p_categories", cats)
+                    put("p_force", JsonPrimitive(force))
+                }
+            )
+        } else {
+            supabase.postgrest.rpc(
+                "set_child_budget",
+                buildJsonObject {
+                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_month", JsonPrimitive(month))
+                    put("p_total_satang", JsonPrimitive(totalSatang))
+                    put("p_categories", cats)
+                }
+            )
+        }
         Unit
     }
 
     /** Monthly totals for the trend chart, oldest first. Empty months come back as zero. */
-    suspend fun expenseTrend(childId: String, months: Int = 3): Result<List<ExpenseTrendPoint>> =
+    suspend fun expenseTrend(childId: String?, months: Int = 3): Result<List<ExpenseTrendPoint>> =
         runCatching {
             supabase.postgrest.rpc(
                 "child_expense_trend",
                 buildJsonObject {
-                    put("p_child_id", JsonPrimitive(childId))
+                    put("p_child_id", childId?.let { JsonPrimitive(it) } ?: JsonNull)
                     put("p_months", JsonPrimitive(months))
                 }
             ).decodeList<ExpenseTrendPoint>()

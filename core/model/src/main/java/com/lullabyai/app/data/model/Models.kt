@@ -274,9 +274,13 @@ data class ChildAccessMember(
 @Serializable
 data class ChildExpense(
     val id: String = "",
+    /** Which child this belongs to — needed once "ทั้งหมด" mixes several children into one list. */
+    @SerialName("child_id") val childId: String? = null,
     @SerialName("amount_satang") val amountSatang: Long = 0,
     val category: String = "other",
     @SerialName("spent_on") val spentOn: String = "",
+    /** What was bought — the design's row title ("Vaccine MMR"), distinct from the free-text note. */
+    val name: String? = null,
     val note: String? = null,
     /**
      * The design's three switches. They are independent on purpose: something can be under
@@ -288,6 +292,12 @@ data class ChildExpense(
     @SerialName("has_expiration") val hasExpiration: Boolean = false,
     @SerialName("expires_on") val expiresOn: String? = null,
     @SerialName("already_used") val alreadyUsed: Boolean = false,
+    /**
+     * When "used" was ticked. Stamped by the database, never by the client, because it starts the
+     * 30-minute edit window after which the row is frozen — a clock the editor could set would be
+     * no lock at all. Null whenever [alreadyUsed] is false.
+     */
+    @SerialName("used_at") val usedAt: String? = null,
     @SerialName("usage_note") val usageNote: String? = null,
     @SerialName("receipt_url") val receiptUrl: String? = null,
     @SerialName("created_at") val createdAt: String? = null

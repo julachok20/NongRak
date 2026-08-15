@@ -23,9 +23,31 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
+/**
+ * "Your children's goals add up to more than this total — clear them?" Carries both figures so the
+ * dialog can show the comparison, and the pending input so confirming re-sends exactly what was
+ * typed rather than whatever the fields hold by then.
+ */
+data class OverTotalPrompt(
+    val attemptedSatang: Long,
+    val allocatedSatang: Long,
+    val totalText: String,
+    val categoryTexts: Map<String, String>
+)
+
 data class ExpenseUiState(
+    /** The child selected app-wide; the fallback scope and the target for new expenses. */
     val childId: String? = null,
     val childName: String = "",
+    /** Everyone in the switcher strip. */
+    val children: List<com.lullabyai.app.data.model.Child> = emptyList(),
+    /**
+     * Which child the screen reports on: a child id, or null for "ทั้งหมด" — all children at once,
+     * with their budgets summed.
+     */
+    val scopeChildId: String? = null,
+    /** False while showing "ทั้งหมด". */
+    val singleChild: Boolean = true,
     val expenses: List<ChildExpense> = emptyList(),
     val summary: List<ExpenseCategoryTotal> = emptyList(),
     /** Warranties still live but running out — surfaced above the list, not buried in it. */
@@ -37,6 +59,8 @@ data class ExpenseUiState(
     val month: LocalDate = LocalDate.now().withDayOfMonth(1),
     val categoryFilter: String? = null,
     val query: String = "",
+    /** Set when a new total goal would strand the children's goals; drives the confirm dialog. */
+    val overTotalPrompt: OverTotalPrompt? = null,
     val loading: Boolean = false,
     val saving: Boolean = false,
     val savedOk: Boolean = false,
@@ -81,6 +105,12 @@ class ExpenseViewModel(
     private val _uiState = MutableStateFlow(ExpenseUiState())
     val uiState: StateFlow<ExpenseUiState> = _uiState.asStateFlow()
 
+    /** Preselects the child a cost is being recorded against, arriving as a navigation argument. */
+    fun preselectChild(childId: String?) {
+        if (childId.isNullOrBlank()) return
+        _uiState.update { it.copy(scopeChildId = childId, singleChild = true) }
+    }
+
     fun load(childId: String? = null) {
         viewModelScope.launch {
             val id = childId ?: ChildSelection.id.value
@@ -90,25 +120,44 @@ class ExpenseViewModel(
                     return@launch
                 }
             val name = childRepo.getSelectedChild().getOrNull()?.name ?: ""
-            _uiState.update { it.copy(loading = true, error = null, childId = id, childName = name) }
-            refresh(id)
+            val kids = childRepo.getChildren().getOrDefault(emptyList())
+            _uiState.update {
+                it.copy(
+                    loading = true, error = null, childId = id, childName = name, children = kids,
+                    // Land on the selected child; "ทั้งหมด" is something you choose.
+                    scopeChildId = if (it.singleChild) it.scopeChildId ?: id else null
+                )
+            }
+            refresh()
         }
     }
 
-    private suspend fun refresh(childId: String) {
-        val month = _uiState.value.month
-        val expenses = childRepo.listExpenses(childId).getOrElse { e ->
+    /** Switches the strip between one child and "ทั้งหมด" (null). */
+    fun setScope(childId: String?) {
+        _uiState.update { it.copy(scopeChildId = childId, singleChild = childId != null) }
+        viewModelScope.launch { refresh() }
+    }
+
+    private suspend fun refresh() {
+        val s = _uiState.value
+        val month = s.month
+        // null here means every child — the repository and RPCs both read it that way.
+        val scope = if (s.singleChild) s.scopeChildId ?: s.childId else null
+        val expenses = childRepo.listExpenses(scope).getOrElse { e ->
             _uiState.update { it.copy(loading = false, error = e.message) }
             return
         }
         val summary = childRepo.expenseSummary(
-            childId,
+            scope,
             month.toString(),
             month.plusMonths(1).toString()
         ).getOrDefault(emptyList())
-        val warranties = childRepo.expiringWarranties(childId).getOrDefault(emptyList())
-        val budget = childRepo.budgetOverview(childId, month.toString()).getOrDefault(emptyList())
-        val trend = childRepo.expenseTrend(childId).getOrDefault(emptyList())
+        // Expiring warranties stay per-child: the banner names one thing to act on, and it needs
+        // a child to act on it for.
+        val warranties = (scope ?: s.childId)
+            ?.let { childRepo.expiringWarranties(it).getOrDefault(emptyList()) } ?: emptyList()
+        val budget = childRepo.budgetOverview(scope, month.toString()).getOrDefault(emptyList())
+        val trend = childRepo.expenseTrend(scope).getOrDefault(emptyList())
         _uiState.update {
             it.copy(
                 loading = false,
@@ -132,30 +181,52 @@ class ExpenseViewModel(
     fun saveBudget(
         totalText: String,
         categoryTexts: Map<String, String> = emptyMap(),
+        /** True only after the user confirmed clearing the children's goals. */
+        force: Boolean = false,
         onDone: () -> Unit = {}
     ) {
-        val childId = _uiState.value.childId ?: return
-        val month = _uiState.value.month
+        val s = _uiState.value
+        val month = s.month
+        // Which goal is being edited follows the strip: a child's own, or the ทั้งหมด total. They
+        // are separate figures — setting one never rewrites the other.
+        val scope = if (s.singleChild) s.scopeChildId ?: s.childId else null
+        if (s.singleChild && scope == null) return
         val total = parseSatang(totalText) ?: 0
         val categories = categoryTexts
             .mapNotNull { (key, text) -> parseSatang(text)?.let { key to it } }
             .toMap()
         viewModelScope.launch {
             _uiState.update { it.copy(saving = true, error = null) }
-            childRepo.setBudget(childId, month.toString(), total, categories)
+            childRepo.setBudget(scope, month.toString(), total, categories, force)
                 .onSuccess {
-                    _uiState.update { it.copy(saving = false) }
-                    refresh(childId)
+                    _uiState.update { it.copy(saving = false, overTotalPrompt = null) }
+                    refresh()
                     onDone()
                 }
-                .onFailure { e -> _uiState.update { it.copy(saving = false, error = e.message) } }
+                .onFailure { e ->
+                    // A total below the children's goals is a question, not a dead end: offer to
+                    // clear them rather than making the user go and lower each one by hand.
+                    val prompt = ExpenseErrors.parseOverTotal(e.message)
+                    _uiState.update {
+                        if (prompt != null) it.copy(
+                            saving = false,
+                            error = null,
+                            overTotalPrompt = OverTotalPrompt(
+                                attemptedSatang = prompt.first,
+                                allocatedSatang = prompt.second,
+                                totalText = totalText,
+                                categoryTexts = categoryTexts
+                            )
+                        ) else it.copy(saving = false, error = e.message)
+                    }
+                }
         }
     }
 
     fun setMonth(first: LocalDate) {
         _uiState.update { it.copy(month = first.withDayOfMonth(1)) }
         val id = _uiState.value.childId ?: return
-        viewModelScope.launch { refresh(id) }
+        viewModelScope.launch { refresh() }
     }
 
     fun setCategoryFilter(category: String?) = _uiState.update {
@@ -170,6 +241,7 @@ class ExpenseViewModel(
         amountText: String,
         category: String,
         spentOn: LocalDate,
+        name: String = "",
         note: String,
         hasWarranty: Boolean = false,
         warrantyExpiresOn: LocalDate? = null,
@@ -180,9 +252,19 @@ class ExpenseViewModel(
         /** Raw picture bytes; uploaded first so the row never points at a missing object. */
         receipt: ByteArray? = null,
         receiptExt: String = "jpg",
+        /**
+         * Which child this cost belongs to. Defaults to the scoped child rather than the one
+         * selected app-wide, so a cost booked while looking at another child's record lands on
+         * that child — the whole point of the switcher.
+         */
+        targetChildId: String? = null,
         onDone: () -> Unit = {}
     ) {
-        val childId = _uiState.value.childId ?: return
+        val s0 = _uiState.value
+        val childId = targetChildId
+            ?: s0.scopeChildId?.takeIf { s0.singleChild }
+            ?: s0.childId
+            ?: return
         val satang = parseSatang(amountText)
         if (satang == null || satang <= 0) {
             _uiState.update { it.copy(error = "invalid_amount") }
@@ -203,6 +285,7 @@ class ExpenseViewModel(
                 amountSatang = satang,
                 category = category,
                 spentOn = spentOn.toString(),
+                name = name,
                 note = note,
                 hasWarranty = hasWarranty,
                 warrantyExpiresOn = warrantyExpiresOn?.toString(),
@@ -213,7 +296,7 @@ class ExpenseViewModel(
                 receiptUrl = receiptPath
             ).onSuccess {
                 _uiState.update { it.copy(saving = false, savedOk = true) }
-                refresh(childId)
+                refresh()
                 onDone()
             }.onFailure { e ->
                 _uiState.update { it.copy(saving = false, error = e.message) }
@@ -222,6 +305,45 @@ class ExpenseViewModel(
     }
 
     fun clearSaved() = _uiState.update { it.copy(savedOk = false, error = null) }
+
+    /** Confirms the dialog: re-sends exactly what was typed, this time clearing the child goals. */
+    fun confirmOverTotal(onDone: () -> Unit = {}) {
+        val p = _uiState.value.overTotalPrompt ?: return
+        saveBudget(p.totalText, p.categoryTexts, force = true, onDone = onDone)
+    }
+
+    fun dismissOverTotal() = _uiState.update { it.copy(overTotalPrompt = null) }
+
+    /**
+     * Ticks or un-ticks "used". The database refuses the change once the row has been frozen for
+     * 30 minutes, so a failure here is reported rather than swallowed — the checkbox must not show
+     * a state the record does not actually hold.
+     */
+    fun toggleUsed(expense: ChildExpense) {
+        viewModelScope.launch {
+            childRepo.setExpenseUsed(expense.id, !expense.alreadyUsed)
+                .onSuccess { refresh() }
+                .onFailure { e -> _uiState.update { it.copy(error = e.message ?: "locked") } }
+        }
+    }
+
+    /** Uploads a receipt for an expense saved without one, then points the row at it. */
+    fun attachReceipt(expense: ChildExpense, bytes: ByteArray, ext: String = "jpg") {
+        val childId = expense.childId ?: _uiState.value.childId ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(saving = true, error = null) }
+            val path = childRepo.uploadReceipt(childId, bytes, ext).getOrElse { e ->
+                _uiState.update { it.copy(saving = false, error = e.message) }
+                return@launch
+            }
+            childRepo.attachReceipt(expense.id, path)
+                .onSuccess { _uiState.update { it.copy(saving = false) }; refresh() }
+                .onFailure { e -> _uiState.update { it.copy(saving = false, error = e.message) } }
+        }
+    }
+
+    /** Resolves the private-bucket path into a URL the viewer can actually load. */
+    suspend fun receiptUrl(path: String?): String? = childRepo.signedReceiptUrl(path)
 
     companion object {
         /**
