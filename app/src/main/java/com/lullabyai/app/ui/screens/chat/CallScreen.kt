@@ -69,6 +69,13 @@ private enum class CallState { LISTENING, THINKING, SPEAKING, IDLE }
 @Composable
 fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isThai: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
+
+    // The same companion the parent is chatting with answers the call. Read from the one place the
+    // choice lives, so switching in chat is felt here without anything being passed along.
+    val callMascotKey by remember {
+        com.lullabyai.app.data.settings.SettingsManager(context).selectedMascot
+    }.collectAsState(initial = null)
+    val callMascot = MascotId.fromKey(callMascotKey)
     val lifecycleOwner = LocalLifecycleOwner.current
     val chatState by chatViewModel.uiState.collectAsState()
     val childState by childViewModel.uiState.collectAsState()
@@ -304,7 +311,13 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                             .background(Color.White)
                             .border(2.dp, Color.White, CircleShape)
                     ) {
-                        AiAvatarView(isSpeaking = tts.isSpeaking, modifier = Modifier.fillMaxSize())
+                        com.lullabyai.app.ui.mascot.Mascot(
+                            art = callMascot.rigArt(),
+                            mood = if (tts.isSpeaking) com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
+                            else com.lullabyai.app.ui.mascot.MascotMood.IDLE,
+                            speaking = tts.isSpeaking,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                 }
             }
@@ -332,7 +345,13 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 contentAlignment = Alignment.Center
             ) {
                 if (!videoEnabled) {
-                    AiAvatarView(isSpeaking = tts.isSpeaking, modifier = Modifier.size(180.dp))
+                    com.lullabyai.app.ui.mascot.Mascot(
+                        art = callMascot.rigArt(),
+                        mood = if (tts.isSpeaking) com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
+                        else com.lullabyai.app.ui.mascot.MascotMood.IDLE,
+                        speaking = tts.isSpeaking,
+                        modifier = Modifier.size(180.dp)
+                    )
                 } else if (callState == CallState.SPEAKING || callState == CallState.THINKING) {
                     Text(
                         if (isThai) "แตะกลางจอเพื่อขัดจังหวะและพูด" else "Tap center to interrupt and speak",

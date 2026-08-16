@@ -175,10 +175,14 @@ class ChatViewModel : ViewModel() {
      * Failure is swallowed on purpose: the meal is the thing that mattered and it is already
      * saved. A bond that could fail a care record would be a toy breaking a tool.
      */
-    private suspend fun feedCompanion() {
+    private suspend fun feedCompanion(
+        xp: Int = 10,
+        /** Talking builds the bond quietly; only a meal is worth interrupting the screen for. */
+        announce: Boolean = true
+    ) {
         val mascot = activeMascot ?: return
-        com.lullabyai.app.data.repository.MascotBondRepository().feed(mascot)
-            .onSuccess { if (it.fed) _uiState.value = _uiState.value.copy(bondFeed = it) }
+        com.lullabyai.app.data.repository.MascotBondRepository().feed(mascot, xp)
+            .onSuccess { if (it.fed && announce) _uiState.value = _uiState.value.copy(bondFeed = it) }
     }
 
     fun sendMessage(content: String, child: Child?, imageBytes: ByteArray? = null, imageUri: String? = null, imageMime: String? = null, persona: String? = null) {
@@ -217,6 +221,9 @@ class ChatViewModel : ViewModel() {
                     ) {
                         confirmAgentAction(aiMsg.id, childId)
                     }
+                    // Time spent talking is time spent together. The RPC's cooldown paces this, so
+                    // a long conversation builds the bond steadily rather than per message.
+                    feedCompanion(xp = 4, announce = false)
                     // Refresh session list (title/updated order may change)
                     repo.getSessions().onSuccess { _uiState.value = _uiState.value.copy(sessions = it) }
                 }

@@ -184,5 +184,7 @@ fun CompanionEmotion.toMood(isSpeaking: Boolean): com.lullabyai.app.ui.mascot.Ma
     this == CompanionEmotion.CONFUSED -> com.lullabyai.app.ui.mascot.MascotMood.THINKING
     this == CompanionEmotion.LEARNING -> com.lullabyai.app.ui.mascot.MascotMood.THINKING
     this == CompanionEmotion.RESTING -> com.lullabyai.app.ui.mascot.MascotMood.SLEEPY
-    else -> com.lullabyai.app.ui.mascot.MascotMood.IDLE   // GREETING and CARING simply breathe
+    // A greeting should actually greet: the wave plays once and settles into breathing by itself.
+    this == CompanionEmotion.GREETING -> com.lullabyai.app.ui.mascot.MascotMood.GREET
+    else -> com.lullabyai.app.ui.mascot.MascotMood.IDLE   // CARING simply breathes
 }

@@ -660,21 +660,32 @@ private fun CompanionTopBar(
                     )
                     Text("คุยกับเด็ก", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = StitchInkSoft, maxLines = 1)
                 }
-                Text(
-                    title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = StitchInk,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                    // The companion's name is the switcher. Tapping who you are talking to in
-                    // order to talk to someone else needs no separate button or explanation.
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onSwitchMascot)
-                        .padding(vertical = 4.dp)
-                )
+                // The companion's name is the switcher, and the caret is what says so — a
+                // tappable title with no affordance is a feature nobody finds.
+                Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onSwitchMascot)
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            title,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StitchInk,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center
+                        )
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = "เปลี่ยนเพื่อนคู่ใจ",
+                            tint = StitchInkSoft,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 IconButton(onClick = onToggleVoice) {
                     Icon(
                         if (voiceEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
@@ -892,9 +903,12 @@ private fun MascotAvatar(mascot: MascotId) {
             art = mascot.rigArt(),
             mood = com.lullabyai.app.ui.mascot.MascotMood.IDLE,
             modifier = Modifier.fillMaxSize().graphicsLayer {
-                scaleX = 2.5f
-                scaleY = 2.5f
-                translationY = 3.dp.toPx()
+                // Zoomed onto the head. At 32dp a full body is an unreadable smudge, so the circle
+                // frames the face: 3.4x puts the head across the whole circle, and the nudge down
+                // compensates for the face sitting slightly above the artwork's centre.
+                scaleX = 3.4f
+                scaleY = 3.4f
+                translationY = 5.dp.toPx()
             }
         )
     }

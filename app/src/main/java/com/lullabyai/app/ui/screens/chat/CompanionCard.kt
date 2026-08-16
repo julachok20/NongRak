@@ -272,11 +272,14 @@ fun CompanionStrip(
                 .clip(RoundedCornerShape(18.dp))
                 .background(Brush.linearGradient(listOf(StitchPrimaryLight, Color.White)))
         ) {
-            if (mascot.supportsPaintedFace() && isSpeaking) {
-                AiAvatarView(isSpeaking = true, modifier = Modifier.fillMaxSize())
-            } else {
-                PetMascot(mascot = mascot, emotion = emotion, modifier = Modifier.fillMaxSize())
-            }
+            // The minimised bar is the same living companion as the big card, not a thumbnail of
+            // it — same rig, same moods, so greeting still reads as a greeting down here.
+            com.lullabyai.app.ui.mascot.Mascot(
+                art = mascot.rigArt(),
+                mood = emotion.toMood(isSpeaking),
+                speaking = isSpeaking,
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {

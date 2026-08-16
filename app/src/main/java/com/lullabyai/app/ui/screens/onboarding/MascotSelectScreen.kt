@@ -55,7 +55,12 @@ fun MascotSelectScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            // The app draws edge to edge, so without this the header sits under the phone's clock
+            // and battery. Reached from chat this is the first thing seen, not a mid-flow step.
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
