@@ -6,7 +6,10 @@ import com.lullabyai.app.data.model.ChildActivityEntry
 import com.lullabyai.app.data.model.CareLog
 import com.lullabyai.app.data.model.CareConversation
 import com.lullabyai.app.data.model.CareMessage
+import com.lullabyai.app.data.model.ActivityCategoryCount
 import com.lullabyai.app.data.model.BudgetLine
+import com.lullabyai.app.data.model.CachedRecommendations
+import com.lullabyai.app.data.model.ChildActivity
 import com.lullabyai.app.data.model.ChildExpense
 import com.lullabyai.app.data.model.ExpenseCategoryTotal
 import com.lullabyai.app.data.model.ExpenseTrendPoint
@@ -542,6 +545,129 @@ class ChildRepository {
         }.getOrNull()
     }
 
+    /* ----------------------------------------------------------------------------------------
+     * ตารางนัดหมายและวันสำคัญ — the activity schedule.
+     * -------------------------------------------------------------------------------------- */
+
+    /**
+     * Everything inside the window currently on screen. The caller passes the window rather than a
+     * "day/week/month" mode, so adding another view needs no change here or on the server.
+     * [from] and [to] are ISO instants; [to] is exclusive.
+     */
+    suspend fun listActivities(
+        childId: String,
+        from: String,
+        to: String
+    ): Result<List<ChildActivity>> = runCatching {
+        supabase.postgrest.rpc(
+            "list_child_activities",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_from", JsonPrimitive(from))
+                put("p_to", JsonPrimitive(to))
+            }
+        ).decodeList<ChildActivity>()
+    }
+
+    /** Counts per category for the "สรุปภาพรวม 7 วันข้างหน้า" panel. */
+    suspend fun activitySummary(
+        childId: String,
+        days: Int = 7
+    ): Result<List<ActivityCategoryCount>> = runCatching {
+        supabase.postgrest.rpc(
+            "child_activity_summary",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_days", JsonPrimitive(days))
+            }
+        ).decodeList<ActivityCategoryCount>()
+    }
+
+    suspend fun addActivity(
+        childId: String,
+        title: String,
+        category: String,
+        startsAt: String,
+        endsAt: String? = null,
+        allDay: Boolean = false,
+        locationName: String? = null,
+        placeId: String? = null,
+        lat: Double? = null,
+        lng: Double? = null,
+        notes: String? = null,
+        estimatedCostSatang: Long? = null
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.from("child_activities").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(childId))
+                put("title", JsonPrimitive(title))
+                put("category", JsonPrimitive(category))
+                put("starts_at", JsonPrimitive(startsAt))
+                put("ends_at", endsAt?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("all_day", JsonPrimitive(allDay))
+                put("location_name", locationName?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("place_id", placeId?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("lat", lat?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("lng", lng?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("notes", notes?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                put(
+                    "estimated_cost_satang",
+                    estimatedCostSatang?.let { JsonPrimitive(it) } ?: JsonNull
+                )
+            }
+        )
+        Unit
+    }
+
+    /**
+     * The cached suggestion batch and whether it is still inside the refresh window.
+     *
+     * Freshness is decided by Postgres rather than by comparing timestamps on the device: the cache
+     * is shared between everyone caring for the child, and a phone with a wrong clock would
+     * otherwise regenerate constantly or never.
+     */
+    suspend fun getRecommendations(
+        childId: String,
+        maxAgeDays: Int = 3
+    ): Result<CachedRecommendations?> = runCatching {
+        supabase.postgrest.rpc(
+            "get_activity_recommendations",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_max_age_days", JsonPrimitive(maxAgeDays))
+            }
+        ).decodeList<CachedRecommendations>().firstOrNull()
+    }
+
+    suspend fun saveRecommendations(
+        childId: String,
+        items: List<com.lullabyai.app.data.remote.ActivityRecommendation>,
+        homeOnly: Boolean
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "save_activity_recommendations",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put(
+                    "p_items",
+                    kotlinx.serialization.json.Json.encodeToJsonElement(
+                        kotlinx.serialization.builtins.ListSerializer(
+                            com.lullabyai.app.data.remote.ActivityRecommendation.serializer()
+                        ),
+                        items
+                    )
+                )
+                put("p_home_only", JsonPrimitive(homeOnly))
+            }
+        )
+        Unit
+    }
+
+    suspend fun deleteActivity(activityId: String): Result<Unit> = runCatching {
+        supabase.postgrest.from("child_activities").delete { filter { eq("id", activityId) } }
+        Unit
+    }
+
     /** Every person I can talk to about this child, newest conversation first. */
     suspend fun careConversations(childId: String): Result<List<CareConversation>> = runCatching {
         supabase.postgrest.rpc(
@@ -850,6 +976,17 @@ class ChildRepository {
             }
         )
         Unit
+    }
+
+    /**
+     * The roles a child's family offers, readable before you are a member — the "เลือกบทบาทของคุณ"
+     * step of a join request. Names only; [listChildRoles] stays the member-only full view.
+     */
+    suspend fun listRolesForRequest(childId: String): Result<List<ChildRole>> = runCatching {
+        supabase.postgrest.rpc(
+            "list_child_roles_for_request",
+            buildJsonObject { put("p_child_id", JsonPrimitive(childId)) }
+        ).decodeList<ChildRole>()
     }
 
     suspend fun deleteChildRole(roleId: String): Result<Unit> = runCatching {

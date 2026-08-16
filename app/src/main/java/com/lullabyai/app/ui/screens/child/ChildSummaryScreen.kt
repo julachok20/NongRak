@@ -520,11 +520,10 @@ fun ChildSummaryScreen(
                             if (s.isThai) "บันทึกด่วน" else "Quick log", Screen.QuickLogHub.route),
                         ChildTile(Icons.Filled.Payments,
                             if (s.isThai) "ค่าใช้จ่าย" else "Expenses", Screen.Expenses.route),
-                        // The design's sixth tile is "ปฏิทิน". There is no calendar screen in this
-                        // app, so it points at the appointment record and is named for what it
-                        // actually opens — a tile that lies is worse than one that is plain.
+                        // The design's sixth tile: now a real calendar, so it carries the design's
+                        // own name again rather than the appointment record it stood in for.
                         ChildTile(Icons.Filled.CalendarMonth,
-                            if (s.isThai) "นัดหมาย" else "Appointments", Screen.RecordAppointment.route)
+                            if (s.isThai) "ปฏิทิน" else "Calendar", Screen.ActivitySchedule.route)
                     ),
                     onNavigate = { navController.navigate(it) }
                 )

@@ -204,16 +204,14 @@ sealed class Screen(val route: String) {
     object ActivityHistory : Screen("activity_history")
     object CaregiverUpdate : Screen("caregiver_update")
     object Expenses : Screen("expenses")
-    /**
-     * `childId` carries which child the expense is being recorded against, so the Cost Record can
-     * book a cost to a child other than the one selected app-wide. Blank falls back to the
-     * selected child.
-     */
-    object AddExpense : Screen("add_expense?childId={childId}") {
-        fun route(childId: String? = null) = "add_expense?childId=" + (childId ?: "")
-    }
+    /** Always records against the child whose Cost Record was opened — no child argument. */
+    object AddExpense : Screen("add_expense")
     /** The full searchable list behind the summary's "ดูทั้งหมด". */
     object ExpenseHistory : Screen("expense_history")
+
+    /** ตารางนัดหมายและวันสำคัญ — the Day/Week/Month calendar, reached from Child info's ปฏิทิน tile. */
+    object ActivitySchedule : Screen("activity_schedule")
+    object AddActivity : Screen("add_activity")
     object CareCircle : Screen("care_circle")
     /**
      * `quote` is optional context carried in from an activity entry, so a reply arrives saying

@@ -35,6 +35,10 @@ android {
         // hCaptcha SITE key only (public by design) — the secret key lives solely in Supabase's
         // Auth "Bot and Abuse Protection" setting, never in the app.
         buildConfigField("String", "HCAPTCHA_SITE_KEY", "\"${localProps["HCAPTCHA_SITE_KEY"] ?: ""}\"")
+        // Google Places (New), for nearby place suggestions on the activity schedule. Defaults to
+        // empty so a checkout without the key still builds — the feature reports itself as
+        // unconfigured rather than failing the build.
+        buildConfigField("String", "MAPS_API_KEY", "\"${localProps["MAPS_API_KEY"] ?: ""}\"")
 
         manifestPlaceholders["supabaseRedirectScheme"] = "lullabyai"
     }

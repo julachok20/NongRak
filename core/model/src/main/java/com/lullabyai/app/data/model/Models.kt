@@ -332,6 +332,58 @@ data class BudgetLine(
     val remainingSatang: Long get() = budgetSatang - spentSatang
 }
 
+/**
+ * One entry on ตารางนัดหมายและวันสำคัญ — an appointment, a vaccine, a milestone or a family outing.
+ *
+ * All four share this shape because the calendar treats them as one stream: the same day cell, the
+ * same timeline, the same search. [category] is only what colours the dot.
+ */
+@Serializable
+data class ChildActivity(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    val title: String = "",
+    val category: String = "family",
+    @SerialName("starts_at") val startsAt: String = "",
+    @SerialName("ends_at") val endsAt: String? = null,
+    /** Milestones sit on a date, not a time — "ตลอดวัน (16 พ.ย.)". */
+    @SerialName("all_day") val allDay: Boolean = false,
+    @SerialName("location_name") val locationName: String? = null,
+    /** Present when this came from a Places suggestion, so the venue stays identifiable. */
+    @SerialName("place_id") val placeId: String? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    val notes: String? = null,
+    @SerialName("estimated_cost_satang") val estimatedCostSatang: Long? = null,
+    /** Set once the outing is actually paid for, tying the plan to the real spend. */
+    @SerialName("expense_id") val expenseId: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+) {
+    val hasPlace: Boolean get() = !placeId.isNullOrBlank() || !locationName.isNullOrBlank()
+}
+
+/**
+ * The stored suggestion batch. [isFresh] is computed by Postgres against the refresh window, so a
+ * device with a wrong clock cannot decide to regenerate on every visit — or never.
+ *
+ * [items] stays raw JSON here: `core:model` has no reason to know the shape of a recommendation,
+ * which belongs to the layer that produces it.
+ */
+@Serializable
+data class CachedRecommendations(
+    val items: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName("home_only") val homeOnly: Boolean = false,
+    @SerialName("generated_at") val generatedAt: String? = null,
+    @SerialName("is_fresh") val isFresh: Boolean = false
+)
+
+/** One row of "สรุปภาพรวม 7 วันข้างหน้า". Categories with nothing scheduled still appear, as zero. */
+@Serializable
+data class ActivityCategoryCount(
+    val category: String = "",
+    val entries: Int = 0
+)
+
 /** One bar of the trend chart. [month] is the first day of that month, `yyyy-MM-dd`. */
 @Serializable
 data class ExpenseTrendPoint(
