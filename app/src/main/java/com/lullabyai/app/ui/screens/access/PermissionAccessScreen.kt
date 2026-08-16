@@ -50,7 +50,9 @@ fun PermissionAccessScreen(
     LaunchedEffect(Unit) { viewModel.load() }
 
     val iCanManage = AccessRoleLabels.isFullAccess(state.myRole)
+    val isOwner = state.isOwner
     var confirmLeave by remember { mutableStateOf(false) }
+    var showTransferDialog by remember { mutableStateOf(false) }
 
     if (confirmLeave) {
         AlertDialog(
@@ -91,6 +93,22 @@ fun PermissionAccessScreen(
             dismissButton = {
                 TextButton(onClick = { confirmLeave = false }) {
                     Text(if (isThai) "ยกเลิก" else "Cancel")
+                }
+            }
+        )
+    }
+
+    if (showTransferDialog) {
+        TransferOwnershipDialog(
+            childName = state.childName,
+            members = state.members,
+            myUserId = state.myUserId,
+            isThai = isThai,
+            isTransferring = state.transferring,
+            onDismiss = { showTransferDialog = false },
+            onConfirmTransfer = { targetUid ->
+                viewModel.transferOwnership(targetUid) { ok ->
+                    if (ok) showTransferDialog = false
                 }
             }
         )
@@ -179,11 +197,12 @@ fun PermissionAccessScreen(
                     // permission, it says who actually looks after the child.
                     val permissionsLocked = AccessRoleLabels.isFullAccess(m.role)
                     val (badge, isFull, canLog) = AccessRoleLabels.accessLevel(m, isThai)
+                    val canManageThisMember = if (isOwner) m.userId != state.myUserId else (iCanManage && !permissionsLocked)
 
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = iCanManage && !permissionsLocked) {
+                            .clickable(enabled = canManageThisMember) {
                                 navController.navigate(Screen.PermissionSettingsDetail.route(m.userId))
                             },
                         shape = RoundedCornerShape(20.dp),
@@ -254,8 +273,7 @@ fun PermissionAccessScreen(
                                     )
                                 }
                                 Spacer(Modifier.weight(1f))
-                                // Locked roles show no gear: there is nothing behind it for them.
-                                if (!permissionsLocked) {
+                                if (canManageThisMember) {
                                     Icon(
                                         Icons.Filled.Settings,
                                         contentDescription = if (isThai) "ตั้งค่าสิทธิ์" else "Permission settings",
@@ -325,8 +343,17 @@ fun PermissionAccessScreen(
                 onClick = { navController.navigate(Screen.RoleManagement.route) }
             )
 
-            // Distinct from "ประวัติการขอเข้าถึง" inside Add Person: that is the audit trail of who
-            // was granted what, this is the child's care record — what everyone actually logged.
+            if (isOwner) {
+                DashedActionCard(
+                    icon = Icons.Filled.SwapHoriz,
+                    title = if (isThai) "โอนความเป็นเจ้าของ" else "Transfer ownership",
+                    subtitle = if (isThai) "มอบสิทธิ์เจ้าของหลักของเด็กให้กับสมาชิกคนอื่นในครอบครัว"
+                    else "Grant primary child ownership to another family member",
+                    enabled = true,
+                    onClick = { showTransferDialog = true }
+                )
+            }
+
             DashedActionCard(
                 icon = Icons.Filled.Timeline,
                 title = if (isThai) "ประวัติกิจกรรม" else "Activity history",
@@ -442,4 +469,200 @@ private fun DashedActionCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/**
+ * Dialog for transferring child ownership to another existing member.
+ * Co-owners are prioritized and highlighted at the top as recommended candidates.
+ */
+@Composable
+private fun TransferOwnershipDialog(
+    childName: String,
+    members: List<com.lullabyai.app.data.model.ChildAccessMember>,
+    myUserId: String?,
+    isThai: Boolean,
+    isTransferring: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmTransfer: (String) -> Unit
+) {
+    val candidates = members.filter { it.userId != myUserId && it.role != "owner" }
+    val coOwners = candidates.filter { it.role == "co_owner" || it.role == "member" }
+    val others = candidates.filter { it.role != "co_owner" && it.role != "member" }
+    var selectedUserId by remember { mutableStateOf(coOwners.firstOrNull()?.userId ?: others.firstOrNull()?.userId) }
+    var showConfirm by remember { mutableStateOf(false) }
+
+    if (showConfirm && selectedUserId != null) {
+        val target = candidates.find { it.userId == selectedUserId }
+        AlertDialog(
+            onDismissRequest = { if (!isTransferring) showConfirm = false },
+            title = {
+                Text(
+                    if (isThai) "ยืนยันการโอนความเป็นเจ้าของ" else "Confirm Ownership Transfer",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    if (isThai)
+                        "คุณแน่ใจหรือไม่ว่าต้องการโอนสิทธิ์ความเป็นเจ้าของของ \"${childName.ifBlank { "ลูก" }}\" ให้กับ \"${target?.displayName ?: ""}\"?\n\nเมื่อโอนแล้ว คุณจะถูกเปลี่ยนบทบาทเป็น \"ผู้ปกครองร่วม (Co-owner)\" และผู้ใช้ใหม่จะได้รับสิทธิ์เจ้าของหลักเต็มรูปแบบ"
+                    else
+                        "Are you sure you want to transfer ownership of \"${childName.ifBlank { "your child" }}\" to \"${target?.displayName ?: ""}\"?\n\nYou will become a Co-owner and they will receive full primary owner authority."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedUserId?.let { onConfirmTransfer(it) }
+                    },
+                    enabled = !isTransferring
+                ) {
+                    if (isTransferring) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Primary)
+                    } else {
+                        Text(
+                            if (isThai) "ยืนยันโอนสิทธิ์" else "Transfer",
+                            color = Primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirm = false }, enabled = !isTransferring) {
+                    Text(if (isThai) "ยกเลิก" else "Cancel")
+                }
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!isTransferring) onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.SwapHoriz, null, tint = Primary)
+                Text(
+                    if (isThai) "โอนสิทธิ์ความเป็นเจ้าของ" else "Transfer Ownership",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            if (candidates.isEmpty()) {
+                Text(
+                    if (isThai) "ยังไม่มีสมาชิกอื่นในครอบครัว กรุณาเพิ่มผู้ช่วยดูแลหรือผู้ปกครองร่วมก่อนดำเนินการโอนสิทธิ์"
+                    else "There are no other members in the family. Please invite a co-parent or caregiver first."
+                )
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        if (isThai) "เลือกสมาชิกที่คุณต้องการโอนสิทธิ์เจ้าของให้:"
+                        else "Select a member to become the new primary owner:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    if (coOwners.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.Star, null, tint = Primary, modifier = Modifier.size(16.dp))
+                            Text(
+                                if (isThai) "ผู้ปกครองร่วม (แนะนำ)" else "Co-owners (Recommended)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Primary
+                            )
+                        }
+                        coOwners.forEach { m ->
+                            val isSelected = m.userId == selectedUserId
+                            Card(
+                                onClick = { selectedUserId = m.userId },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) Primary.copy(0.12f) else MaterialTheme.colorScheme.surface
+                                ),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, Primary) else null
+                            ) {
+                                Row(
+                                    Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = { selectedUserId = m.userId },
+                                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
+                                    )
+                                    AccessAvatar(m.avatarUrl, m.displayName)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(m.displayName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(AccessRoleLabels.title(m.role, isThai), style = MaterialTheme.typography.labelSmall, color = Primary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (others.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (isThai) "สมาชิกอื่นๆ" else "Other Members",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        others.forEach { m ->
+                            val isSelected = m.userId == selectedUserId
+                            Card(
+                                onClick = { selectedUserId = m.userId },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) Primary.copy(0.12f) else MaterialTheme.colorScheme.surface
+                                ),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, Primary) else null
+                            ) {
+                                Row(
+                                    Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = { selectedUserId = m.userId },
+                                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
+                                    )
+                                    AccessAvatar(m.avatarUrl, m.displayName)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(m.displayName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(AccessRoleLabels.title(m.role, isThai), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (candidates.isNotEmpty()) {
+                TextButton(
+                    onClick = { showConfirm = true },
+                    enabled = selectedUserId != null && !isTransferring
+                ) {
+                    Text(
+                        if (isThai) "ถัดไป" else "Next",
+                        fontWeight = FontWeight.Bold,
+                        color = Primary
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isTransferring) {
+                Text(if (isThai) "ปิด" else "Close")
+            }
+        }
+    )
 }

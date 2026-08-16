@@ -23,6 +23,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 
@@ -107,6 +108,8 @@ data class ChildUiState(
     val isChildOwner: Boolean = false,
     /** Child ids this account may delete (for multi-child switcher). */
     val ownedChildIds: Set<String> = emptySet(),
+    /** Child eligible for ownership reclaim on re-registration/login. */
+    val reclaimableChild: com.lullabyai.app.data.model.ReclaimableChild? = null,
     val error: String? = null
 )
 
@@ -195,6 +198,36 @@ class ChildViewModel : ViewModel() {
                     loadAllData(child.id)
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+            checkReclaimable()
+        }
+    }
+
+    /** Checks if any child has previous owner email matching the signed-in user's email. */
+    fun checkReclaimable() {
+        viewModelScope.launch {
+            val reclaimable = childRepo.checkReclaimableChildren().getOrDefault(emptyList()).firstOrNull()
+            _uiState.update { it.copy(reclaimableChild = reclaimable) }
+        }
+    }
+
+    fun dismissReclaim() {
+        _uiState.update { it.copy(reclaimableChild = null) }
+    }
+
+    /** Reclaims ownership of [childId], demotes interim owner back to old role, and restores caller as owner. */
+    fun reclaimOwnership(childId: String, onComplete: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            childRepo.reclaimChildOwnership(childId)
+                .onSuccess {
+                    _uiState.update { it.copy(reclaimableChild = null) }
+                    loadChild()
+                    onComplete?.invoke(true)
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isLoading = false, error = e.message) }
+                    onComplete?.invoke(false)
+                }
         }
     }
 

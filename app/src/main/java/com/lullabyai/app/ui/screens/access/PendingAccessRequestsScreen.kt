@@ -37,10 +37,14 @@ fun PendingAccessRequestDialog(
     childName: String,
     isThai: Boolean,
     busy: Boolean,
-    onApprove: () -> Unit,
+    onApprove: (String) -> Unit,
     onDeny: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var selectedRole by remember(request.id, request.requestedRole) {
+        mutableStateOf(if (request.requestedRole in AccessRoleLabels.ROLES) request.requestedRole else "co_owner")
+    }
+
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         icon = {
@@ -81,11 +85,6 @@ fun PendingAccessRequestDialog(
                             childName.ifBlank { if (isThai) "ไม่ระบุ" else "Unknown" }
                         )
                         RequestDetailRow(
-                            Icons.Filled.Badge,
-                            if (isThai) "บทบาทที่ขอ" else "Requested role",
-                            AccessRoleLabels.title(request.requestedRole, isThai)
-                        )
-                        RequestDetailRow(
                             Icons.Filled.Login,
                             if (isThai) "ช่องทาง" else "Via",
                             methodLabel(request.method, isThai)
@@ -95,6 +94,32 @@ fun PendingAccessRequestDialog(
                         }
                     }
                 }
+
+                Text(
+                    if (isThai) "กำหนดบทบาทที่จะมอบให้:" else "Assign role to grant:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AccessRoleLabels.ROLES.forEach { r ->
+                        FilterChip(
+                            selected = selectedRole == r,
+                            onClick = { selectedRole = r },
+                            label = { Text(AccessRoleLabels.title(r, isThai), style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+
+                Text(
+                    AccessRoleLabels.subtitle(selectedRole, isThai),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 Text(
                     if (isThai)
                         "หากคุณไม่รู้จักผู้ขอ ให้กด \"ปฏิเสธ\" — การอนุมัติจะให้สิทธิ์เข้าถึงข้อมูลสุขภาพของลูกทันที"
@@ -107,7 +132,7 @@ fun PendingAccessRequestDialog(
         },
         confirmButton = {
             Button(
-                onClick = onApprove,
+                onClick = { onApprove(selectedRole) },
                 enabled = !busy,
                 colors = ButtonDefaults.buttonColors(containerColor = Primary)
             ) {
@@ -149,7 +174,7 @@ fun PendingAccessRequestsScreen(
             childName = state.nameFor(req.childId),
             isThai = isThai,
             busy = state.resolving,
-            onApprove = { viewModel.resolve(req.id, true) },
+            onApprove = { role -> viewModel.resolve(req.id, true, role) },
             onDeny = { viewModel.resolve(req.id, false) },
             onDismiss = { viewModel.dismissPopup() }
         )

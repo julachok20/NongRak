@@ -210,6 +210,10 @@ data class Child(
     val nationality: String? = null,
     val ethnicity: String? = null,
     val religion: String? = null,
+    @SerialName("previous_owner_email") val previousOwnerEmail: String? = null,
+    @SerialName("previous_owner_id") val previousOwnerId: String? = null,
+    @SerialName("transferred_from_role") val transferredFromRole: String? = null,
+    @SerialName("transferred_at") val transferredAt: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
 )
@@ -219,6 +223,16 @@ data class Child(
 data class ChildSyncMatch(
     @SerialName("child_id") val childId: String = "",
     @SerialName("child_name") val childName: String = ""
+)
+
+/** A child previously owned by the user before account deletion/transfer, eligible for ownership reclaim. */
+@Serializable
+data class ReclaimableChild(
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("child_name") val childName: String = "",
+    @SerialName("birth_date") val birthDate: String = "",
+    @SerialName("current_owner_name") val currentOwnerName: String = "",
+    @SerialName("transferred_at") val transferredAt: String? = null
 )
 
 /** A pending/resolved request to sync (co-parent) access to someone else's child. */

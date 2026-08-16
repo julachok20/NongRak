@@ -152,13 +152,21 @@ fun PermissionSettingsDetailScreen(
                 isLoading = state.saving
             )
 
-            TextButton(
-                onClick = { confirmRemove = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.Delete, null, tint = Error)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isThai) "ถอดสิทธิ์ผู้ใช้นี้" else "Remove access", color = Error)
+            val canRemoveThisMember = AccessRoleLabels.canRemove(
+                myRole = state.myRole,
+                targetRole = d.role,
+                isSelf = d.userId == state.myUserId
+            )
+
+            if (canRemoveThisMember) {
+                TextButton(
+                    onClick = { confirmRemove = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.Delete, null, tint = Error)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isThai) "ถอดสิทธิ์ผู้ใช้นี้" else "Remove access", color = Error)
+                }
             }
 
             state.error?.let {
@@ -168,13 +176,14 @@ fun PermissionSettingsDetailScreen(
     }
 
     if (confirmRemove) {
+        val targetName = draft?.displayName ?: ""
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
-            title = { Text(if (isThai) "ถอดสิทธิ์?" else "Remove access?", fontWeight = FontWeight.Bold) },
+            title = { Text(if (isThai) "ถอดสิทธิ์ $targetName?" else "Remove $targetName?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    if (isThai) "ผู้ใช้นี้จะเข้าถึงข้อมูลลูกไม่ได้ทันที"
-                    else "This person will lose access to this child's data immediately"
+                    if (isThai) "ผู้ใช้นี้จะเข้าถึงข้อมูลของ \"${state.childName.ifBlank { "ลูก" }}\" ไม่ได้ทันที"
+                    else "This person will lose access to \"${state.childName.ifBlank { "your child" }}\" immediately"
                 )
             },
             confirmButton = {

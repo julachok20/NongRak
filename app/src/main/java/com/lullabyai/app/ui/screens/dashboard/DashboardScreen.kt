@@ -208,6 +208,42 @@ fun DashboardScreen(
         )
     }
 
+    childState.reclaimableChild?.let { reclaimable ->
+        AlertDialog(
+            onDismissRequest = { childViewModel.dismissReclaim() },
+            icon = { Icon(Icons.Filled.SwapHoriz, null, tint = Primary) },
+            title = {
+                Text(
+                    if (s.isThai) "กู้คืนสิทธิ์ความเป็นเจ้าของ?" else "Reclaim Child Ownership?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (s.isThai)
+                            "ตรวจพบข้อมูลของ \"${reclaimable.childName}\"${if (reclaimable.birthDate.isNotBlank()) " (เกิด ${reclaimable.birthDate})" else ""} ที่คุณเคยเป็นเจ้าของหลักและได้โอนสิทธิ์ไป\n\nต้องการกู้คืนสิทธิ์ความเป็นเจ้าของหลักกลับมาหรือไม่?"
+                        else
+                            "Found \"${reclaimable.childName}\"${if (reclaimable.birthDate.isNotBlank()) " (born ${reclaimable.birthDate})" else ""} that you previously owned.\n\nWould you like to reclaim primary ownership?",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    childViewModel.reclaimOwnership(reclaimable.childId)
+                }) {
+                    Text(if (s.isThai) "กู้คืนสิทธิ์เจ้าของ" else "Reclaim", color = Primary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { childViewModel.dismissReclaim() }) {
+                    Text(if (s.isThai) "ไม่ใช่ตอนนี้" else "Not now")
+                }
+            }
+        )
+    }
+
     // Monthly parent mental-health check-in nudge — only shows if nothing was submitted this
     // calendar month yet (per-parent, not per-child; see MentalHealthCatalog).
     val needsMentalHealthCheckin = remember(authState.mentalHealthHistory) {

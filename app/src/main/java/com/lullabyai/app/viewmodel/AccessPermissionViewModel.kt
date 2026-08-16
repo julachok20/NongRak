@@ -41,10 +41,13 @@ data class AccessPermissionUiState(
     val savedOk: Boolean = false,
     /** Matches for the invite name box. Empty until the query is long enough to be a real search. */
     val candidates: List<InviteCandidate> = emptyList(),
-    val searching: Boolean = false
+    val searching: Boolean = false,
+    val transferring: Boolean = false,
+    val transferredOk: Boolean = false
 ) {
     /** Inviting people is an owner/co-owner action; everyone else sees the list read-only. */
     val canInvite: Boolean get() = AccessRoleLabels.isFullAccess(myRole)
+    val isOwner: Boolean get() = myRole == "owner"
 }
 
 class AccessPermissionViewModel(
@@ -222,6 +225,24 @@ class AccessPermissionViewModel(
                 }
         }
     }
+
+    /** Transfers ownership of the current child to [targetUserId]. */
+    fun transferOwnership(targetUserId: String, onComplete: ((Boolean) -> Unit)? = null) {
+        val childId = _uiState.value.childId ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(transferring = true, error = null, transferredOk = false) }
+            childRepo.transferChildOwnership(childId, targetUserId)
+                .onSuccess {
+                    _uiState.update { it.copy(transferring = false, transferredOk = true) }
+                    load(childId, _uiState.value.childName)
+                    onComplete?.invoke(true)
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(transferring = false, error = e.message) }
+                    onComplete?.invoke(false)
+                }
+        }
+    }
 }
 
 /** Shared bilingual labels for access roles (Stitch). */
@@ -245,6 +266,20 @@ object AccessRoleLabels {
      * co-owner's rights only creates a way to lock the family out of its own child record.
      */
     fun isFullAccess(role: String?): Boolean = role == "owner" || role == "co_owner" || role == "member"
+
+    /**
+     * Determines whether [myRole] can remove [targetRole].
+     * - Owner can remove anyone except self (must transfer or delete child).
+     * - Co-owner can remove non-co-owner roles (relatives, nannies, etc.), but NOT other co-owners or the owner.
+     */
+    fun canRemove(myRole: String?, targetRole: String?, isSelf: Boolean): Boolean {
+        if (isSelf) return myRole != "owner"
+        if (myRole == "owner") return targetRole != "owner"
+        if (myRole == "co_owner" || myRole == "member") {
+            return targetRole != "owner" && targetRole != "co_owner" && targetRole != "member"
+        }
+        return false
+    }
 
     fun title(role: String, isThai: Boolean): String = when (role) {
         "owner" -> if (isThai) "เจ้าของ" else "Owner"

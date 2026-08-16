@@ -28,6 +28,7 @@ import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -42,8 +43,11 @@ fun SettingsScreen(
     val authState by authViewModel.uiState.collectAsState()
     val context = LocalContext.current
     val isThai = settings.language == AppLanguage.TH
+    val scope = rememberCoroutineScope()
+    val childRepo = remember { com.lullabyai.app.data.repository.ChildRepository() }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showOwnerBlockDialog by remember { mutableStateOf(false) }
     var deleteAck by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
 
@@ -179,7 +183,17 @@ fun SettingsScreen(
                         Icons.Filled.DeleteForever,
                         if (isThai) "ลบบัญชีถาวร" else "Delete account",
                         tint = Error,
-                        onClick = { deleteAck = false; showDeleteDialog = true }
+                        onClick = {
+                            scope.launch {
+                                val owned = childRepo.getOwnedChildren().getOrDefault(emptyList())
+                                if (owned.isNotEmpty()) {
+                                    showOwnerBlockDialog = true
+                                } else {
+                                    deleteAck = false
+                                    showDeleteDialog = true
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -211,6 +225,46 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
             }
         }
+    }
+
+    if (showOwnerBlockDialog) {
+        AlertDialog(
+            onDismissRequest = { showOwnerBlockDialog = false },
+            icon = { Icon(Icons.Filled.WarningAmber, null, tint = MaterialTheme.colorScheme.error) },
+            title = {
+                Text(
+                    if (isThai) "ไม่สามารถลบบัญชีได้" else "Cannot Delete Account",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    if (isThai)
+                        "คุณยังเป็นเจ้าของข้อมูลลูก กรุณาโอนสิทธิ์ความเป็นเจ้าของใน \"การจัดการสิทธิ์เข้าถึง\" หรือลบโปรไฟล์เด็กก่อนดำเนินการลบบัญชี"
+                    else
+                        "You are still the primary owner of child records. Please transfer ownership in Permission Access or delete the child profile before deleting your account."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showOwnerBlockDialog = false
+                        navController.navigate(Screen.PermissionAccess.route)
+                    }
+                ) {
+                    Text(
+                        if (isThai) "ไปที่การจัดการสิทธิ์เข้าถึง" else "Go to Permission Access",
+                        color = Primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOwnerBlockDialog = false }) {
+                    Text(if (isThai) "ปิด" else "Close")
+                }
+            }
+        )
     }
 
     if (showLogoutDialog) {

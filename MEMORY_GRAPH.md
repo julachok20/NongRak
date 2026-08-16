@@ -2064,4 +2064,18 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 
 **Commits:** `162f0c1`, `68e18ce`, `f8dc02f`, `282c4f3`, `6d644bc`, `4ff5f8b`, `0563b20` · tests 77 green · `assembleDebug` ✅ · **not pushed**
 
-**Next:** Gemini Live calls · per-mascot TTS voice (`synthesize(voice=)` exists, nobody passes one — all four speak as `Leda`) · in-call action banner · bond XP from the nutrition screen · owner transfer · rotate `MAPS_API_KEY` · Play Data Safety for `ACCESS_COARSE_LOCATION`
+---
+
+### BATCH BF — Owner Transfer, Account Deletion Guard, Owner Reclaim & Access Request Role Override (2026-08-16, branch `Track-YSC.02`)
+
+| Area | Change |
+|------|--------|
+| **Owner Transfer** | `transfer_child_ownership` RPC + `PermissionAccessScreen.kt` Transfer dialog prioritizing & highlighting `co-owner` candidates at the top with "ผู้ปกครองร่วม (แนะนำ)". Transfers full primary ownership to selected member and demotes old owner to `co_owner`. |
+| **Delete Account Guard** | `SettingsScreen.kt` checks `getOwnedChildren()` before opening permanent deletion dialog. Blocks deletion if user owns active child profiles and provides direct navigation to `PermissionAccessScreen`. |
+| **Owner Reclaim** | `children.previous_owner_email`, `previous_owner_id`, `transferred_from_role` audit fields + `check_reclaimable_children()` & `reclaim_child_ownership()` RPCs. When an old owner signs in / registers with matching email, `DashboardScreen.kt` prompts to reclaim ownership and demotes interim owner back to their previous role. |
+| **Member Removal Authority** | `remove_child_member` RPC & UI gates updated: Owner can remove any member (including co-owners with confirm dialog); co-owners cannot remove other co-owners or the owner. |
+| **Access Request Review** | `PendingAccessRequestsScreen.kt` & `confirm_child_sync_request` updated: Owner can choose/change the granted role (co-owner, relative, nanny) via filter chips before approving the request. |
+
+**Migrations:** `supabase/migrations/20260816_owner_transfer_and_reclaim.sql`
+**Build:** `testDebugUnitTest` 77 green ✅ · `assembleDebug` ✅ GREEN.
+

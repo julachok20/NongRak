@@ -230,10 +230,10 @@ class AccessRequestViewModel(
     fun dismissPopup() = _uiState.update { it.copy(popup = null) }
 
     /** approve = true grants access via `confirm_child_sync_request`; false marks it rejected. */
-    fun resolve(requestId: String, approve: Boolean) {
+    fun resolve(requestId: String, approve: Boolean, role: String? = null) {
         viewModelScope.launch {
             _uiState.update { it.copy(resolving = true, error = null) }
-            childRepo.confirmSyncRequest(requestId, approve)
+            childRepo.confirmSyncRequest(requestId, approve, role)
                 .onSuccess {
                     _uiState.update {
                         it.copy(

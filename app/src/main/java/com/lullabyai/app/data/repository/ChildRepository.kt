@@ -1128,6 +1128,41 @@ class ChildRepository {
         getMyMembership(childId).getOrThrow()?.role == "owner"
     }
 
+    /** Transfer child ownership to an existing member. The current owner is demoted to co-owner. */
+    suspend fun transferChildOwnership(childId: String, newOwnerUserId: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "transfer_child_ownership",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_new_owner_id", JsonPrimitive(newOwnerUserId))
+            }
+        )
+        Unit
+    }
+
+    /** Checks if any child has previous owner email matching the current user's email. */
+    suspend fun checkReclaimableChildren(): Result<List<com.lullabyai.app.data.model.ReclaimableChild>> = runCatching {
+        supabase.postgrest.rpc("check_reclaimable_children").decodeList<com.lullabyai.app.data.model.ReclaimableChild>()
+    }
+
+    /** Reclaims ownership of a child previously owned by the user. */
+    suspend fun reclaimChildOwnership(childId: String): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "reclaim_child_ownership",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+            }
+        )
+        Unit
+    }
+
+    /** Returns list of children where the current user is owner. */
+    suspend fun getOwnedChildren(): Result<List<Child>> = runCatching {
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return@runCatching emptyList()
+        val all = getChildren().getOrDefault(emptyList())
+        all.filter { it.userId == uid }
+    }
+
     /** Pending sync requests waiting on the current user's (owner) confirmation. */
     suspend fun getPendingSyncRequests(): Result<List<ChildSyncRequest>> = runCatching {
         val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
@@ -1137,13 +1172,14 @@ class ChildRepository {
         }.decodeList<ChildSyncRequest>()
     }
 
-    /** Owner confirms or rejects a pending sync request. Approving grants the requester member access. */
-    suspend fun confirmSyncRequest(requestId: String, approve: Boolean): Result<Unit> = runCatching {
+    /** Owner confirms or rejects a pending sync request with optional role assignment. Approving grants the requester member access. */
+    suspend fun confirmSyncRequest(requestId: String, approve: Boolean, role: String? = null): Result<Unit> = runCatching {
         supabase.postgrest.rpc(
             "confirm_child_sync_request",
             buildJsonObject {
                 put("p_request_id", JsonPrimitive(requestId))
                 put("p_approve", JsonPrimitive(approve))
+                put("p_role", role?.let { JsonPrimitive(it) } ?: JsonNull)
             }
         )
         Unit
