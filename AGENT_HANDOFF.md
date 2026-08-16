@@ -42,7 +42,7 @@ bottom. This file covers only 2026-08-16.
 
 ## 3. What changed on 2026-08-16
 
-Seven commits on `Track-YSC`, all built, unit tests green (77):
+Seven commits on `Track-YSC`, all built, unit tests green (66):
 
 ```
 0563b20  let a carer leave a child they are connected to
@@ -171,7 +171,7 @@ set from earlier the same day (`expense_name_used_lock`, `total_goal_separate_fr
   there. One earlier commit (`7527471`) carries a stray `@` from that mistake.
 - A **GateGuard** hook demands stated facts before the first Bash call and the first edit of each
   file: callers, existing equivalents, schemas, and the user's verbatim instruction.
-- Unit tests: `.\gradlew.bat testDebugUnitTest` — 77 tests, all green.
+- Unit tests: `.\gradlew.bat testDebugUnitTest` — 66 tests, all green.
 - An emulator (`emulator-5554`) is available. `adb logcat | grep AgentAction` is the fastest way to
   diagnose a failed AI action: the log line names which params were present, not just what was
   wanted.

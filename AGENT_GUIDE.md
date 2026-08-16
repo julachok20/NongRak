@@ -107,7 +107,7 @@ own — deliberately, so the UI can never be the thing that authorises.
 
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
-.\gradlew.bat testDebugUnitTest    # 77 tests
+.\gradlew.bat testDebugUnitTest    # 66 tests
 .\gradlew.bat assembleDebug
 ```
 
