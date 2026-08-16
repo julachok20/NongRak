@@ -50,6 +50,51 @@ fun PermissionAccessScreen(
     LaunchedEffect(Unit) { viewModel.load() }
 
     val iCanManage = AccessRoleLabels.isFullAccess(state.myRole)
+    var confirmLeave by remember { mutableStateOf(false) }
+
+    if (confirmLeave) {
+        AlertDialog(
+            onDismissRequest = { confirmLeave = false },
+            title = {
+                Text(
+                    if (isThai) "ออกจากการดูแล?" else "Leave this child?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    // Says what is lost and what is kept: the records this person wrote stay in the
+                    // child's history, which is not obvious and is the thing people worry about.
+                    if (isThai)
+                        "คุณจะเข้าถึงข้อมูลของ${state.childName}ไม่ได้อีก " +
+                            "บันทึกที่คุณเคยเพิ่มไว้จะยังอยู่ในประวัติของเด็ก " +
+                            "หากต้องการกลับมาดูแลอีกครั้ง ต้องขอสิทธิ์ใหม่จากเจ้าของ"
+                    else
+                        "You will lose access to ${state.childName}'s data. Records you already " +
+                            "wrote stay in the child's history. To return you must request access " +
+                            "from the owner again."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmLeave = false
+                    state.myUserId?.let { viewModel.removeMember(it) }
+                    onBack()
+                }) {
+                    Text(
+                        if (isThai) "ออกจากการดูแล" else "Leave",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLeave = false }) {
+                    Text(if (isThai) "ยกเลิก" else "Cancel")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -292,6 +337,26 @@ fun PermissionAccessScreen(
             )
 
             Spacer(Modifier.height(8.dp))
+
+            // Anyone who joined can leave. The owner cannot — a child with no owner has nobody who
+            // could grant access again, so an owner transfers or deletes instead. The server
+            // enforces the same rule; this only avoids offering a button that would be refused.
+            val myId = state.myUserId
+            if (myId != null && state.myRole != "owner") {
+                TextButton(onClick = { confirmLeave = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(
+                        Icons.Filled.Logout, null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (isThai) "ออกจากการดูแลเด็กคนนี้" else "Leave this child",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
 
             Column(
                 Modifier.fillMaxWidth(),
