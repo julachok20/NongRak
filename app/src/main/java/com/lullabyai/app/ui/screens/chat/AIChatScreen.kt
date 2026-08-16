@@ -73,6 +73,15 @@ private fun resolveNavRoute(key: String): String? {
         "growth" in k || "เติบโต" in k -> Screen.GrowthHistory.route
         "sleep" in k || "นอน" in k -> Screen.SleepTracker.route
         "exercise" in k || "ออกกำลัง" in k -> Screen.Exercise.route
+        // Checked before the generic screens below: "add expense" must reach the form, not the
+        // list, or the parent lands one tap short of what they asked for.
+        "add_expense" in k || "เพิ่มค่าใช้จ่าย" in k || "บันทึกค่าใช้จ่าย" in k -> Screen.AddExpense.route
+        "expense" in k || "cost" in k || "budget" in k ||
+            "ค่าใช้จ่าย" in k || "งบ" in k -> Screen.Expenses.route
+        "add_activity" in k || "เพิ่มกิจกรรม" in k || "เพิ่มนัด" in k -> Screen.AddActivity.route
+        // Deliberately not "กิจกรรม" alone — that word also means exercise, which is handled above.
+        "schedule" in k || "calendar" in k || "appointment" in k ||
+            "ปฏิทิน" in k || "ตาราง" in k || "นัดหมาย" in k -> Screen.ActivitySchedule.route
         "disease" in k || "risk" in k || "chronic" in k || "ความเสี่ยง" in k || "โรคประจำตัว" in k -> Screen.ChronicRegistry.route
         "health" in k || "สุขภาพ" in k -> Screen.ChildHealth.route
         "setting" in k || "ตั้งค่า" in k -> Screen.Settings.route
@@ -806,16 +815,23 @@ private fun MascotAvatar(mascot: MascotId) {
             .border(2.dp, Color.White, CircleShape),
         contentAlignment = Alignment.Center
     ) {
+        // The live pet rather than a still: it breathes, sways and blinks beside every reply, so
+        // the companion stays alive once the conversation starts — not only on the welcome card
+        // and the call screen.
+        //
         // Zoomed and pushed down so the circle frames the face, not the whole body — at 32dp a
-        // full-body render is an unreadable smudge.
-        Image(
-            painter = painterResource(mascot.poseFor(CompanionEmotion.GREETING)),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
+        // full-body render is an unreadable smudge. GREETING is kept because the blink
+        // coordinates were measured on that pose.
+        // Framed on the measured eye line rather than by eye: the rigged art centres each face at
+        // roughly y=0.46, so a small downward nudge puts it in the middle of the circle. The old
+        // 9dp was tuned for the older art and pushed the face low.
+        com.lullabyai.app.ui.mascot.Mascot(
+            art = mascot.rigArt(),
+            mood = com.lullabyai.app.ui.mascot.MascotMood.IDLE,
             modifier = Modifier.fillMaxSize().graphicsLayer {
-                scaleX = 2.2f
-                scaleY = 2.2f
-                translationY = 9.dp.toPx()
+                scaleX = 2.5f
+                scaleY = 2.5f
+                translationY = 3.dp.toPx()
             }
         )
     }

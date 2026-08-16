@@ -68,7 +68,8 @@ object RelationshipLabels {
             "<AGENT_ACTION>{\"type\":\"...\",\"confirmText\":\"...\",\"params\":{...}}</AGENT_ACTION>\n" +
             "โดย \"confirmText\" คือประโยคสั้นๆ อธิบายสิ่งที่จะเกิดขึ้นหากผู้ใช้กดยืนยัน (เช่น \"บันทึกงีบ 14:00-15:00\") " +
             "ประเภท (type) ที่รองรับและ params ที่ต้องมี:\n" +
-            "- log_sleep: sleepType (main หรือ nap), startTime (HH:mm), endTime (HH:mm)\n" +
+            "- log_sleep: sleepType (main หรือ nap), startTime (HH:mm ไม่บังคับ ถ้าไม่ระบุคือตอนนี้), endTime (HH:mm ไม่บังคับ) " +
+            "— ถ้าผู้ใช้บอกว่าลูก \"เพิ่งหลับ\" หรือ \"กำลังนอนอยู่\" ให้ส่งเฉพาะ startTime โดยไม่ต้องมี endTime และห้ามถามหาเวลาตื่น\n" +
             "- log_food: mealType (breakfast, lunch, dinner, หรือ snack), itemName, calories (ตัวเลข ไม่บังคับ)\n" +
             "- log_exercise: activityName, durationMin (ตัวเลข ไม่บังคับ)\n" +
             "- log_health: title, temperature (องศาเซลเซียส ไม่บังคับ), description (ไม่บังคับ)\n" +
@@ -79,7 +80,9 @@ object RelationshipLabels {
             "- log_waste: wasteType (pee หรือ poop), consistency (ไม่บังคับ), color (ไม่บังคับ), amount (ไม่บังคับ)\n" +
             "- add_allergy: name (ชื่อสิ่งที่แพ้), allergyType (food/drug/environmental ไม่บังคับ), severity (mild/moderate/severe ไม่บังคับ), symptoms (ไม่บังคับ)\n" +
             "- add_chronic_condition: name (ชื่อโรคประจำตัว), notes (ไม่บังคับ)\n" +
-            "- navigate: screen (คำสำคัญของหน้าที่จะไป เช่น nutrition, vaccine, growth, sleep, exercise, chronic, health, settings, statistics, pdf, child, home) — ใช้เมื่อผู้ใช้ขอให้พาไปหน้าใดหน้าหนึ่งของแอป\n" +
+            "- log_expense: amount (ตัวเลขบาท), category (ไม่บังคับ), name (สิ่งที่ซื้อ ไม่บังคับ), date (YYYY-MM-DD ไม่บังคับ ถ้าไม่ระบุคือวันนี้), note (ไม่บังคับ)\n" +
+            "- add_schedule: title, date (YYYY-MM-DD) หรือ startsAt (ISO-8601 เช่น 2026-08-20T14:00+07:00), durationHours (1-8 ไม่บังคับ), place (ไม่บังคับ), category (appointment/vaccine/milestone/family ไม่บังคับ) — ใช้เมื่อผู้ใช้ขอเพิ่มนัดหมายหรือกิจกรรมลงปฏิทิน ห้ามใช้กับเวลาที่ผ่านมาแล้ว\n" +
+            "- navigate: screen (คำสำคัญของหน้าที่จะไป เช่น nutrition, vaccine, growth, sleep, exercise, chronic, health, settings, statistics, pdf, child, home, expense, add_expense, schedule, add_activity) — ใช้เมื่อผู้ใช้ขอให้พาไปหน้าใดหน้าหนึ่งของแอป\n" +
             "- delete_most_recent: logType (sleep, food, exercise, หรือ health)\n" +
             "สำคัญมาก: ห้ามส่ง \"params\":{} (ว่างเปล่า) เด็ดขาด ต้องดึงค่าจริงจากข้อความของผู้ใช้มาใส่ใน params ให้ครบตามที่ระบุไว้ข้างต้นเสมอ " +
             "ตัวอย่างที่ถูกต้อง — ผู้ใช้พิมพ์ \"บันทึกว่าลูกตัวร้อน 38.2 องศา\" ให้ตอบ:\n" +

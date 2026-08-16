@@ -170,7 +170,16 @@ class ChatRepository {
         // maxTokens 4096: Thai is token-heavy, so a smaller limit truncates answers mid-sentence.
         val aiText = ClaudeClient.generateContent(
             prompt, useSearch = false, maxTokens = 4096,
-            system = RelationshipLabels.chatSystemPrompt(relationship),
+            // The model has no clock. Without this it answers "เมื่อครู่" with a placeholder such
+            // as "[current_time - 3 minutes]" instead of a real HH:mm, and the action then fails.
+            system = RelationshipLabels.chatSystemPrompt(relationship) +
+                "\n\nเวลาปัจจุบันของผู้ใช้: " +
+                java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) +
+                " (เขตเวลา " + java.time.ZoneId.systemDefault() + ")" +
+                "\nเมื่อผู้ใช้พูดถึงเวลาแบบสัมพัทธ์ เช่น \"เมื่อครู่\" \"เมื่อกี้\" \"ครึ่งชั่วโมงที่แล้ว\" " +
+                "ให้คำนวณเป็นเวลาจริงในรูปแบบ HH:mm จากเวลาปัจจุบันข้างต้นเสมอ " +
+                "ห้ามใส่ข้อความแทนค่า เช่น [current_time] ลงใน params เด็ดขาด",
             jsonMode = false,
             imageBase64 = imageB64, imageMimeType = imageMime ?: "image/jpeg"
         )

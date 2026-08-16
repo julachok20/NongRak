@@ -257,6 +257,22 @@ class ChatViewModel : ViewModel() {
     // trace of why.
     private fun normalizeType(type: String) = type.trim().lowercase().replace(Regex("[ -]"), "_")
 
+    /**
+     * A clock time, or null if this is not one.
+     *
+     * Models that are not told the current time answer with a template instead of a value —
+     * `"[current_time - 3 minutes]"` was logged verbatim from a real reply. Treating that as
+     * absent lets the caller fall back to now, rather than writing nonsense into a child's record
+     * or failing the whole action.
+     */
+    private fun String?.asClockTime(): String? =
+        this?.trim()
+            ?.takeIf { Regex("^\\d{1,2}:\\d{2}$").matches(it) }
+            ?.let { if (it.length == 4) "0$it" else it }
+
+    private fun nowClockTime(): String =
+        java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
+
     // Case-insensitivity alone wasn't enough: even after fixing the type-matching (confirmed via
     // Supabase's API logs — no writes were ever attempted), fresh test messages STILL produced zero
     // writes. The remaining gap is param *key* naming — the system prompt asks for camelCase
@@ -305,11 +321,17 @@ class ChatViewModel : ViewModel() {
             }
             "sleep" in t -> {
                 val today = java.time.LocalDate.now().toString()
-                val start = p.requireCi("startTime", t) ?: return false
-                val end = p.requireCi("endTime", t) ?: return false
-                val endDate = if (end < start) java.time.LocalDate.now().plusDays(1).toString() else today
+                // "ลูกเพิ่งหลับ" is a complete instruction: the sleep has started and has no end
+                // yet. Missing start means now, missing end means still sleeping — the schema
+                // allows it, and demanding both made the commonest phrasing unrecordable.
+                val start = p.getCi("startTime").asClockTime() ?: nowClockTime()
+                val end = p.getCi("endTime").asClockTime()
+                val endStamp = end?.let {
+                    val date = if (it < start) java.time.LocalDate.now().plusDays(1).toString() else today
+                    "${date}T$it:00"
+                }
                 com.lullabyai.app.data.repository.SleepRepository()
-                    .addManualLog(childId, p.getCi("sleepType") ?: "main", "${today}T$start:00", "${endDate}T$end:00")
+                    .addManualLog(childId, p.getCi("sleepType") ?: "main", "${today}T$start:00", endStamp)
                     .isSuccess
             }
             "growth" in t || "weight" in t || "height" in t -> {
@@ -330,6 +352,55 @@ class ChatViewModel : ViewModel() {
                 com.lullabyai.app.data.repository.NutritionRepository()
                     .addFood(childId, p.getCi("mealType") ?: "other", p.requireCi("itemName", t) ?: action.confirmText.ifBlank { return false }, p.getCi("calories")?.toIntOrNull())
                     .isSuccess
+            }
+            // Cost Record. Money is parsed the same way the expense form parses it, so "120",
+            // "120.50" and "฿120" all land as the same integer satang the rest of the app stores.
+            "expense" in t || "cost" in t || "spend" in t -> {
+                val satang = ExpenseViewModel.parseSatang(
+                    p.getCi("amount") ?: p.getCi("amountBaht") ?: return false
+                ) ?: return false
+                com.lullabyai.app.data.repository.ChildRepository().addExpense(
+                    childId = childId,
+                    amountSatang = satang,
+                    category = p.getCi("category") ?: "other",
+                    spentOn = p.getCi("date") ?: java.time.LocalDate.now().toString(),
+                    name = p.getCi("name") ?: action.confirmText.takeIf { it.isNotBlank() },
+                    note = p.getCi("note")
+                ).isSuccess
+            }
+            // A calendar entry, not a workout. This sits ABOVE the exercise branch on purpose:
+            // that branch claims the bare word "activity", so without this "add an activity on
+            // Saturday" would silently log a workout instead of a plan.
+            "schedule" in t || "calendar" in t || "appointment" in t -> {
+                val title = p.requireCi("title", t) ?: action.confirmText.ifBlank { return false }
+                val zone = java.time.ZoneId.systemDefault()
+                val startsAt = p.getCi("startsAt")
+                    ?.let { runCatching { java.time.OffsetDateTime.parse(it) }.getOrNull() }
+                    ?: p.getCi("date")?.let { d ->
+                        // A date with no time means "that day" — 10:00 is a plausible outing hour.
+                        runCatching {
+                            java.time.LocalDate.parse(d).atTime(10, 0).atZone(zone).toOffsetDateTime()
+                        }.getOrNull()
+                    }
+                    ?: return false
+                val endsAt = startsAt.plusHours(
+                    p.getCi("durationHours")?.toLongOrNull()?.coerceIn(1L, 8L) ?: 1L
+                )
+                // The same forward-only rule the Add Activity screen enforces: the agent must not
+                // become a way around a validation the UI applies.
+                if (validateActivityWindow(startsAt, endsAt, java.time.OffsetDateTime.now()) != null) {
+                    return false
+                }
+                com.lullabyai.app.data.repository.ChildRepository().addActivity(
+                    childId = childId,
+                    title = title,
+                    category = p.getCi("category") ?: "family",
+                    startsAt = startsAt.toString(),
+                    endsAt = endsAt.toString(),
+                    allDay = false,
+                    locationName = p.getCi("place"),
+                    notes = p.getCi("notes")
+                ).isSuccess
             }
             "exercise" in t || "activity" in t -> {
                 com.lullabyai.app.data.repository.NutritionRepository()

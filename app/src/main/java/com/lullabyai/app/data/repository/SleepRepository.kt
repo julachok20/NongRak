@@ -49,13 +49,23 @@ class SleepRepository {
 
     /** Manually log a completed sleep period. [start]/[end] are naive local wall-clock ISO strings
      *  (e.g. "2026-07-02T20:00:00") — converted to proper UTC instants before writing. */
-    suspend fun addManualLog(childId: String, sleepType: String, start: String, end: String): Result<Unit> = runCatching {
+    /**
+     * @param end null for a sleep that is still going. `end_time` is nullable in the schema, and
+     *   "the baby just went down" is the commonest thing a parent says — demanding an end time
+     *   makes the moment it is most useful to record the one moment it cannot be.
+     */
+    suspend fun addManualLog(
+        childId: String,
+        sleepType: String,
+        start: String,
+        end: String? = null
+    ): Result<Unit> = runCatching {
         supabase.from("sleep_logs").insert(
             buildJsonObject {
                 put("child_id", JsonPrimitive(childId))
                 put("sleep_type", JsonPrimitive(sleepType))
                 put("start_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(start))))
-                put("end_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(end))))
+                end?.let { put("end_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(it)))) }
             }
         )
     }
