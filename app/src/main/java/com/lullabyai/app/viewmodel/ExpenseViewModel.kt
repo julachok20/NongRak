@@ -39,15 +39,16 @@ data class ExpenseUiState(
     /** The child selected app-wide; the fallback scope and the target for new expenses. */
     val childId: String? = null,
     val childName: String = "",
-    /** Everyone in the switcher strip. */
+    /** Every child, used only to label rows in the ทั้งหมด view. Never a switcher. */
     val children: List<com.lullabyai.app.data.model.Child> = emptyList(),
     /**
-     * Which child the screen reports on: a child id, or null for "ทั้งหมด" — all children at once,
-     * with their budgets summed.
+     * False = this child's own record; true = "ทั้งหมด", the read-only roll-up across children.
+     *
+     * Deliberately a boolean and not a child id. Children are completely separate: a Cost Record
+     * opened on Giga can only ever write to Giga, so there is no second child for the screen to
+     * drift onto — which is exactly what an id here made possible.
      */
-    val scopeChildId: String? = null,
-    /** False while showing "ทั้งหมด". */
-    val singleChild: Boolean = true,
+    val showTotal: Boolean = false,
     val expenses: List<ChildExpense> = emptyList(),
     val summary: List<ExpenseCategoryTotal> = emptyList(),
     /** Warranties still live but running out — surfaced above the list, not buried in it. */
@@ -105,12 +106,6 @@ class ExpenseViewModel(
     private val _uiState = MutableStateFlow(ExpenseUiState())
     val uiState: StateFlow<ExpenseUiState> = _uiState.asStateFlow()
 
-    /** Preselects the child a cost is being recorded against, arriving as a navigation argument. */
-    fun preselectChild(childId: String?) {
-        if (childId.isNullOrBlank()) return
-        _uiState.update { it.copy(scopeChildId = childId, singleChild = true) }
-    }
-
     fun load(childId: String? = null) {
         viewModelScope.launch {
             val id = childId ?: ChildSelection.id.value
@@ -120,29 +115,32 @@ class ExpenseViewModel(
                     return@launch
                 }
             val name = childRepo.getSelectedChild().getOrNull()?.name ?: ""
-            val kids = childRepo.getChildren().getOrDefault(emptyList())
+            // Never swallowed: if this fails the switcher has nothing to offer, and the screen must
+            // say so rather than quietly booking everything against the account-wide child.
+            val kids = childRepo.getChildren().getOrElse { e ->
+                _uiState.update { it.copy(error = e.message ?: "children_unavailable") }
+                emptyList()
+            }
             _uiState.update {
                 it.copy(
-                    loading = true, error = null, childId = id, childName = name, children = kids,
-                    // Land on the selected child; "ทั้งหมด" is something you choose.
-                    scopeChildId = if (it.singleChild) it.scopeChildId ?: id else null
+                    loading = true, error = null, childId = id, childName = name, children = kids
                 )
             }
             refresh()
         }
     }
 
-    /** Switches the strip between one child and "ทั้งหมด" (null). */
-    fun setScope(childId: String?) {
-        _uiState.update { it.copy(scopeChildId = childId, singleChild = childId != null) }
+    /** Switches between this child's own record and the ทั้งหมด roll-up. */
+    fun setShowTotal(total: Boolean) {
+        _uiState.update { it.copy(showTotal = total) }
         viewModelScope.launch { refresh() }
     }
 
     private suspend fun refresh() {
         val s = _uiState.value
         val month = s.month
-        // null here means every child — the repository and RPCs both read it that way.
-        val scope = if (s.singleChild) s.scopeChildId ?: s.childId else null
+        // null means every child — the repository and RPCs both read it that way.
+        val scope = if (s.showTotal) null else s.childId
         val expenses = childRepo.listExpenses(scope).getOrElse { e ->
             _uiState.update { it.copy(loading = false, error = e.message) }
             return
@@ -152,8 +150,7 @@ class ExpenseViewModel(
             month.toString(),
             month.plusMonths(1).toString()
         ).getOrDefault(emptyList())
-        // Expiring warranties stay per-child: the banner names one thing to act on, and it needs
-        // a child to act on it for.
+        // Warranties stay per-child: the banner names one thing to act on.
         val warranties = (scope ?: s.childId)
             ?.let { childRepo.expiringWarranties(it).getOrDefault(emptyList()) } ?: emptyList()
         val budget = childRepo.budgetOverview(scope, month.toString()).getOrDefault(emptyList())
@@ -187,10 +184,10 @@ class ExpenseViewModel(
     ) {
         val s = _uiState.value
         val month = s.month
-        // Which goal is being edited follows the strip: a child's own, or the ทั้งหมด total. They
-        // are separate figures — setting one never rewrites the other.
-        val scope = if (s.singleChild) s.scopeChildId ?: s.childId else null
-        if (s.singleChild && scope == null) return
+        // This child's own goal, or the ทั้งหมด total. Separate figures — one never rewrites the
+        // other, and only these two are reachable from this screen.
+        val scope = if (s.showTotal) null else s.childId
+        if (!s.showTotal && scope == null) return
         val total = parseSatang(totalText) ?: 0
         val categories = categoryTexts
             .mapNotNull { (key, text) -> parseSatang(text)?.let { key to it } }
@@ -252,19 +249,10 @@ class ExpenseViewModel(
         /** Raw picture bytes; uploaded first so the row never points at a missing object. */
         receipt: ByteArray? = null,
         receiptExt: String = "jpg",
-        /**
-         * Which child this cost belongs to. Defaults to the scoped child rather than the one
-         * selected app-wide, so a cost booked while looking at another child's record lands on
-         * that child — the whole point of the switcher.
-         */
-        targetChildId: String? = null,
         onDone: () -> Unit = {}
     ) {
-        val s0 = _uiState.value
-        val childId = targetChildId
-            ?: s0.scopeChildId?.takeIf { s0.singleChild }
-            ?: s0.childId
-            ?: return
+        // Always this child. There is no other child reachable from here, by design.
+        val childId = _uiState.value.childId ?: return
         val satang = parseSatang(amountText)
         if (satang == null || satang <= 0) {
             _uiState.update { it.copy(error = "invalid_amount") }

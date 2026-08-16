@@ -35,6 +35,11 @@ data class AccessRequestUiState(
     val searchResults: List<ChildSyncMatch> = emptyList(),
     val searchRan: Boolean = false,
     val selectedMatchId: String? = null,
+    /**
+     * The roles the found child's family actually offers. Empty until a child is picked — before
+     * that there is no family to ask, so the picker falls back to the starter roles.
+     */
+    val availableRoles: List<com.lullabyai.app.data.model.ChildRole> = emptyList(),
     val submitting: Boolean = false,
     val requestSent: Boolean = false,
     val error: String? = null,
@@ -74,7 +79,33 @@ class AccessRequestViewModel(
         it.copy(accessCode = value.filter { c -> c.isLetterOrDigit() }.uppercase().take(6), error = null)
     }
 
-    fun selectMatch(childId: String) = _uiState.update { it.copy(selectedMatchId = childId, error = null) }
+    fun selectMatch(childId: String) {
+        _uiState.update { it.copy(selectedMatchId = childId, error = null) }
+        loadRolesFor(childId)
+    }
+
+    /**
+     * Once a child is found, the role list becomes that family's own — including any role they
+     * renamed or created. Before that there is no family to ask, so the starter roles stand.
+     *
+     * A failure here is not surfaced: the picker simply keeps the starter roles, which are always
+     * valid. Blocking a join request because the role *names* could not be fetched would be worse
+     * than offering the defaults.
+     */
+    private fun loadRolesFor(childId: String) {
+        viewModelScope.launch {
+            val roles = childRepo.listRolesForRequest(childId).getOrDefault(emptyList())
+            _uiState.update { s ->
+                if (s.selectedMatchId != childId) s  // a newer selection won the race
+                else s.copy(
+                    availableRoles = roles,
+                    // Keep the chosen role only if this family still offers it.
+                    role = if (roles.isEmpty() || roles.any { r -> r.key == s.role }) s.role
+                    else roles.first().key
+                )
+            }
+        }
+    }
 
     /**
      * Exact name + birthdate lookup. Both are required — `search_child_for_sync` matches on both, so
@@ -95,9 +126,13 @@ class AccessRequestViewModel(
                             searching = false,
                             searchRan = true,
                             searchResults = matches,
-                            selectedMatchId = matches.singleOrNull()?.childId
+                            selectedMatchId = matches.singleOrNull()?.childId,
+                            // A new search invalidates the previous family's roles.
+                            availableRoles = emptyList()
                         )
                     }
+                    // A single hit is auto-selected, so its roles must be fetched too.
+                    matches.singleOrNull()?.childId?.let { loadRolesFor(it) }
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(searching = false, searchRan = true, error = safeError(e)) }

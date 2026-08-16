@@ -204,10 +204,18 @@ fun AddUserAccessActivityScreen(
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleSmall
             )
-            AccessRoleLabels.ROLES.forEach { r ->
-                val selected = role == r
+            // This family's own roles — the starter three plus anything renamed or created in
+            // Manage Roles. Falls back to the starter list only if they could not be loaded, since
+            // those keys are always valid.
+            val offered: List<Pair<String, String>> =
+                state.roles.takeIf { it.isNotEmpty() }
+                    ?.map { it.key to (if (isThai) it.nameTh else it.nameEn) }
+                    ?: AccessRoleLabels.ROLES.map { it to AccessRoleLabels.title(it, isThai) }
+
+            offered.forEach { (key, label) ->
+                val selected = role == key
                 Card(
-                    onClick = { role = r },
+                    onClick = { role = key },
                     enabled = state.canInvite,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
@@ -218,19 +226,23 @@ fun AddUserAccessActivityScreen(
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
                             selected = selected,
-                            onClick = { role = r },
+                            onClick = { role = key },
                             // The Card's own click is already gated; the radio needs saying too,
                             // or it stays tappable inside a disabled card.
                             enabled = state.canInvite,
                             colors = RadioButtonDefaults.colors(selectedColor = Primary)
                         )
                         Column(Modifier.weight(1f)) {
-                            Text(AccessRoleLabels.title(r, isThai), fontWeight = FontWeight.Bold)
-                            Text(
-                                AccessRoleLabels.subtitle(r, isThai),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Text(label, fontWeight = FontWeight.Bold)
+                            // Only starter roles have a written description; a family's own role
+                            // carries just its name.
+                            AccessRoleLabels.subtitle(key, isThai).takeIf { it.isNotBlank() }?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

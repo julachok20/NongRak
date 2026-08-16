@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.lullabyai.app.data.model.ChildAccessActivity
 import com.lullabyai.app.data.model.ChildAccessInvite
 import com.lullabyai.app.data.model.ChildAccessMember
+import com.lullabyai.app.data.model.ChildRole
 import com.lullabyai.app.data.model.InviteCandidate
 import com.lullabyai.app.data.remote.supabase
 import com.lullabyai.app.data.repository.ChildRepository
@@ -26,6 +27,11 @@ data class AccessPermissionUiState(
     val myUserId: String? = null,
     val myRole: String? = null,
     val activity: List<ChildAccessActivity> = emptyList(),
+    /**
+     * The roles this child's family actually has — the starter three plus anything they renamed or
+     * created in Manage Roles. An invite offers these, not a list fixed in the app.
+     */
+    val roles: List<ChildRole> = emptyList(),
     val selectedMember: ChildAccessMember? = null,
     val invite: ChildAccessInvite? = null,
     val loading: Boolean = false,
@@ -68,12 +74,15 @@ class AccessPermissionViewModel(
                 return@launch
             }
             val activity = childRepo.listAccessActivity(id).getOrDefault(emptyList())
+            // Empty falls back to the starter roles in the UI, which are always valid.
+            val roles = childRepo.listChildRoles(id).getOrDefault(emptyList())
             val me = runCatching { supabase.auth.currentUserOrNull()?.id }.getOrNull()
             _uiState.update {
                 it.copy(
                     loading = false,
                     members = members,
                     activity = activity,
+                    roles = roles,
                     myUserId = me,
                     myRole = members.find { m -> m.userId == me }?.role,
                     selectedMember = it.selectedMember?.let { sel ->

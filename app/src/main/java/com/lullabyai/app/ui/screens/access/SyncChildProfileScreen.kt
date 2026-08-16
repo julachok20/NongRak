@@ -212,23 +212,53 @@ fun SyncChildProfileScreen(
                             colors = syncFieldColors()
                         )
                         ExposedDropdownMenu(expanded = roleMenuOpen, onDismissRequest = { roleMenuOpen = false }) {
-                            AccessRoleLabels.ROLES.forEach { r ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(AccessRoleLabels.title(r, isThai), fontWeight = FontWeight.Bold)
-                                            Text(
-                                                AccessRoleLabels.subtitle(r, isThai),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        viewModel.setRole(r)
-                                        roleMenuOpen = false
-                                    }
-                                )
+                            // Before a child is found there is no family to ask, so the starter
+                            // roles stand in. Once one is picked this becomes that family's own
+                            // list — including roles they renamed or created themselves.
+                            val found = state.availableRoles
+                            if (found.isEmpty()) {
+                                AccessRoleLabels.ROLES.forEach { r ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    AccessRoleLabels.title(r, isThai),
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    AccessRoleLabels.subtitle(r, isThai),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        onClick = { viewModel.setRole(r); roleMenuOpen = false }
+                                    )
+                                }
+                            } else {
+                                found.forEach { role ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    if (isThai) role.nameTh else role.nameEn,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                // Only starter roles carry a written description;
+                                                // a family's own role has just a name.
+                                                AccessRoleLabels.subtitle(role.key, isThai)
+                                                    .takeIf { it.isNotBlank() }?.let {
+                                                        Text(
+                                                            it,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                            }
+                                        },
+                                        onClick = { viewModel.setRole(role.key); roleMenuOpen = false }
+                                    )
+                                }
                             }
                         }
                     }

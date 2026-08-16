@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,8 +57,6 @@ import java.time.ZoneOffset
 fun AddExpenseScreen(
     viewModel: ExpenseViewModel,
     navController: NavController,
-    /** Which child to book this cost against; blank means the one selected app-wide. */
-    childId: String = "",
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -65,16 +64,7 @@ fun AddExpenseScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // Preselect before load so this screen opens on the child whose record you came from.
-    LaunchedEffect(childId) {
-        viewModel.preselectChild(childId)
-        viewModel.load()
-    }
-
-    /** The child the cost lands on. Starts from what was carried in, then follows the picker. */
-    var targetChild by remember(childId, state.childId) {
-        mutableStateOf(childId.ifBlank { null } ?: state.scopeChildId ?: state.childId)
-    }
+    LaunchedEffect(Unit) { viewModel.load() }
 
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("other") }
@@ -133,7 +123,6 @@ fun AddExpenseScreen(
             alreadyUsed = alreadyUsed,
             usageNote = usageNote,
             receipt = receiptBytes,
-            targetChildId = targetChild,
             onDone = onBack
         )
     }
@@ -159,40 +148,16 @@ fun AddExpenseScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
-            // Whose cost is this? Shown whenever there is more than one child, so a cost can be
-            // booked to a sibling without leaving this screen or switching the whole app over.
-            if (state.children.size > 1) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionLabel(if (isThai) "บันทึกให้ (Child)" else "Record for")
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        state.children.forEach { c ->
-                            val selected = c.id == targetChild
-                            Box(
-                                Modifier
-                                    .clip(CircleShape)
-                                    .background(if (selected) ScPrimary else ScSurfaceContainer)
-                                    .border(
-                                        if (selected) 2.dp else 1.dp,
-                                        if (selected) ScPrimary else ScOutlineVariant.copy(0.4f),
-                                        CircleShape
-                                    )
-                                    .clickable { targetChild = c.id }
-                                    .padding(horizontal = 16.dp, vertical = 9.dp)
-                            ) {
-                                Text(
-                                    c.name,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selected) Color.White else ScOnSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
-                }
+            // Not a picker: this cost belongs to the child whose record you opened, and there is
+            // no way to aim it elsewhere. Stated so the target is never a guess.
+            if (state.childName.isNotBlank()) {
+                Text(
+                    (if (isThai) "บันทึกให้ " else "Recording for ") + state.childName,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ScOnSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
             }
 
             AmountField(amount, isThai) { amount = it }
@@ -386,10 +351,18 @@ fun AddExpenseScreen(
                         modifier = Modifier.size(20.dp)
                     )
                 } else {
+                    // Names the child on the button, so the target is visible before committing.
+                    val targetName = state.childName.ifBlank { null }
                     Text(
-                        if (isThai) "บันทึกรายการ" else "Save item",
+                        when {
+                            targetName != null && isThai -> "บันทึกให้ $targetName"
+                            targetName != null -> "Save for $targetName"
+                            isThai -> "บันทึกรายการ"
+                            else -> "Save item"
+                        },
                         fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
                     )
                 }
             }
@@ -420,6 +393,7 @@ fun AddExpenseScreen(
 }
 
 private enum class DateTarget { SPENT_ON, WARRANTY, EXPIRY }
+
 
 /** ฿ beside a big centred figure over a single underline — the design's amount section. */
 @Composable

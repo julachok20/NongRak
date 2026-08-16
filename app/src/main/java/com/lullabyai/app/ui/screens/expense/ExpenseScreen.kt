@@ -107,8 +107,7 @@ fun ExpenseScreen(
     viewModel: ExpenseViewModel,
     navController: NavController,
     onBack: () -> Unit,
-    /** Carries the scoped child so the new cost is booked against whoever is on screen. */
-    onAdd: (String?) -> Unit,
+    onAdd: () -> Unit,
     onSeeAll: (() -> Unit)? = null
 ) {
     val s = LocalStrings.current
@@ -136,14 +135,16 @@ fun ExpenseScreen(
         },
         bottomBar = { ChildBottomNav(navController = navController, currentTab = "child") },
         floatingActionButton = {
-            FloatingActionButton(
-                // Null while "ทั้งหมด" is showing: no single child is implied, so the Add screen
-                // asks rather than guessing.
-                onClick = { onAdd(state.scopeChildId?.takeIf { state.singleChild }) },
-                containerColor = ScPrimary,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(12.dp)
-            ) { Icon(Icons.Filled.Add, if (isThai) "เพิ่มรายการ" else "Add expense") }
+            // Hidden on ทั้งหมด: a cost belongs to one child, and the roll-up names none. Offering
+            // it there is what made it possible to record against the wrong child.
+            if (!state.showTotal) {
+                FloatingActionButton(
+                    onClick = onAdd,
+                    containerColor = ScPrimary,
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(12.dp)
+                ) { Icon(Icons.Filled.Add, if (isThai) "เพิ่มรายการ" else "Add expense") }
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -151,13 +152,22 @@ fun ExpenseScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            if (state.children.size > 1) {
-                item {
-                    ChildScopeStrip(
-                        children = state.children,
-                        selected = if (state.singleChild) state.scopeChildId else null,
-                        isThai = isThai,
-                        onPick = viewModel::setScope
+            // Two chips only: this child, and the ทั้งหมด roll-up. Other children are not offered
+            // here at all — each child's record is reached from that child.
+            item {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ScopeChip(
+                        label = state.childName.ifBlank { if (isThai) "ลูก" else "This child" },
+                        selected = !state.showTotal,
+                        onClick = { viewModel.setShowTotal(false) }
+                    )
+                    ScopeChip(
+                        label = if (isThai) "ทั้งหมด" else "All children",
+                        selected = state.showTotal,
+                        onClick = { viewModel.setShowTotal(true) }
                     )
                 }
             }
@@ -265,7 +275,7 @@ fun ExpenseScreen(
                 ExpenseRow(
                     e = e,
                     isThai = isThai,
-                    childName = if (state.singleChild) null
+                    childName = if (!state.showTotal) null
                     else state.children.find { c -> c.id == e.childId }?.name,
                     onToggleUsed = { viewModel.toggleUsed(e) },
                     onReceipt = { receiptTarget = e }
@@ -353,14 +363,11 @@ fun ExpenseScreen(
             isThai = isThai,
             saving = state.saving,
             error = state.error,
-            scopeLabel = if (!state.singleChild) (if (isThai) "ทั้งหมด" else "All children")
-            else state.children.find { it.id == state.scopeChildId }?.name ?: state.childName,
-            isTotal = !state.singleChild,
-            children = state.children,
-            selectedChildId = if (state.singleChild) state.scopeChildId else null,
-            // Reuses the page's own scope switch, so the figures behind the sheet and the ones in
-            // it can never describe different children.
-            onPickScope = viewModel::setScope,
+            scopeLabel = if (state.showTotal) (if (isThai) "ทั้งหมด" else "All children")
+            else state.childName,
+            isTotal = state.showTotal,
+            showTotal = state.showTotal,
+            onPickScope = viewModel::setShowTotal,
             onClearError = viewModel::clearSaved,
             onDismiss = { showBudgetSheet = false; viewModel.clearSaved() },
             onSave = { total, cats ->
@@ -1059,10 +1066,9 @@ private fun BudgetSheet(
     error: String?,
     scopeLabel: String,
     isTotal: Boolean,
-    /** Whose goal can be set from here — every child, plus ทั้งหมด for the overall goal. */
-    children: List<com.lullabyai.app.data.model.Child>,
-    selectedChildId: String?,
-    onPickScope: (String?) -> Unit,
+    /** Which of the two goals is being edited: this child's, or the ทั้งหมด overall goal. */
+    showTotal: Boolean,
+    onPickScope: (Boolean) -> Unit,
     onClearError: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (String, Map<String, String>) -> Unit
@@ -1112,26 +1118,23 @@ private fun BudgetSheet(
                 color = ScPrimary
             )
 
-            // Pick whose goal to set without closing the sheet and switching the page first. The
-            // fields re-seed from the chosen child's stored goal as it arrives.
-            if (children.size > 1) {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ScopeChip(
-                        label = if (isThai) "ทั้งหมด" else "All",
-                        selected = selectedChildId == null,
-                        onClick = { onPickScope(null) }
-                    )
-                    children.forEach { c ->
-                        ScopeChip(
-                            label = c.name,
-                            selected = selectedChildId == c.id,
-                            onClick = { onPickScope(c.id) }
-                        )
-                    }
-                }
+            // Switch between this child's goal and the overall one without closing the sheet. The
+            // fields re-seed from whichever is chosen as its figures arrive.
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ScopeChip(
+                    label = scopeLabel.takeIf { !showTotal }
+                        ?: (if (isThai) "ลูกคนนี้" else "This child"),
+                    selected = !showTotal,
+                    onClick = { onPickScope(false) }
+                )
+                ScopeChip(
+                    label = if (isThai) "ทั้งหมด" else "All children",
+                    selected = showTotal,
+                    onClick = { onPickScope(true) }
+                )
             }
             // Naming the scope matters here: the total goal and each child's goal are separate
             // figures, and the sheet looks identical either way.
@@ -1216,7 +1219,12 @@ private fun BudgetSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = ScPrimary),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(if (isThai) "บันทึก" else "Save")
+                    // Names the target on the button itself. A goal saved to the wrong child is
+                    // invisible until you go looking for it, so it is stated before you commit.
+                    Text(
+                        (if (isThai) "บันทึกให้ " else "Save for ") + scopeLabel,
+                        maxLines = 1
+                    )
                 }
             }
         }
