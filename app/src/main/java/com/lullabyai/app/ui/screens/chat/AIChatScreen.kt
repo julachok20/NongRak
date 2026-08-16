@@ -146,6 +146,10 @@ fun AIChatScreen(
     val mascotKey by remember { SettingsManager(context).selectedMascot }.collectAsState(initial = null)
     val mascot = MascotId.fromKey(mascotKey)
 
+    // Switching companion switches voice: each one answers in its own manner from the next message
+    // onward. Set here rather than at each send, so every path through the screen picks it up.
+    LaunchedEffect(mascot) { chatViewModel.setCompanion(mascot.assetPrefix, mascot.personaPrompt()) }
+
     // Auto Record vs Confirm before Record. Read here and pushed down so ChatViewModel stays
     // Context-free, and so flipping the setting takes effect without restarting the chat.
     val appSettings by remember { SettingsManager(context).settings }.collectAsState(initial = AppSettings())
@@ -269,6 +273,7 @@ fun AIChatScreen(
                                 chatViewModel.setMode(if (on) ChatMode.CHILD else ChatMode.NORMAL)
                             },
                             title = "คุยกับ${mascot.thaiName}",
+                            onSwitchMascot = { onNavigate(Screen.MascotSwitch.route) },
                             voiceEnabled = voiceEnabled,
                             onToggleVoice = {
                                 voiceEnabled = !voiceEnabled
@@ -542,6 +547,57 @@ fun AIChatScreen(
         )
     }
 
+    // ความผูกพัน: feeding the child fed the companion too. Slides in over the conversation, then
+    // leaves by itself — a meal is worth a moment's acknowledgement, not a dialog to dismiss.
+    chatState.bondFeed?.let { bond ->
+        LaunchedEffect(bond) {
+            kotlinx.coroutines.delay(2600)
+            chatViewModel.clearBondFeed()
+        }
+        Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.TopCenter) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = true,
+                enter = androidx.compose.animation.slideInVertically { -it } +
+                    androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.slideOutVertically { -it } +
+                    androidx.compose.animation.fadeOut()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = StitchPrimaryLight,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.padding(top = 56.dp, start = 24.dp, end = 24.dp)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        com.lullabyai.app.ui.mascot.Mascot(
+                            art = mascot.rigArt(),
+                            mood = com.lullabyai.app.ui.mascot.MascotMood.HAPPY,
+                            modifier = Modifier.size(38.dp)
+                        )
+                        Column {
+                            Text(
+                                if (bond.leveledUp) "${mascot.thaiName}อิ่มแล้ว! ความผูกพันระดับ ${bond.level}"
+                                else "${mascot.thaiName}อิ่มแล้ว!",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StitchInk
+                            )
+                            Text(
+                                "ความผูกพัน ${bond.xp} แต้ม",
+                                fontSize = 11.sp,
+                                color = StitchInkSoft
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     sessionToRename?.let { (id, currentTitle) ->
         var newTitle by remember(id) { mutableStateOf(currentTitle) }
         AlertDialog(
@@ -578,7 +634,8 @@ private fun CompanionTopBar(
     title: String,
     voiceEnabled: Boolean,
     onToggleVoice: () -> Unit,
-    onHistory: () -> Unit
+    onHistory: () -> Unit,
+    onSwitchMascot: () -> Unit
 ) {
     Surface(color = Color.White) {
         // The app draws edge to edge; without this the header sits under the phone's clock and
@@ -610,7 +667,13 @@ private fun CompanionTopBar(
                     color = StitchInk,
                     maxLines = 1,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
+                    // The companion's name is the switcher. Tapping who you are talking to in
+                    // order to talk to someone else needs no separate button or explanation.
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onSwitchMascot)
+                        .padding(vertical = 4.dp)
                 )
                 IconButton(onClick = onToggleVoice) {
                     Icon(

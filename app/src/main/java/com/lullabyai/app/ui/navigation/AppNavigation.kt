@@ -451,7 +451,9 @@ fun AppNavigation(
                 LastSetupScreen(
                     onboardingViewModel = onboardingViewModel,
                     authViewModel = authViewModel,
-                    onComplete = { navController.navigate(Screen.MascotSelect.route) },
+                    // Straight to the tour: the companion is now chosen and switched from chat,
+                    // where it lives, rather than as a one-off decision buried in onboarding.
+                    onComplete = { navController.navigate(Screen.FirstRunTour.route) { popUpTo(0) } },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -460,6 +462,16 @@ fun AppNavigation(
             OnboardingFlowTheme(onboardingViewModel, settingsViewModel) {
                 MascotSelectScreen(
                     onSelected = { navController.navigate(Screen.FirstRunTour.route) { popUpTo(0) } },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        // Same picker, opened from an ongoing conversation: it returns to that conversation
+        // instead of continuing the onboarding chain.
+        composable(Screen.MascotSwitch.route) {
+            NongRakTheme(darkTheme = false) {
+                MascotSelectScreen(
+                    onSelected = { navController.popBackStack() },
                     onBack = { navController.popBackStack() }
                 )
             }

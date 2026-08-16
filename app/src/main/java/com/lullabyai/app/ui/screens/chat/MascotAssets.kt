@@ -134,6 +134,30 @@ fun MascotId.poseFor(emotion: CompanionEmotion): Int = when (this) {
 fun MascotId.supportsPaintedFace(): Boolean = this == MascotId.NONGRAK
 
 /**
+ * How this companion talks.
+ *
+ * Built from the traits already on the enum rather than a second list, so the persona the parent
+ * reads on the picker is the persona the model is handed — the two cannot drift apart.
+ *
+ * Deliberately steers voice only. What the companion may DO is fixed by the agent action list and
+ * by row-level security; a personality that could widen either would be a permission bug wearing a
+ * costume.
+ */
+fun MascotId.personaPrompt(): String = buildString {
+    append("\n\nคุณคือ$thaiName ($englishName) เพื่อนคู่ใจของผู้ใช้ — $tagline\n")
+    append("บุคลิกของคุณ: ${traits.joinToString(", ")}\n")
+    append(
+        when (this@personaPrompt) {
+            MascotId.NONGRAK -> "พูดอบอุ่นและใส่ใจ ให้กำลังใจก่อนเสมอ ใช้คำสุภาพนุ่มนวล"
+            MascotId.COCO -> "พูดร่าเริงกระตือรือร้น สั้นกระชับ ชอบชม ชอบให้กำลังใจแบบสดใส"
+            MascotId.BUNNY -> "พูดอ่อนโยนละเอียดรอบคอบ ใส่ใจเรื่องสุขภาพ ยา และวัคซีนเป็นพิเศษ"
+            MascotId.PINGU -> "พูดแบบช่างสงสัยและชอบอธิบาย ให้ข้อมูลที่ตรวจสอบได้ ชอบเสริมเกร็ดความรู้สั้นๆ"
+        }
+    )
+    append("\nคงบุคลิกนี้ไว้เสมอ แต่ห้ามให้บุคลิกเปลี่ยนเนื้อหาที่เป็นข้อเท็จจริงด้านสุขภาพ")
+}
+
+/**
  * The rigged artwork, for skeletal animation.
  *
  * Distinct from [poseFor] on purpose. Those six drawables are static expressions swapped in and

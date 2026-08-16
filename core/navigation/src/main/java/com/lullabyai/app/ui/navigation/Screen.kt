@@ -15,6 +15,15 @@ sealed class Screen(val route: String) {
     object OnboardingStep3 : Screen("onboarding_step3")
     object LastSetup : Screen("last_setup")
     object MascotSelect : Screen("mascot_select")
+
+    /**
+     * The same picker, reached from chat rather than onboarding.
+     *
+     * A separate route because the destination is what differs: onboarding continues into the
+     * first-run tour and clears the stack, while switching mid-conversation must return to the
+     * conversation it was opened from.
+     */
+    object MascotSwitch : Screen("mascot_switch")
     object FirstRunTour : Screen("first_run_tour")
     object DoctorFirstRunTour : Screen("doctor_first_run_tour")
     object Dashboard : Screen("dashboard")

@@ -23,6 +23,8 @@ data class ChatUiState(
     val messages: List<UiChatMessage> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
+    /** Set for one feed, so the companion's "อิ่มแล้ว" banner shows once and then clears. */
+    val bondFeed: com.lullabyai.app.data.repository.BondFeed? = null,
     val dashboardSummary: String? = null,
     val childInfoSummary: String? = null,
     val childInfoCardSummary: String? = null,
@@ -141,7 +143,45 @@ class ChatViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(mode = mode)
     }
 
-    fun sendMessage(content: String, child: Child?, imageBytes: ByteArray? = null, imageUri: String? = null, imageMime: String? = null) {
+    /**
+     * The chosen companion's voice, built in the UI layer from its MascotId.
+     *
+     * Held here rather than passed at every call site: the screen sends messages from six places
+     * (the composer, story buttons, quick actions), and a persona threaded through each would go
+     * stale the first time someone added a seventh.
+     */
+    private var activePersona: String? = null
+
+    /** Which companion is on screen, so feeding the child can feed the right one. */
+    private var activeMascot: String? = null
+
+    fun setPersona(persona: String?) {
+        activePersona = persona
+    }
+
+    fun setCompanion(mascotKey: String, persona: String?) {
+        activeMascot = mascotKey
+        activePersona = persona
+    }
+
+    /** Cleared once the banner has been shown, so it appears for one feed and not on every recompose. */
+    fun clearBondFeed() {
+        _uiState.value = _uiState.value.copy(bondFeed = null)
+    }
+
+    /**
+     * Feeding the child feeds the companion.
+     *
+     * Failure is swallowed on purpose: the meal is the thing that mattered and it is already
+     * saved. A bond that could fail a care record would be a toy breaking a tool.
+     */
+    private suspend fun feedCompanion() {
+        val mascot = activeMascot ?: return
+        com.lullabyai.app.data.repository.MascotBondRepository().feed(mascot)
+            .onSuccess { if (it.fed) _uiState.value = _uiState.value.copy(bondFeed = it) }
+    }
+
+    fun sendMessage(content: String, child: Child?, imageBytes: ByteArray? = null, imageUri: String? = null, imageMime: String? = null, persona: String? = null) {
         val sessionId = _uiState.value.currentSessionId ?: return
         val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = content, imageUri = imageUri)
         // Persona instruction rides along with the text (the system prompt is fixed inside
@@ -153,7 +193,7 @@ class ChatViewModel : ViewModel() {
             isLoading = true
         )
         viewModelScope.launch {
-            repo.sendMessage(sessionId, outgoing, child, imageBytes, imageMime, _uiState.value.parentRelationship)
+            repo.sendMessage(sessionId, outgoing, child, imageBytes, imageMime, _uiState.value.parentRelationship, persona ?: activePersona)
                 .onSuccess { response ->
                     // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
                     // RelationshipLabels.chatSystemPrompt) — strip it into structured data for the
@@ -207,6 +247,11 @@ class ChatViewModel : ViewModel() {
             val ok = runCatching { dispatchAgentAction(action, childId) }
                 .onFailure { android.util.Log.e("AgentAction", "type=${action.type} params=${action.params} confirmText='${action.confirmText}' threw", it) }
                 .getOrDefault(false)
+            // A meal for the child is a meal for the companion.
+            if (ok) {
+                val t = normalizeType(action.type)
+                if ("food" in t || "meal" in t || "milk" in t || "formula" in t) feedCompanion()
+            }
             if (!ok) android.util.Log.w("AgentAction", "type=${action.type} params=${action.params} confirmText='${action.confirmText}' returned false (unmatched type or missing required param)")
             _uiState.value = _uiState.value.copy(
                 messages = _uiState.value.messages.map {

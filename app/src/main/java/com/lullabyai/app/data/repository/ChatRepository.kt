@@ -124,7 +124,9 @@ class ChatRepository {
         child: Child?,
         imageBytes: ByteArray? = null,
         imageMime: String? = null,
-        relationship: String? = null
+        relationship: String? = null,
+        /** The chosen companion's voice. Null keeps the neutral house tone. */
+        persona: String? = null
     ): Result<String> = runCatching {
         // Retrieve prior history (memory) BEFORE adding the new message
         val history = runCatching { getMessages(sessionId).getOrDefault(emptyList()) }.getOrDefault(emptyList())
@@ -173,6 +175,7 @@ class ChatRepository {
             // The model has no clock. Without this it answers "เมื่อครู่" with a placeholder such
             // as "[current_time - 3 minutes]" instead of a real HH:mm, and the action then fails.
             system = RelationshipLabels.chatSystemPrompt(relationship) +
+                persona.orEmpty() +
                 "\n\nเวลาปัจจุบันของผู้ใช้: " +
                 java.time.LocalDateTime.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) +
