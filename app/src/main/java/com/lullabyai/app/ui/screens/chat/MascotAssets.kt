@@ -132,3 +132,33 @@ fun MascotId.poseFor(emotion: CompanionEmotion): Int = when (this) {
  * hero poses of their own.
  */
 fun MascotId.supportsPaintedFace(): Boolean = this == MascotId.NONGRAK
+
+/**
+ * The rigged artwork, for skeletal animation.
+ *
+ * Distinct from [poseFor] on purpose. Those six drawables are static expressions swapped in and
+ * out; this is the single render each companion is boned against, so a limb can swing and a
+ * scarf trail while the body holds still. Anywhere the companion should feel alive uses this.
+ */
+fun MascotId.rigArt(): com.lullabyai.app.ui.mascot.MascotArt = when (this) {
+    MascotId.NONGRAK -> com.lullabyai.app.ui.mascot.MascotArt.NONGRAK
+    MascotId.COCO -> com.lullabyai.app.ui.mascot.MascotArt.COCO
+    MascotId.BUNNY -> com.lullabyai.app.ui.mascot.MascotArt.BUNNY
+    MascotId.PINGU -> com.lullabyai.app.ui.mascot.MascotArt.PINGU
+}
+
+/**
+ * How a feeling becomes movement.
+ *
+ * Speaking always wins: a companion mid-sentence should read as talking whatever else is true.
+ * The one-shot moods play once and fall back to the resting loop by themselves, which is why an
+ * emotion can map to one without the companion getting stuck in it.
+ */
+fun CompanionEmotion.toMood(isSpeaking: Boolean): com.lullabyai.app.ui.mascot.MascotMood = when {
+    isSpeaking -> com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
+    this == CompanionEmotion.HAPPY -> com.lullabyai.app.ui.mascot.MascotMood.HAPPY
+    this == CompanionEmotion.CONFUSED -> com.lullabyai.app.ui.mascot.MascotMood.THINKING
+    this == CompanionEmotion.LEARNING -> com.lullabyai.app.ui.mascot.MascotMood.THINKING
+    this == CompanionEmotion.RESTING -> com.lullabyai.app.ui.mascot.MascotMood.SLEEPY
+    else -> com.lullabyai.app.ui.mascot.MascotMood.IDLE   // GREETING and CARING simply breathe
+}

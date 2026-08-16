@@ -105,16 +105,16 @@ fun CompanionCard(
                     // one that can wear the painted talking face while TTS speaks (see AiAvatar.kt).
                     // Every other moment — and every other mascot — is the live pet: breathing,
                     // drifting, swaying, blinking, and hopping when touched.
-                    if (mascot.supportsPaintedFace() && isSpeaking) {
-                        AiAvatarView(isSpeaking = true, modifier = Modifier.size(132.dp))
-                    } else {
-                        PetMascot(
-                            mascot = mascot,
-                            emotion = emotion,
-                            onPet = onPet,
-                            modifier = Modifier.size(132.dp)
-                        )
-                    }
+                    // All four companions are skeletally animated now: a limb swings, the scarf or
+                    // cape trails a beat behind the body, and the face blinks and talks on top.
+                    // Face coordinates were measured per mascot, so this is no longer น้องรัก-only.
+                    com.lullabyai.app.ui.mascot.Mascot(
+                        art = mascot.rigArt(),
+                        mood = emotion.toMood(isSpeaking),
+                        speaking = isSpeaking,
+                        onTap = onPet,
+                        modifier = Modifier.size(132.dp)
+                    )
                 }
 
                 // Care buttons, overlaid top-left of the portrait exactly as in the Stitch layout.
