@@ -2041,3 +2041,27 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 
 **Release:** `1.0.3-dev36` · **versionCode 16** · AAB:
 `LullabyAI/Releases/v1.0.3-dev36/com.publish.NongRak-vc16-dev36.aab` (~37.1 MB) · `bundleRelease` ✅ 2026-08-01
+
+---
+
+### BATCH BE — Activity Schedule, skeletal mascots, agent reach, ความผูกพัน (2026-08-16, Claude · branch `Track-YSC`)
+
+> Full brief for a fresh agent: **[`AGENT_HANDOFF.md`](AGENT_HANDOFF.md)** — conventions, load-bearing
+> decisions, rejected approaches and why. This entry is the summary only.
+
+| Area | What landed |
+|------|-------------|
+| Cost Record | Per-child + family total only; cross-child switcher **deleted** (a `remember` key re-ran its initialiser when `load()` filled in the account-wide child and recorded against the wrong one). Readable baht errors, scrollable budget sheet |
+| Activity Schedule | `ui/screens/schedule/` — day/week/month, start+end times, forward-only via `validateActivityWindow()` comparing **instants not wall clocks** |
+| Places + AI outings | `PlacesClient` / `ActivityRecommender`; venues searched **per category group** in parallel (nature 40 km, malls/food 15 km, learning 30 km) so a beach can reach the shortlist at all; opening hours fetched; 3-day cache shared between carers |
+| Mascot rig | `ui/mascot/` — linear blend skinning → `Canvas.drawBitmapMesh`. Rive dropped: `.riv` export is paid and nothing used a Rive-only feature. **Forward** warping, **squared** falloff, arms swing **down** (−30°…+8°) |
+| Chat agent | `log_expense`, `add_schedule`, navigation to the new screens. Fixed `"activity" → addExercise` (logged a workout instead of a plan — branch order is load-bearing) |
+| Sleep logging | Was impossible: model never told the clock (emitted `[current_time - 3 minutes]` literally) and `endTime` was mandatory though `sleep_logs.end_time` is nullable. Missing start = now, missing end = still sleeping |
+| Companion | Switched from chat, per-mascot persona (voice only, never capability), bond `mascot_bonds` PK `(user_id, mascot)`, level derived by `mascot_level(xp)`, `feed_mascot` 20-min cooldown |
+| Access | Non-owner can leave a child — `remove_child_member` always allowed self-removal, only the button was missing |
+
+**Migrations:** `activity_schedule`, `activity_recommendation_cache`, `mascot_bonds` (+ cost-record and role set earlier the same day).
+
+**Commits:** `162f0c1`, `68e18ce`, `f8dc02f`, `282c4f3`, `6d644bc`, `4ff5f8b`, `0563b20` · tests 77 green · `assembleDebug` ✅ · **not pushed**
+
+**Next:** Gemini Live calls · per-mascot TTS voice (`synthesize(voice=)` exists, nobody passes one — all four speak as `Leda`) · in-call action banner · bond XP from the nutrition screen · owner transfer · rotate `MAPS_API_KEY` · Play Data Safety for `ACCESS_COARSE_LOCATION`
