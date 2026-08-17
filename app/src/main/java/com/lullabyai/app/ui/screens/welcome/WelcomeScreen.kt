@@ -114,7 +114,7 @@ fun WelcomeScreen(
                 Box(Modifier.size(7.dp).clip(CircleShape).background(Primary))
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "CLINICAL EDITION",
+                    "SMART PARENTING",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.6.sp,
@@ -171,13 +171,13 @@ fun WelcomeScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Filled.VerifiedUser, null,
+                            Icons.Filled.AutoAwesome, null,
                             tint = Primary, modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (isThai) "มาตรฐานการแพทย์ที่วางใจได้"
-                            else "Medical-grade standards you can trust",
+                            if (isThai) "ผู้ช่วยอัจฉริยะคู่ใจคุณพ่อคุณแม่"
+                            else "Your smart parenting companion",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -187,8 +187,8 @@ fun WelcomeScreen(
                     Spacer(Modifier.height(14.dp))
 
                     Text(
-                        if (isThai) "นวัตกรรม AI เพื่อดูแล\nสุขภาพลูกน้อย"
-                        else "AI built to care for\nyour child's health",
+                        if (isThai) "ผู้ช่วย AI ดูแลและบันทึก\nทุกช่วงเวลาของลูกน้อย"
+                        else "AI companion to care for\nyour child's journey",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
@@ -199,8 +199,8 @@ fun WelcomeScreen(
                     Spacer(Modifier.height(12.dp))
 
                     Text(
-                        if (isThai) "เทคโนโลยีการติดตามผลระดับคลินิก พร้อมคำแนะนำที่แม่นยำจากผู้เชี่ยวชาญ"
-                        else "Clinical-grade tracking, with precise guidance from specialists",
+                        if (isThai) "บันทึกพัฒนาการ สุขภาพ และการนอน พร้อมคำแนะนำที่อบอุ่นและเข้าใจง่าย"
+                        else "Track growth, daily routines, and milestones with warm, thoughtful guidance",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -226,7 +226,7 @@ fun WelcomeScreen(
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
                     ) {
                         Text(
-                            if (isThai) "เริ่มต้นใช้งานสำหรับผู้ปกครอง" else "Get started as a parent",
+                            if (isThai) "เริ่มต้นใช้งาน" else "Get started",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -296,7 +296,7 @@ fun WelcomeScreen(
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    if (isThai) "เข้าสู่ระบบสำหรับแพทย์" else "Sign in as a clinician",
+                                    if (isThai) "เข้าสู่ระบบสำหรับบุคลากร & ผู้เชี่ยวชาญ" else "Sign in as a clinician / specialist",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = Primary
@@ -316,9 +316,9 @@ fun WelcomeScreen(
             Spacer(Modifier.height(32.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                TrustMark(Icons.Filled.HealthAndSafety, "HIPAA SECURE")
-                TrustMark(Icons.Filled.Lock, "AES-256 BIT")
-                TrustMark(Icons.Filled.Article, "ISO 27001")
+                TrustMark(Icons.Filled.Shield, "PRIVACY FIRST")
+                TrustMark(Icons.Filled.Lock, "ENCRYPTED")
+                TrustMark(Icons.Filled.ChildCare, "WHO STANDARDS")
             }
 
             Spacer(Modifier.height(28.dp))
