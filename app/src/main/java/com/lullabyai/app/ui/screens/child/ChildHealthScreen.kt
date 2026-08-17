@@ -150,6 +150,12 @@ fun ChildHealthScreen(
                     HealthTile(if (s.isThai) "โรคประจำตัว" else "Chronic conditions", Icons.Filled.HealthAndSafety, Modifier.weight(1f)) { navController.navigate(Screen.ChronicRegistry.route) }
                 }
             }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HealthTile(if (s.isThai) "สุขภาพช่องปาก" else "Oral Health", Icons.Filled.HealthAndSafety, Modifier.weight(1f)) { navController.navigate(Screen.OralHealth.route) }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
         }
     }
 

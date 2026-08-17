@@ -2079,3 +2079,21 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 **Migrations:** `supabase/migrations/20260816_owner_transfer_and_reclaim.sql`
 **Build:** `testDebugUnitTest` 77 green ✅ · `assembleDebug` ✅ GREEN.
 
+---
+
+### BATCH BG — Oral Health Pro System & Event Logging (2026-08-17, branch `Track-YSC.02`)
+
+| Area | Change |
+|------|--------|
+| **Stitch Mockup Match** | 1:1 match with Stitch project `03.NongRak Main Screen` screens: `Oral Health Pro System (ระบบสุขภาพช่องปากครบวงจร)` and `Record Oral Health Event (บันทึกเหตุการณ์สุขภาพช่องปาก)`. |
+| **Teeth Map** | Interactive 20-tooth primary deciduous arch (Maxillary A-J, Mandibular K-T) with status states (`healthy`, `emerging`, `needs_care`, `missing`), pulsing animation for erupting teeth, and tap-to-update modal. |
+| **7-Day Consistency** | Real-time circular progress indicator tracking 2x/day brushing consistency over the last 7 days. |
+| **Daily Routine Checklist** | Checkboxes for Morning (เช้า), Lunch (กลางวัน), Bedtime (ก่อนนอน), and Flossing (ไหมขัดฟัน) with instant Postgres upsert. |
+| **Event Logging** | Category selector (`first_tooth`, `dentist_visit`, `treatment`, `other`), title, date, notes, multi-photo attachment (up to 3 photos), and sticky save action. |
+| **AI Recommendation** | `ClaudeClient` / `ai-generate` integration for pediatric dental guidance based on child age and current tooth eruption/care status. |
+| **Log Child Data Access** | Integrated entry points in `QuickLogHubScreen.kt` (Log Tile + recent activity), `ChildHealthScreen.kt` (Health Hub grid), and `QuickActionCatalog.kt`. |
+
+**Migrations:** `supabase/migrations/20260817_oral_health_system.sql`
+**Build:** `testDebugUnitTest` 77 green ✅ · `assembleDebug` ✅ GREEN.
+
+

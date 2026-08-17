@@ -232,4 +232,8 @@ sealed class Screen(val route: String) {
             "care_chat/$peerId?quote=" + java.net.URLEncoder.encode(quote, "UTF-8")
     }
     object PendingAccessRequests : Screen("pending_access_requests")
+
+    // --- Oral Health Pro System ---
+    object OralHealth : Screen("child_oral_health")
+    object RecordOralHealthEvent : Screen("child_oral_health_record")
 }

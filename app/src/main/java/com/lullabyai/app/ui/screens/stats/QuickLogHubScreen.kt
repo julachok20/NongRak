@@ -125,7 +125,11 @@ fun QuickLogHubScreen(
             LogTileAction(
                 Icons.Filled.EmojiEvents, if (s.isThai) "พัฒนาการ" else "Development", Color(0xFF526069),
                 if (s.isThai) "ทักษะใหม่" else "New skill"
-            ) { navController.navigate(Screen.ChildDevelopment.route) }
+            ) { navController.navigate(Screen.ChildDevelopment.route) },
+            LogTileAction(
+                Icons.Filled.HealthAndSafety, if (s.isThai) "ช่องปากและฟัน" else "Oral Health", Color(0xFF173DB8),
+                if (s.isThai) "บันทึกฟัน" else "Oral care"
+            ) { navController.navigate(Screen.OralHealth.route) }
         )
     }
 

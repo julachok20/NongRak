@@ -78,12 +78,15 @@ import com.lullabyai.app.ui.screens.nutrition.CalorieCalculatorScreen
 import com.lullabyai.app.ui.screens.nutrition.CalorieSummaryScreen
 import com.lullabyai.app.ui.screens.nutrition.EditFoodEntriesScreen
 import com.lullabyai.app.ui.screens.exercise.ExerciseScreen
+import com.lullabyai.app.ui.screens.child.OralHealthScreen
+import com.lullabyai.app.ui.screens.child.RecordOralHealthEventScreen
 import com.lullabyai.app.ui.theme.NongRakTheme
 import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import com.lullabyai.app.viewmodel.OnboardingViewModel
 import com.lullabyai.app.viewmodel.NutritionViewModel
+import com.lullabyai.app.viewmodel.OralHealthViewModel
 import com.lullabyai.app.viewmodel.SettingsViewModel
 import com.lullabyai.app.data.settings.AppLanguage
 
@@ -109,7 +112,8 @@ fun AppNavigation(
     childViewModel: ChildViewModel = viewModel(),
     chatViewModel: ChatViewModel = viewModel(),
     onboardingViewModel: OnboardingViewModel = viewModel(),
-    nutritionViewModel: NutritionViewModel = viewModel()
+    nutritionViewModel: NutritionViewModel = viewModel(),
+    oralHealthViewModel: OralHealthViewModel = viewModel()
 ) {
     val appSettings by settingsViewModel.settings.collectAsState()
     val lang = if (appSettings.language == AppLanguage.TH) "th" else "en"
@@ -1391,6 +1395,21 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.diary.AddMemoryScreen(
                 navController = navController,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        // --- Oral Health Pro System ---
+        composable(Screen.OralHealth.route) {
+            OralHealthScreen(
+                oralHealthViewModel = oralHealthViewModel,
+                childViewModel = childViewModel,
+                navController = navController
+            )
+        }
+        composable(Screen.RecordOralHealthEvent.route) {
+            RecordOralHealthEventScreen(
+                oralHealthViewModel = oralHealthViewModel,
+                navController = navController
             )
         }
     }

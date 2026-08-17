@@ -904,3 +904,40 @@ data class SuggestionItem(
     val subtitle: String,
     val tags: List<String> = emptyList()
 )
+
+// ---------------- Oral Health Pro System Models ----------------
+
+@Serializable
+data class ToothRecord(
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("tooth_id") val toothId: String = "",
+    val status: String = "healthy", // healthy | emerging | needs_care | missing
+    val notes: String? = null,
+    @SerialName("erupted_at") val eruptedAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
+@Serializable
+data class OralHealthEvent(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("user_id") val userId: String = "",
+    val category: String = "first_tooth", // first_tooth | dentist_visit | treatment | other
+    @SerialName("event_name") val eventName: String = "",
+    @SerialName("event_date") val eventDate: String = "",
+    val notes: String? = null,
+    @SerialName("photo_urls") val photoUrls: List<String> = emptyList(),
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class DailyOralRoutine(
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("routine_date") val routineDate: String = "",
+    val morning: Boolean = false,
+    val lunch: Boolean = false,
+    val bedtime: Boolean = false,
+    val flossing: Boolean = false,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
