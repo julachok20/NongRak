@@ -134,6 +134,15 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
             }
             item {
                 OutlinedButton(
+                    onClick = { navController.navigate(Screen.RefrigeratorScanner.route) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp)
+                ) {
+                    Icon(Icons.Filled.Kitchen, null, tint = Primary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text(if (isThai) "ตู้เย็นอัจฉริยะ & สแกนวัตถุดิบ" else "Smart Refrigerator & Ingredients", fontWeight = FontWeight.Bold)
+                }
+            }
+            item {
+                OutlinedButton(
                     onClick = { navController.navigate(Screen.CalorieCheck.route) },
                     modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp)
                 ) {

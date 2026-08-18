@@ -59,6 +59,10 @@ data class NutritionUiState(
     val exerciseLoading: Boolean = false,
     val currentExerciseName: String? = null,  // the activity name requested (for reliable done-matching)
     val isChildOwner: Boolean = false,
+    // Smart Refrigerator & Ingredient Scanner state
+    val fridgeIngredients: List<com.lullabyai.app.data.model.FridgeIngredient> = emptyList(),
+    val fridgeScanning: Boolean = false,
+    val siblingChildren: List<Child> = emptyList(),
     val error: String? = null
 )
 
@@ -177,15 +181,85 @@ class NutritionViewModel : ViewModel() {
             } ?: 0
             val (targetCa, targetFe) = dailyTargetMinerals(child)
             val isOwner = child?.let { childRepo.isChildOwner(it.id).getOrDefault(false) } ?: false
+            val fridgeItems = child?.let { repo.getFridgeIngredients(it.id) } ?: emptyList()
+            val allChildren = childRepo.getChildren().getOrDefault(emptyList())
+            val siblings = allChildren.filter { it.id != child?.id }
+
             _ui.value = _ui.value.copy(
                 loading = false, child = child, logDate = date, foods = foods, todayMilkMl = milkMl,
                 exerciseLogs = ex, weeklyMinutes = weekly, summary = summary,
                 targetKcal = dailyTargetKcal(child), targetMacros = dailyTargetMacros(child),
                 targetCalciumMg = targetCa, targetIronMg = targetFe,
-                isChildOwner = isOwner
+                isChildOwner = isOwner,
+                fridgeIngredients = fridgeItems,
+                siblingChildren = siblings
             )
             ensureSuggestions(lang)
             loadMacros(lang)
+            ensureMenuRecommendations(lang)
+        }
+    }
+
+    fun loadFridgeIngredients() {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            val items = repo.getFridgeIngredients(child.id)
+            val allChildren = childRepo.getChildren().getOrDefault(emptyList())
+            val siblings = allChildren.filter { it.id != child.id }
+            _ui.value = _ui.value.copy(fridgeIngredients = items, siblingChildren = siblings)
+        }
+    }
+
+    fun addFridgeIngredient(name: String, quantity: String? = null, category: String = "general", lang: String? = null) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            repo.addFridgeIngredient(child.id, name.trim(), category, quantity)
+            val updated = repo.getFridgeIngredients(child.id)
+            _ui.value = _ui.value.copy(fridgeIngredients = updated)
+            menuRecsKey = null
+            lang?.let { ensureMenuRecommendations(it) }
+        }
+    }
+
+    fun removeFridgeIngredient(id: String, lang: String? = null) {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            repo.removeFridgeIngredient(id)
+            val updated = repo.getFridgeIngredients(child.id)
+            _ui.value = _ui.value.copy(fridgeIngredients = updated)
+            menuRecsKey = null
+            lang?.let { ensureMenuRecommendations(it) }
+        }
+    }
+
+    fun scanFridgePhoto(imageBytes: ByteArray, lang: String, onDone: (List<String>) -> Unit = {}) {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            _ui.value = _ui.value.copy(fridgeScanning = true)
+            val imageBase64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
+            val detected = NutritionAiService.scanFridgeIngredientsFromPhoto(imageBase64, "image/jpeg", lang)
+            if (detected.isNotEmpty()) {
+                val currentNames = _ui.value.fridgeIngredients.map { it.ingredientName.lowercase().trim() }.toSet()
+                detected.filterNot { currentNames.contains(it.lowercase().trim()) }.forEach { name ->
+                    repo.addFridgeIngredient(child.id, name)
+                }
+                val updated = repo.getFridgeIngredients(child.id)
+                _ui.value = _ui.value.copy(fridgeIngredients = updated, fridgeScanning = false)
+                menuRecsKey = null
+                ensureMenuRecommendations(lang)
+            } else {
+                _ui.value = _ui.value.copy(fridgeScanning = false)
+            }
+            onDone(detected)
+        }
+    }
+
+    fun syncFridgeToSibling(targetChildId: String, lang: String? = null, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            repo.syncFridgeIngredients(child.id, targetChildId)
+            onDone()
         }
     }
 
@@ -228,18 +302,19 @@ class NutritionViewModel : ViewModel() {
 
     /** Loads dish ideas for the child's age — targeted at whichever nutrients are currently under
      *  target (calcium/iron/protein/carbs/fat), or a generic budget-friendly list if none are (or
-     *  today's macros haven't loaded yet). Re-fetches when the deficiency set actually changes. */
+     *  today's macros haven't loaded yet). Re-fetches when the deficiency set or fridge inventory changes. */
     fun ensureMenuRecommendations(lang: String) {
         val child = _ui.value.child ?: return
         val months = ageMonths(child)
         val needs = deficientNutrients()
-        val key = "$lang|$months|${needs.joinToString(",")}"
+        val available = _ui.value.fridgeIngredients.map { it.ingredientName }
+        val key = "$lang|$months|${needs.joinToString(",")}|${available.sorted().joinToString(",")}"
         if (key == menuRecsKey) return
         menuRecsKey = key
         viewModelScope.launch {
             _ui.value = _ui.value.copy(menuRecsLoading = true)
-            val recs = if (needs.isNotEmpty()) NutritionAiService.recommendMenusForNeeds(needs, months, lang)
-                       else NutritionAiService.recommendBudgetMenus(months, lang)
+            val recs = if (needs.isNotEmpty()) NutritionAiService.recommendMenusForNeeds(needs, months, lang, available)
+                       else NutritionAiService.recommendBudgetMenus(months, lang, available)
             _ui.value = _ui.value.copy(menuRecs = recs, menuRecsLoading = false)
         }
     }

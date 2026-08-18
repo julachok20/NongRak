@@ -197,28 +197,50 @@ object NutritionAiService {
         return SuggestionItem(o.str("title"), o.str("subtitle"))
     }
 
-    /** Recommend several simple, low-cost home-style dishes (not split by meal). */
-    suspend fun recommendBudgetMenus(ageMonths: Int, lang: String): List<SuggestionItem> {
-        val prompt = "Suggest 5 simple, LOW-COST, everyday home-style dishes suitable for a $ageMonths-month-old toddler. " +
+    // ---------------- Smart Refrigerator & Ingredients Scanner ----------------
+
+    /** Scans a refrigerator / pantry photo and detects available ingredients. Returns list of ingredient names. */
+    suspend fun scanFridgeIngredientsFromPhoto(imageBase64: String, imageMimeType: String, lang: String): List<String> {
+        val prompt = "This is a photo inside a refrigerator, kitchen pantry, or food preparation area. " +
+            "Carefully detect and list all visible raw ingredients, fresh produce, vegetables, fruits, dairy, eggs, meats, or staple foods. " +
+            "Return JSON exactly: {\"ingredients\":[\"บรอกโคลี\",\"นมสด\",\"แอปเปิ้ล\",\"แครอท\",\"ไข่ไก่\"]}. " +
+            "If no ingredients or foods are identifiable, return {\"ingredients\":[]}."
+        val obj = ask(prompt, lang, maxTokens = 1024, imageBase64 = imageBase64, imageMimeType = imageMimeType)?.objOrNull() ?: return emptyList()
+        return (obj["ingredients"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { s -> s.isNotBlank() } } ?: emptyList()
+    }
+
+    /** Recommend several simple, low-cost home-style dishes (not split by meal), incorporating available fridge ingredients if any. */
+    suspend fun recommendBudgetMenus(ageMonths: Int, lang: String, availableIngredients: List<String> = emptyList()): List<SuggestionItem> {
+        val fridgeClause = if (availableIngredients.isNotEmpty()) {
+            "The family currently has these ingredients at home in their refrigerator: [${availableIngredients.joinToString(", ")}]. " +
+            "PRIORITIZE 5 dishes that can be cooked using these available ingredients. " +
+            "For dishes matching the fridge ingredients, add the tag \"มีวัตถุดิบครบ\" or \"ใช้วัตถุดิบในบ้าน\" (or \"In Fridge\" in English). "
+        } else ""
+        val prompt = "Suggest 5 simple, LOW-COST, everyday home-style dishes suitable for a $ageMonths-month-old toddler. $fridgeClause" +
             "Focus on affordable Thai-family staples parents can cook at home (e.g. rice porridge, soft rice, boiled egg, mashed banana/pumpkin, simple vegetable soup, minced pork/rice). " +
             "Do NOT suggest luxury, restaurant, imported, or expensive items (no steak, salmon, cheese boards, fancy desserts, etc.). " +
             "subtitle = one short line on nutrition benefit AND that it is budget-friendly. " +
-            "tags = short nutrient symbols (e.g. Fe, Ca, A, P) plus optional cook time like \"15 min\" and difficulty like \"easy\". " +
+            "tags = short nutrient symbols (e.g. Fe, Ca, A, P) plus optional cook time like \"15 min\" and difficulty like \"easy\" or \"มีวัตถุดิบครบ\". " +
             "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\",\"tags\":[\"Fe\",\"15 min\",\"easy\"]}]"
         return parseSuggestions(ask(prompt, lang) ?: return emptyList())
     }
 
     /** Recommend dishes targeted at boosting specific nutrients the child is currently short on
-     *  (e.g. "iron", "calcium", "protein", "carbohydrates", "fat"), still low-cost/home-style. */
-    suspend fun recommendMenusForNeeds(needs: List<String>, ageMonths: Int, lang: String): List<SuggestionItem> {
-        if (needs.isEmpty()) return recommendBudgetMenus(ageMonths, lang)
+     *  (e.g. "iron", "calcium", "protein", "carbohydrates", "fat"), still low-cost/home-style, incorporating available fridge items. */
+    suspend fun recommendMenusForNeeds(needs: List<String>, ageMonths: Int, lang: String, availableIngredients: List<String> = emptyList()): List<SuggestionItem> {
+        if (needs.isEmpty()) return recommendBudgetMenus(ageMonths, lang, availableIngredients)
         val list = needs.joinToString(", ")
+        val fridgeClause = if (availableIngredients.isNotEmpty()) {
+            "The family currently has these ingredients in their refrigerator: [${availableIngredients.joinToString(", ")}]. " +
+            "PRIORITIZE dishes that can be cooked using these available ingredients to boost the target nutrients. " +
+            "For dishes matching the fridge ingredients, add the tag \"มีวัตถุดิบครบ\" or \"ใช้วัตถุดิบในบ้าน\" (or \"In Fridge\" in English). "
+        } else ""
         val prompt = "Suggest 5 simple, LOW-COST, everyday home-style dishes suitable for a $ageMonths-month-old toddler, " +
-            "specifically chosen to help boost intake of: $list. " +
+            "specifically chosen to help boost intake of: $list. $fridgeClause" +
             "Focus on affordable Thai-family staples parents can cook at home. " +
             "Do NOT suggest luxury, restaurant, imported, or expensive items. " +
             "subtitle = one short line naming which of these target nutrients this dish helps with, AND that it is budget-friendly. " +
-            "tags = short nutrient symbols for the target nutrients (Fe/Ca/A/P) plus optional \"15 min\" and \"easy\". " +
+            "tags = short nutrient symbols for the target nutrients (Fe/Ca/A/P) plus optional \"15 min\" and \"easy\" or \"มีวัตถุดิบครบ\". " +
             "Return JSON array: [{\"title\":\"...\",\"subtitle\":\"...\",\"tags\":[\"Fe\",\"Ca\",\"15 min\"]}]"
         return parseSuggestions(ask(prompt, lang) ?: return emptyList())
     }

@@ -88,7 +88,8 @@ object QuickActionCatalog {
         QuickAction(Screen.WhoHeightForAgeDetail.route, "กราฟส่วนสูงตามอายุ", "WHO Height-for-Age", Icons.Filled.ShowChart, "who growth chart height กราฟ ส่วนสูง"),
         QuickAction(Screen.AddChildChoice.route, "เพิ่มลูก", "Add Child", Icons.Filled.PersonAdd, "add new child เพิ่มลูก sync ซิงค์"),
         QuickAction(Screen.OralHealth.route, "สุขภาพช่องปาก", "Oral Health", Icons.Filled.HealthAndSafety, "oral health teeth dentistry ฟัน ช่องปาก แปรงฟัน แผนผังฟัน หมอฟัน"),
-        QuickAction(Screen.RecordOralHealthEvent.route, "บันทึกเหตุการณ์ช่องปาก", "Record Oral Event", Icons.Filled.AddCircle, "oral event teeth log บันทึกฟัน ฟันซี่แรก เคลือบฟลูออไรด์")
+        QuickAction(Screen.RecordOralHealthEvent.route, "บันทึกเหตุการณ์ช่องปาก", "Record Oral Event", Icons.Filled.AddCircle, "oral event teeth log บันทึกฟัน ฟันซี่แรก เคลือบฟลูออไรด์"),
+        QuickAction(Screen.RefrigeratorScanner.route, "ตู้เย็นอัจฉริยะ & สแกนวัตถุดิบ", "Smart Refrigerator Scanner", Icons.Filled.Kitchen, "fridge refrigerator scan ingredients pantry ตู้เย็น สแกนตู้เย็น วัตถุดิบ อาหารในบ้าน เมนูจากตู้เย็น")
     )
 
     /** Case-insensitive substring match on Thai/EN labels + keywords. Blank query → full catalog. */

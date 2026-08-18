@@ -3,6 +3,7 @@ package com.lullabyai.app.data.repository
 import com.lullabyai.app.data.model.ExerciseLog
 import com.lullabyai.app.data.model.FoodLog
 import com.lullabyai.app.data.remote.supabase
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.json.JsonNull
@@ -173,4 +174,71 @@ class NutritionRepository {
             exerciseMinutes = ex.sumOf { it.durationMin ?: 0 }
         )
     }
+
+    // ---------------- SMART REFRIGERATOR & INGREDIENTS ----------------
+
+    suspend fun getFridgeIngredients(childId: String): List<com.lullabyai.app.data.model.FridgeIngredient> = runCatching {
+        supabase.from("fridge_ingredients").select {
+            filter { eq("child_id", childId) }
+            order("created_at", Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.FridgeIngredient>()
+    }.getOrDefault(emptyList())
+
+    suspend fun addFridgeIngredient(
+        childId: String,
+        ingredientName: String,
+        category: String = "general",
+        quantity: String? = null
+    ): Result<com.lullabyai.app.data.model.FridgeIngredient> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not authenticated")
+        supabase.from("fridge_ingredients").insert(buildJsonObject {
+            put("child_id", JsonPrimitive(childId))
+            put("user_id", JsonPrimitive(userId))
+            put("ingredient_name", JsonPrimitive(ingredientName.trim()))
+            put("category", JsonPrimitive(category))
+            put("quantity", quantity?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
+        }) {
+            select()
+        }.decodeSingle<com.lullabyai.app.data.model.FridgeIngredient>()
+    }
+
+    suspend fun removeFridgeIngredient(id: String): Result<Unit> = runCatching {
+        supabase.from("fridge_ingredients").delete {
+            filter { eq("id", id) }
+        }
+        Unit
+    }
+
+    suspend fun setFridgeIngredients(childId: String, ingredientNames: List<String>): Result<Unit> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not authenticated")
+        // Clear old list
+        supabase.from("fridge_ingredients").delete {
+            filter { eq("child_id", childId) }
+        }
+        // Insert new list
+        val distinct = ingredientNames.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (distinct.isNotEmpty()) {
+            distinct.forEach { name ->
+                supabase.from("fridge_ingredients").insert(buildJsonObject {
+                    put("child_id", JsonPrimitive(childId))
+                    put("user_id", JsonPrimitive(userId))
+                    put("ingredient_name", JsonPrimitive(name))
+                    put("category", JsonPrimitive("general"))
+                })
+            }
+        }
+        Unit
+    }
+
+    suspend fun syncFridgeIngredients(sourceChildId: String, targetChildId: String): Result<Unit> = runCatching {
+        supabase.from("fridge_ingredients").postgrest.rpc(
+            "sync_fridge_ingredients",
+            buildJsonObject {
+                put("p_source_child_id", JsonPrimitive(sourceChildId))
+                put("p_target_child_id", JsonPrimitive(targetChildId))
+            }
+        )
+        Unit
+    }
 }
+

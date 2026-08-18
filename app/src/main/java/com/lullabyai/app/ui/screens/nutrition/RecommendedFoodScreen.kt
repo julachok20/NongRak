@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.nutrition
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -116,6 +117,81 @@ fun RecommendedFoodScreen(vm: NutritionViewModel, lang: String, navController: N
                 }
             }
 
+            // Smart Refrigerator / Available Ingredients Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Primary.copy(alpha = 0.06f)),
+                    border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Filled.Kitchen, null, tint = Primary)
+                                Text(
+                                    text = if (isThai) "วัตถุดิบในตู้เย็น (${ui.fridgeIngredients.size})" else "Fridge Ingredients (${ui.fridgeIngredients.size})",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Primary
+                                )
+                            }
+                            TextButton(
+                                onClick = { navController.navigate(Screen.RefrigeratorScanner.route) },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Icon(Icons.Filled.PhotoCamera, null, tint = Primary, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (isThai) "สแกน / เพิ่ม" else "Scan / Add", color = Primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (ui.fridgeIngredients.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                ui.fridgeIngredients.forEach { item ->
+                                    Surface(
+                                        shape = RoundedCornerShape(100.dp),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
+                                    ) {
+                                        Text(
+                                            text = item.ingredientName,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = if (isThai) "💡 AI นำวัตถุดิบเหล่านี้มาช่วยเลือกเมนูอาหารด้านล่างให้ตรงกับที่คุณมีในบ้าน" else "💡 AI uses these available ingredients to prioritize matching recipes below.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Outline
+                            )
+                        } else {
+                            Text(
+                                text = if (isThai) "ยังไม่มีวัตถุดิบที่บันทึกไว้ แตะ 'สแกน / เพิ่ม' เพื่อให้ AI แนะนำเมนูจากของในตู้เย็นได้ค่ะ" else "No fridge items logged. Tap 'Scan / Add' to get recipes tailored to what you have.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
             item {
                 Text(if (isThai) "เมนูแนะนำ" else "Recommended menus", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Text(
@@ -183,6 +259,7 @@ private fun RecommendedMenuCard(rec: SuggestionItem, isThai: Boolean, onOpen: ()
     val tags = nutrientTagSymbols(listOf(rec.subtitle) + rec.tags)
     val timeTag = rec.tags.firstOrNull { it.contains("min", ignoreCase = true) || it.contains("นาที") }
     val easyTag = rec.tags.firstOrNull { it.contains("easy", ignoreCase = true) || it.contains("ง่าย") }
+    val inFridgeTag = rec.tags.any { it.contains("มีวัตถุดิบ", ignoreCase = true) || it.contains("fridge", ignoreCase = true) || it.contains("ในบ้าน", ignoreCase = true) }
     Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column {
             Box(Modifier.fillMaxWidth().height(140.dp).background(Primary.copy(0.08f))) {
@@ -192,15 +269,30 @@ private fun RecommendedMenuCard(rec: SuggestionItem, isThai: Boolean, onOpen: ()
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                if (timeTag != null) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color.White.copy(0.92f)
-                    ) {
-                        Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Filled.Schedule, null, tint = Primary, modifier = Modifier.size(14.dp))
-                            Text(timeTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (timeTag != null) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White.copy(0.92f)
+                        ) {
+                            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Schedule, null, tint = Primary, modifier = Modifier.size(14.dp))
+                                Text(timeTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    if (inFridgeTag) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Primary
+                        ) {
+                            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Kitchen, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                Text(if (isThai) "มีวัตถุดิบ" else "In Fridge", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                     }
                 }

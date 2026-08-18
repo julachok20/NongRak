@@ -236,4 +236,7 @@ sealed class Screen(val route: String) {
     // --- Oral Health Pro System ---
     object OralHealth : Screen("child_oral_health")
     object RecordOralHealthEvent : Screen("child_oral_health_record")
+
+    // --- Smart Refrigerator & Ingredient Scanner ---
+    object RefrigeratorScanner : Screen("refrigerator_scanner")
 }

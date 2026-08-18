@@ -2096,4 +2096,22 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 **Migrations:** `supabase/migrations/20260817_oral_health_system.sql`
 **Build:** `testDebugUnitTest` 77 green ✅ · `assembleDebug` ✅ GREEN.
 
+---
+
+### BATCH BH — Smart Refrigerator & Ingredient Scanner for AI Nutrition (2026-08-18, branch `Track-YSC.02`)
+
+| Area | Change |
+|------|--------|
+| **Stitch Mockup Match** | 1:1 match with Stitch screen `AI Refrigerator Scanner Viewfinder & Scanner` (`cd44dc0ba1a44be79ea24a78e68b1e82`) and `Recommended Food` (`042a5b45ce474e51b1089615353a0e9e`). |
+| **Scanner Viewfinder** | `RefrigeratorScannerScreen.kt` with AR bounding tags (pulsing border animation, category icons, tag pills for foods like บรอกโคลี, นมสด, แครอท, ไข่ไก่), Camera capture launcher, and Gallery image picker. |
+| **AI Vision Scanner** | `NutritionAiService.scanFridgeIngredientsFromPhoto` parses ingredients from image using multimodal ClaudeClient / Gemini vision. |
+| **Manual Ingredient Input** | Quick input field and interactive deletion chips to manage available ingredients at home. |
+| **Sibling Child Sync** | `sync_fridge_ingredients` RPC and in-app modal to copy/sync fridge ingredients from one child to another sibling child profile under the same parent. |
+| **Ingredient-Aware AI Meals** | `NutritionAiService.recommendBudgetMenus` & `recommendMenusForNeeds` prioritize recipes using ingredients present in the fridge and tag them with `มีวัตถุดิบครบ` / `In Fridge`. |
+| **UI Integration** | Added Refrigerator Scanner entry point in `NutritionScreen.kt`, ingredient inventory banner & badges in `RecommendedFoodScreen.kt`, and search keywords in `QuickActionCatalog.kt`. |
+
+**Migrations:** `supabase/migrations/20260818_refrigerator_ingredients.sql`
+**Build:** `testDebugUnitTest` 77 green ✅ · `assembleDebug` ✅ GREEN.
+
+
 

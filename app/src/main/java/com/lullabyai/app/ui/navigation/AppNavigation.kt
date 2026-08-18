@@ -954,6 +954,9 @@ fun AppNavigation(
         composable(Screen.RecommendedFood.route) {
             com.lullabyai.app.ui.screens.nutrition.RecommendedFoodScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
         }
+        composable(Screen.RefrigeratorScanner.route) {
+            com.lullabyai.app.ui.screens.nutrition.RefrigeratorScannerScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+        }
         composable(Screen.Exercise.route) {
             ExerciseScreen(nutritionViewModel, lang, navController)
         }

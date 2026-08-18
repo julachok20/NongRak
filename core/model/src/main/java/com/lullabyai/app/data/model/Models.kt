@@ -941,3 +941,18 @@ data class DailyOralRoutine(
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
+// ---------------- Smart Refrigerator & Ingredient Scanner ----------------
+
+@Serializable
+data class FridgeIngredient(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("ingredient_name") val ingredientName: String = "",
+    val category: String = "general", // vegetable | fruit | meat | dairy | grain | general
+    val quantity: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
+
