@@ -1,8 +1,12 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.sleep
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -11,11 +15,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.lullabyai.app.ui.components.AppBottomNav
 import com.lullabyai.app.ui.components.BottomTab
@@ -30,12 +35,12 @@ import java.time.format.DateTimeFormatter
 const val RECORD_SLEEP_HISTORY_ROUTE = "record_sleep_history"
 
 /**
- * Stitch "Record Sleep History (บันทึกการนอนย้อนหลัง)" — the Pro Sleep Tracker's `history` button.
+ * Stitch "Record Sleep History (บันทึกการนอนย้อนหลัง)"
  *
- * Distinct from [AddSleepTimeScreen], which hardcodes today's date and so structurally cannot log a
- * past night. This one carries a date picker so a parent can back-fill a night they forgot to
- * track. Both funnel into `ChildViewModel.addManualSleepLog`, keeping one write path for manual
- * sleep entries.
+ * Rules:
+ * 1. For cross-midnight/cross-date sleep (e.g. 20:00 -> 06:30), the main selected date is the WAKE-UP date (end sleep).
+ * 2. Start time and end time are saved strictly as the user-selected times (not the time of recording).
+ * 3. Time Picker UI with interactive clock selector is used instead of typing.
  */
 @Composable
 fun RecordSleepHistoryScreen(
@@ -48,32 +53,41 @@ fun RecordSleepHistoryScreen(
     val state by childViewModel.uiState.collectAsState()
 
     var sleepType by remember { mutableStateOf("main") }
-    var recordDate by remember { mutableStateOf(LocalDate.now().minusDays(1)) }
-    var startTime by remember { mutableStateOf("20:00") }
-    var endTime by remember { mutableStateOf("06:30") }
+    // Main date = Wake up / End sleep date (e.g. today or yesterday morning)
+    var recordDate by remember { mutableStateOf(LocalDate.now()) }
+    var startHour by remember { mutableIntStateOf(20) }
+    var startMinute by remember { mutableIntStateOf(0) }
+    var endHour by remember { mutableIntStateOf(6) }
+    var endMinute by remember { mutableIntStateOf(30) }
+
     var showDatePicker by remember { mutableStateOf(false) }
+    var showStartTimePicker by remember { mutableStateOf(false) }
+    var showEndTimePicker by remember { mutableStateOf(false) }
     var formError by remember { mutableStateOf<String?>(null) }
 
-    // "HH:MM" -> minutes since midnight; null while the text isn't a valid 24h time.
-    fun toMinutes(t: String): Int? {
-        val parts = t.split(":")
-        if (parts.size != 2) return null
-        val h = parts[0].trim().toIntOrNull() ?: return null
-        val m = parts[1].trim().toIntOrNull() ?: return null
-        return if (h in 0..23 && m in 0..59) h * 60 + m else null
+    val startMinutesTotal = startHour * 60 + startMinute
+    val endMinutesTotal = endHour * 60 + endMinute
+
+    // Check if sleep crosses midnight
+    val isCrossMidnight = endMinutesTotal <= startMinutesTotal
+
+    // Compute effective dates
+    val actualStartDate = if (isCrossMidnight) recordDate.minusDays(1) else recordDate
+    val actualEndDate = recordDate
+
+    val durationMinutes = remember(startMinutesTotal, endMinutesTotal) {
+        val diff = endMinutesTotal - startMinutesTotal
+        if (diff <= 0) diff + 24 * 60 else diff
     }
 
-    val durationMinutes = remember(startTime, endTime) {
-        val a = toMinutes(startTime)
-        val b = toMinutes(endTime)
-        if (a == null || b == null) null else (b - a).let { if (it <= 0) it + 24 * 60 else it }
-    }
+    val startTimeFormatted = "%02d:%02d".format(startHour, startMinute)
+    val endTimeFormatted = "%02d:%02d".format(endHour, endMinute)
 
+    // Date Picker Dialog
     if (showDatePicker) {
         val initial = recordDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
         val dateState = rememberDatePickerState(
             initialSelectedDateMillis = initial,
-            // "ย้อนหลัง" means backwards — a future night cannot already have happened.
             selectableDates = object : SelectableDates {
                 override fun isSelectableDate(utcTimeMillis: Long): Boolean =
                     utcTimeMillis <= System.currentTimeMillis()
@@ -96,6 +110,40 @@ fun RecordSleepHistoryScreen(
         ) { DatePicker(state = dateState) }
     }
 
+    // Start Time Picker Dialog
+    if (showStartTimePicker) {
+        SleepTimePickerDialog(
+            title = if (isThai) "เลือกเวลาเริ่มนอน" else "Select Bedtime",
+            initialHour = startHour,
+            initialMinute = startMinute,
+            isThai = isThai,
+            onConfirm = { h, m ->
+                startHour = h
+                startMinute = m
+                showStartTimePicker = false
+                formError = null
+            },
+            onDismiss = { showStartTimePicker = false }
+        )
+    }
+
+    // End Time Picker Dialog
+    if (showEndTimePicker) {
+        SleepTimePickerDialog(
+            title = if (isThai) "เลือกเวลาตื่นนอน" else "Select Wake-up Time",
+            initialHour = endHour,
+            initialMinute = endMinute,
+            isThai = isThai,
+            onConfirm = { h, m ->
+                endHour = h
+                endMinute = m
+                showEndTimePicker = false
+                formError = null
+            },
+            onDismiss = { showEndTimePicker = false }
+        )
+    }
+
     Scaffold(
         topBar = {
             LullabyTopBar(
@@ -104,8 +152,6 @@ fun RecordSleepHistoryScreen(
                 navController = navController
             )
         },
-        // The lambdas are dead when LocalNavController is present (the footer navigates itself),
-        // but AppBottomNav still declares them as required params — see the pending cleanup task.
         bottomBar = {
             AppBottomNav(
                 selected = BottomTab.CHILD,
@@ -115,29 +161,35 @@ fun RecordSleepHistoryScreen(
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // --- วันที่บันทึก ---
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel(if (isThai) "วันที่บันทึก" else "Record date")
+            // --- วันที่ตื่นนอน (Main Reference Date) ---
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel(if (isThai) "วันที่บันทึก (วันที่ตื่นนอน)" else "Record Date (Wake-up Date)")
                 Surface(
                     onClick = { showDatePicker = true },
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, OutlineVariant.copy(0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 15.dp).fillMaxWidth(),
+                        Modifier
+                            .padding(horizontal = 16.dp, vertical = 15.dp)
+                            .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(Icons.Filled.CalendarToday, null, tint = Primary, modifier = Modifier.size(20.dp))
                         Text(
-                            recordDate.format(DateTimeFormatter.ofPattern("d MMM yyyy")),
+                            recordDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy")),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -148,8 +200,8 @@ fun RecordSleepHistoryScreen(
             }
 
             // --- ประเภทการนอน ---
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel(if (isThai) "ประเภทการนอน" else "Sleep type")
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel(if (isThai) "ประเภทการนอน" else "Sleep Type")
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SleepTypeCard(
                         icon = Icons.Filled.Bedtime,
@@ -166,41 +218,108 @@ fun RecordSleepHistoryScreen(
                 }
             }
 
-            // --- เวลาเริ่ม / เวลาจบ ---
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TimeField(
-                    icon = Icons.Filled.Login,
-                    label = if (isThai) "เวลาเริ่ม" else "Start time",
-                    value = startTime,
-                    onValueChange = { startTime = it; formError = null },
-                    modifier = Modifier.weight(1f)
-                )
-                TimeField(
-                    icon = Icons.Filled.Logout,
-                    label = if (isThai) "เวลาจบ" else "End time",
-                    value = endTime,
-                    onValueChange = { endTime = it; formError = null },
-                    modifier = Modifier.weight(1f)
-                )
+            // --- เวลาเริ่ม / เวลาจบ (Time Picker UI) ---
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel(if (isThai) "ช่วงเวลาการนอน" else "Sleep Time Interval")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TimePickerCard(
+                        icon = Icons.Filled.Bedtime,
+                        label = if (isThai) "เวลาเริ่มนอน" else "Bedtime",
+                        timeText = startTimeFormatted,
+                        subDateText = actualStartDate.format(DateTimeFormatter.ofPattern("d MMM")),
+                        modifier = Modifier.weight(1f),
+                        onClick = { showStartTimePicker = true }
+                    )
+                    TimePickerCard(
+                        icon = Icons.Filled.WbSunny,
+                        label = if (isThai) "เวลาตื่นนอน" else "Wake Up",
+                        timeText = endTimeFormatted,
+                        subDateText = actualEndDate.format(DateTimeFormatter.ofPattern("d MMM")),
+                        modifier = Modifier.weight(1f),
+                        onClick = { showEndTimePicker = true }
+                    )
+                }
+            }
+
+            // --- Cross-Midnight Notice & Calculation Card ---
+            if (isCrossMidnight) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Primary.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, Primary.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.NightlightRound, null, tint = Primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = if (isThai) "รอบการนอนข้ามคืน (Overnight Sleep)" else "Overnight Sleep Session",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Primary
+                            )
+                        }
+                        Text(
+                            text = if (isThai)
+                                "• เข้านอน: ${actualStartDate.format(DateTimeFormatter.ofPattern("d MMM"))} เวลา $startTimeFormatted น.\n• ตื่นนอน: ${actualEndDate.format(DateTimeFormatter.ofPattern("d MMM"))} เวลา $endTimeFormatted น.\n• การนอนข้ามคืนจะถูกนับเป็นยอดการนอนของวันที่ตื่น (${actualEndDate.format(DateTimeFormatter.ofPattern("d MMM yyyy"))})"
+                            else
+                                "• Bedtime: ${actualStartDate.format(DateTimeFormatter.ofPattern("d MMM"))} at $startTimeFormatted\n• Wake up: ${actualEndDate.format(DateTimeFormatter.ofPattern("d MMM"))} at $endTimeFormatted\n• Counted towards wake-up date (${actualEndDate.format(DateTimeFormatter.ofPattern("d MMM yyyy"))})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Filled.WbSunny, null, tint = Color(0xFFF57C00), modifier = Modifier.size(18.dp))
+                        Text(
+                            text = if (isThai)
+                                "รอบการนอนในวันเดียวกัน: ${recordDate.format(DateTimeFormatter.ofPattern("d MMM"))} ($startTimeFormatted - $endTimeFormatted น.)"
+                            else
+                                "Same-day sleep session: ${recordDate.format(DateTimeFormatter.ofPattern("d MMM"))} ($startTimeFormatted - $endTimeFormatted)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
 
             // --- ระยะเวลาทั้งหมด ---
-            Surface(shape = RoundedCornerShape(14.dp), color = Primary.copy(alpha = 0.10f), modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
                     Modifier.padding(16.dp).fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Filled.Bedtime, null, tint = Primary, modifier = Modifier.size(22.dp))
+                    Box(
+                        Modifier.size(36.dp).clip(CircleShape).background(Primary.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Timelapse, null, tint = Primary, modifier = Modifier.size(20.dp))
+                    }
                     Text(
                         if (isThai) "ระยะเวลาทั้งหมด" else "Total duration",
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        durationMinutes?.let {
-                            if (isThai) "${it / 60} ชม. ${it % 60} นาที" else "${it / 60}h ${it % 60}m"
-                        } ?: "—",
+                        if (isThai) "${durationMinutes / 60} ชม. ${durationMinutes % 60} นาที"
+                        else "${durationMinutes / 60}h ${durationMinutes % 60}m",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = Primary
@@ -208,7 +327,7 @@ fun RecordSleepHistoryScreen(
                 }
             }
 
-            // --- AI note (Stitch auto_awesome card) ---
+            // --- AI note ---
             Surface(shape = RoundedCornerShape(14.dp), color = Secondary.copy(alpha = 0.10f), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.Filled.AutoAwesome, null, tint = Secondary, modifier = Modifier.size(20.dp))
@@ -225,26 +344,17 @@ fun RecordSleepHistoryScreen(
 
             formError?.let { Text(it, color = Error, style = MaterialTheme.typography.bodySmall) }
 
-            // --- Save (bottom button, per design) ---
+            // --- Save Button ---
             Button(
                 onClick = {
-                    val startMin = toMinutes(startTime)
-                    val endMin = toMinutes(endTime)
-                    if (startMin == null || endMin == null || durationMinutes == null) {
-                        formError = if (isThai) "กรุณากรอกเวลาให้ถูกต้อง (HH:MM)" else "Enter a valid time (HH:MM)"
-                        return@Button
-                    }
                     if (state.child == null) {
                         formError = if (isThai) "ยังไม่ได้เลือกข้อมูลลูก" else "No child selected"
                         return@Button
                     }
-                    // A night ending no later than it began has crossed midnight onto the next day.
-                    val endDate = if (endMin <= startMin) recordDate.plusDays(1) else recordDate
-                    childViewModel.addManualSleepLog(
-                        sleepType,
-                        "${recordDate}T$startTime:00",
-                        "${endDate}T$endTime:00"
-                    )
+                    // Exact start & end ISO strings from user-filled times
+                    val startIso = "${actualStartDate}T$startTimeFormatted:00"
+                    val endIso = "${actualEndDate}T$endTimeFormatted:00"
+                    childViewModel.addManualSleepLog(sleepType, startIso, endIso)
                     onBack()
                 },
                 enabled = !state.sleepSaving,
@@ -286,8 +396,8 @@ private fun SleepTypeCard(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(14.dp),
-        color = if (selected) Primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, Primary) else null,
+        color = if (selected) Primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface,
+        border = if (selected) BorderStroke(2.dp, Primary) else BorderStroke(1.dp, OutlineVariant.copy(0.4f)),
         modifier = modifier
     ) {
         Column(
@@ -307,22 +417,84 @@ private fun SleepTypeCard(
 }
 
 @Composable
-private fun TimeField(
+private fun TimePickerCard(
     icon: ImageVector,
     label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
+    timeText: String,
+    subDateText: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        leadingIcon = { Icon(icon, null, tint = Primary, modifier = Modifier.size(18.dp)) },
-        placeholder = { Text("HH:MM") },
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, OutlineVariant.copy(0.4f)),
         modifier = modifier
+    ) {
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(icon, null, tint = Primary, modifier = Modifier.size(16.dp))
+                Text(label, style = MaterialTheme.typography.labelSmall, color = Outline)
+            }
+            Text(
+                text = timeText,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subDateText,
+                style = MaterialTheme.typography.labelSmall,
+                color = Primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SleepTimePickerDialog(
+    title: String,
+    initialHour: Int,
+    initialMinute: Int,
+    isThai: Boolean,
+    onConfirm: (Int, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val timeState = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = true
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        },
+        text = {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TimePicker(state = timeState)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(timeState.hour, timeState.minute) }) {
+                Text(if (isThai) "ตกลง" else "OK", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(if (isThai) "ยกเลิก" else "Cancel")
+            }
+        },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surface
     )
 }

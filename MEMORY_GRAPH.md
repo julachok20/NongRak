@@ -2113,5 +2113,21 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 **Migrations:** `supabase/migrations/20260818_refrigerator_ingredients.sql`
 **Build:** `testDebugUnitTest` 77 green ✅ · `assembleDebug` ✅ GREEN.
 
+---
+
+### BATCH BI — Retroactive Sleep Across-Date Attribution & Material 3 TimePicker (2026-08-18, branch `Track-YSC.02`)
+
+| Area | Change |
+|------|--------|
+| **Wake-Up Date Attribution** | For cross-midnight/cross-date sleep (e.g. 20:00 to 06:30), the selected date on `RecordSleepHistoryScreen.kt` serves as the primary wake-up date (end of sleep cycle). Start date automatically resolves to `recordDate.minusDays(1)` (e.g. 17 Aug 20:00 to 18 Aug 06:30). |
+| **Exact User Timestamps** | `start_time` and `end_time` stored in `sleep_logs` strictly reflect the user-selected bedtime and wake-up times rather than the timestamp of when the entry is logged. |
+| **Material 3 TimePicker Dialog** | Replaced text typing with interactive `SleepTimePickerDialog` (hour/minute clock selector wheel) for start and end times. |
+| **Prominent Informational Notice** | Added cross-midnight status card and breakdown (`🌙 รอบการนอนข้ามคืน: เริ่ม 17 ส.ค. (20:00 น.) → ตื่น 18 ส.ค. (06:30 น.) • นับยอดการนอนของวันที่ตื่นนอน`) on `RecordSleepHistoryScreen.kt`. |
+| **Daily & Weekly Sleep Aggregation** | `SleepTrackerScreen.kt`, `ProSleepHubScreen.kt`, and `ChildViewModel.avgSleepHours` updated with `getEffectiveSleepDate` to attribute completed overnight sleep sessions to the wake-up date, and display cross-day badge `🌙 ข้ามคืน (นับ d MMM)` in `SleepLogRow`. |
+| **Unit Testing** | Added `SleepCalculationTest.kt` covering cross-midnight duration, date offset logic, and effective date extraction. |
+
+**Build:** `testDebugUnitTest` 78 green ✅ · `assembleDebug` ✅ GREEN.
+
+
 
 

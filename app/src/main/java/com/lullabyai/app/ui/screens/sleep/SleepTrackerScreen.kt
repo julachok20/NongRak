@@ -137,9 +137,15 @@ fun SleepTrackerScreen(
         while (true) { kotlinx.coroutines.delay(30_000); tick++ }
     }
 
+    fun getEffectiveSleepDate(log: SleepLog): LocalDate? {
+        val endLocalDate = log.endTime?.let { TimeUtils.parseInstant(it)?.atZone(ZoneId.systemDefault())?.toLocalDate() }
+        val startLocalDate = TimeUtils.parseInstant(log.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate()
+        return endLocalDate ?: startLocalDate
+    }
+
     val elapsed = active?.let { TimeUtils.parseInstant(it.startTime)?.let { st -> Duration.between(st, Instant.now()) } }
     val today = LocalDate.now()
-    val todayLogs = logs.filter { TimeUtils.parseInstant(it.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate() == today }
+    val todayLogs = logs.filter { getEffectiveSleepDate(it) == today }
     val totalMinutesToday = todayLogs.sumOf { log ->
         val start = TimeUtils.parseInstant(log.startTime)
         val end = log.endTime?.let { TimeUtils.parseInstant(it) } ?: Instant.now()
@@ -150,7 +156,7 @@ fun SleepTrackerScreen(
 
     val last7Start = today.minusDays(6)
     val last7Logs = logs.filter { log ->
-        val d = TimeUtils.parseInstant(log.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate()
+        val d = getEffectiveSleepDate(log)
         d != null && !d.isBefore(last7Start) && !d.isAfter(today)
     }
     val weeklyTotalMinutes = last7Logs.sumOf { log ->
@@ -161,7 +167,7 @@ fun SleepTrackerScreen(
     val weeklyAvgMinutes = weeklyTotalMinutes / 7
     val daysWithMain = (0..6).count { offset ->
         val day = today.minusDays(offset.toLong())
-        last7Logs.any { it.sleepType == "main" && TimeUtils.parseInstant(it.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate() == day }
+        last7Logs.any { it.sleepType == "main" && getEffectiveSleepDate(it) == day }
     }
     val consistencyPct = daysWithMain * 100 / 7
     val todaysMoodTarget = active ?: todayLogs.maxByOrNull { it.startTime }
@@ -1229,6 +1235,19 @@ private fun SleepLogRow(log: SleepLog, canDelete: Boolean, onDelete: () -> Unit,
         val dur = Duration.between(startInstant, endInstant ?: Instant.now())
         "${dur.toHours()}${if (s.isThai) "ชม." else "h"} ${dur.toMinutes() % 60}${if (s.isThai) "น." else "m"}"
     } else ""
+
+    val startZone = startInstant?.atZone(ZoneId.systemDefault())
+    val endZone = endInstant?.atZone(ZoneId.systemDefault())
+    val isCrossDay = startZone != null && endZone != null && startZone.toLocalDate() != endZone.toLocalDate()
+    val dFmt = java.time.format.DateTimeFormatter.ofPattern("d MMM")
+
+    val timeRangeText = if (isCrossDay) {
+        "${startZone.format(dFmt)} ${TimeUtils.localTime(log.startTime)} - ${endZone.format(dFmt)} ${TimeUtils.localTime(log.endTime)}"
+    } else {
+        val datePrefix = startZone?.format(dFmt)?.let { "$it • " } ?: ""
+        "$datePrefix${TimeUtils.localTime(log.startTime) ?: ""} - ${TimeUtils.localTime(log.endTime) ?: (if (s.isThai) "กำลังหลับ" else "ongoing")}"
+    }
+
     Card(
         modifier = modifier.fillMaxWidth().border(1.dp, OutlineVariant.copy(0.35f), RoundedCornerShape(14.dp)),
         shape = RoundedCornerShape(14.dp),
@@ -1240,11 +1259,33 @@ private fun SleepLogRow(log: SleepLog, canDelete: Boolean, onDelete: () -> Unit,
                 Box(Modifier.size(36.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
                     Icon(if (log.sleepType == "nap") Icons.Filled.WbSunny else Icons.Filled.Bedtime, null, tint = Primary, modifier = Modifier.size(18.dp))
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(if (log.sleepType == "nap") (if (s.isThai) "งีบ" else "Nap") else (if (s.isThai) "นอนหลัก" else "Main sleep"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            if (log.sleepType == "nap") (if (s.isThai) "งีบ" else "Nap") else (if (s.isThai) "นอนหลัก" else "Main sleep"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (isCrossDay && endZone != null) {
+                            Surface(
+                                shape = RoundedCornerShape(100.dp),
+                                color = Primary.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    text = if (s.isThai) "🌙 ข้ามคืน (นับ ${endZone.format(dFmt)})" else "🌙 Overnight (${endZone.format(dFmt)})",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Primary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
                     Text(
-                        (TimeUtils.localTime(log.startTime) ?: "") + " - " + (TimeUtils.localTime(log.endTime) ?: (if (s.isThai) "กำลังหลับ" else "ongoing")),
-                        style = MaterialTheme.typography.labelSmall, color = OnSurfaceVariant
+                        timeRangeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OnSurfaceVariant
                     )
                 }
                 if (durationText.isNotBlank()) Text(durationText, style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)

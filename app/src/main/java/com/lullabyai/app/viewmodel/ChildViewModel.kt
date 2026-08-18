@@ -1736,7 +1736,7 @@ class ChildViewModel : ViewModel() {
             if (log.sleepType != "main") return@mapNotNull null
             val start = com.lullabyai.app.util.TimeUtils.parseInstant(log.startTime) ?: return@mapNotNull null
             val end = com.lullabyai.app.util.TimeUtils.parseInstant(log.endTime) ?: return@mapNotNull null
-            if (start.isBefore(cutoff)) return@mapNotNull null
+            if (end.isBefore(cutoff)) return@mapNotNull null
             val minutes = java.time.temporal.ChronoUnit.MINUTES.between(start, end)
             if (minutes <= 0) null else minutes / 60.0
         }

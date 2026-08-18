@@ -85,10 +85,14 @@ fun ProSleepHubScreen(
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(30_000); tick++ } }
 
-    val today = LocalDate.now()
-    val todayLogs = logs.filter {
-        TimeUtils.parseInstant(it.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate() == today
+    fun getEffectiveSleepDate(log: com.lullabyai.app.data.model.SleepLog): LocalDate? {
+        val endLocalDate = log.endTime?.let { TimeUtils.parseInstant(it)?.atZone(ZoneId.systemDefault())?.toLocalDate() }
+        val startLocalDate = TimeUtils.parseInstant(log.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate()
+        return endLocalDate ?: startLocalDate
     }
+
+    val today = LocalDate.now()
+    val todayLogs = logs.filter { getEffectiveSleepDate(it) == today }
     val totalMinutesToday = todayLogs.sumOf { log ->
         val start = TimeUtils.parseInstant(log.startTime)
         val end = log.endTime?.let { TimeUtils.parseInstant(it) } ?: Instant.now()
@@ -98,7 +102,7 @@ fun ProSleepHubScreen(
 
     val last7Start = today.minusDays(6)
     val last7Logs = logs.filter { log ->
-        val d = TimeUtils.parseInstant(log.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate()
+        val d = getEffectiveSleepDate(log)
         d != null && !d.isBefore(last7Start) && !d.isAfter(today)
     }
     val weeklyAvgMinutes = last7Logs.sumOf { log ->
@@ -109,8 +113,7 @@ fun ProSleepHubScreen(
     val daysWithMain = (0..6).count { offset ->
         val day = today.minusDays(offset.toLong())
         last7Logs.any {
-            it.sleepType == "main" &&
-                TimeUtils.parseInstant(it.startTime)?.atZone(ZoneId.systemDefault())?.toLocalDate() == day
+            it.sleepType == "main" && getEffectiveSleepDate(it) == day
         }
     }
     val consistencyPct = daysWithMain * 100 / 7
