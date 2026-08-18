@@ -24,6 +24,7 @@ data class VaccineCertificatePreviewData(
     val hn: String,
     val ageLine: String?,
     val vaccineName: String,
+    val vaccineRecordId: String? = null,
     val doseLabel: String,
     val dateGiven: String,
     val lotNumber: String?,
@@ -72,6 +73,7 @@ class DoctorVaccineCertificateViewModel : ViewModel() {
         injectionSite: String,
         reactionNotes: String,
         isThai: Boolean,
+        vaccineRecordId: String? = null,
         onReady: () -> Unit = {}
     ) {
         val doctorId = supabase.auth.currentUserOrNull()?.id
@@ -120,6 +122,7 @@ class DoctorVaccineCertificateViewModel : ViewModel() {
                     hn = hn,
                     ageLine = clinicalAgeGender(child.birthdate, child.gender, isThai),
                     vaccineName = name,
+                    vaccineRecordId = vaccineRecordId,
                     doseLabel = doseLabel,
                     dateGiven = dateGiven,
                     lotNumber = lotNumber.trim().ifBlank { null },
@@ -161,7 +164,8 @@ class DoctorVaccineCertificateViewModel : ViewModel() {
                     draft.injectionSite.orEmpty(),
                     draft.reactionNotes.orEmpty(),
                     draft.isThai,
-                    includeDoctorVerifiedNote = true
+                    includeDoctorVerifiedNote = true,
+                    targetVaccineRecordId = draft.vaccineRecordId
                 )
                 val doseLabel = DoctorVaccineBookSync.doseLabel(record, draft.isThai) ?: draft.doseLabel
                 val dateGiven = record.dateGiven ?: draft.dateGiven

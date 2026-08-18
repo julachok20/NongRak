@@ -396,6 +396,47 @@ fun DoctorClinicalRecordEntryScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
+                            if (draft.vaccineRecordId != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = HealthGood.copy(alpha = 0.12f)
+                                ) {
+                                    Row(
+                                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.CheckCircle, null, tint = HealthGood, modifier = Modifier.size(16.dp))
+                                        Text(
+                                            if (s.isThai) "เชื่อมกับรายการในสมุดวัคซีน (จะยืนยันรายการเดิม)"
+                                            else "Linked to child's vaccine book (will confirm existing record)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = HealthGood,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            } else if (draft.vaccineName.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Primary.copy(alpha = 0.12f)
+                                ) {
+                                    Row(
+                                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.AddCircle, null, tint = Primary, modifier = Modifier.size(16.dp))
+                                        Text(
+                                            if (s.isThai) "วัคซีนใหม่ (จะเพิ่มรายการใหม่ลงในสมุดวัคซีนของน้อง)"
+                                            else "New vaccine (will add new record to child's vaccine book)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
                             OutlinedTextField(
                                 value = draft.vaccineName, onValueChange = { vm.patchDraft { d -> d.copy(vaccineName = it) } },
                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -451,7 +492,8 @@ fun DoctorClinicalRecordEntryScreen(
                                         lotNumber = draft.vaccineLot,
                                         injectionSite = draft.vaccineSite,
                                         reactionNotes = draft.vaccineReaction,
-                                        isThai = s.isThai
+                                        isThai = s.isThai,
+                                        vaccineRecordId = draft.vaccineRecordId
                                     ) {
                                         navController.navigate(Screen.DoctorVaccineCertificatePreview.route)
                                     }

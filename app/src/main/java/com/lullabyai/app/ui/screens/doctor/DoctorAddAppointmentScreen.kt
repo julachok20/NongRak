@@ -43,6 +43,17 @@ fun DoctorAddAppointmentScreen(navController: NavController) {
     var time by remember { mutableStateOf("09:00") }
     var notes by remember { mutableStateOf("") }
 
+    // Vaccine selection state
+    var isCustomVaccine by remember { mutableStateOf(false) }
+    var selectedVaccineRecord by remember { mutableStateOf<com.lullabyai.app.data.model.VaccineRecord?>(null) }
+    var customVaccineName by remember { mutableStateOf("") }
+
+    val duplicateOrSimilarMatch = remember(customVaccineName, state.patientVaccines, isCustomVaccine) {
+        if (isCustomVaccine && customVaccineName.trim().isNotBlank()) {
+            com.lullabyai.app.util.VaccineSimilarityMatcher.findSimilarVaccine(customVaccineName, state.patientVaccines)
+        } else null
+    }
+
     val matches = remember(state.allPatients, query) {
         if (query.isBlank()) emptyList() else state.allPatients.filter { it.name.contains(query, ignoreCase = true) }
     }
@@ -69,7 +80,7 @@ fun DoctorAddAppointmentScreen(navController: NavController) {
             }
             item {
                 OutlinedTextField(
-                    value = query, onValueChange = { query = it; vm.selectPatient(null) }, modifier = Modifier.fillMaxWidth(),
+                    value = query, onValueChange = { query = it; vm.selectPatient(null); selectedVaccineRecord = null }, modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text(if (s.isThai) "ค้นหาด้วยชื่อผู้ป่วย..." else "Search by patient name...") },
                     leadingIcon = { Icon(Icons.Filled.Search, null, tint = Outline) }, singleLine = true, shape = RoundedCornerShape(16.dp)
                 )
@@ -85,7 +96,7 @@ fun DoctorAddAppointmentScreen(navController: NavController) {
                 }
             }
             state.selectedPatient?.let { patient ->
-                item { SelectedPatientCard(patient) { vm.selectPatient(null); query = "" } }
+                item { SelectedPatientCard(patient) { vm.selectPatient(null); query = ""; selectedVaccineRecord = null } }
             }
             item {
                 Text(if (s.isThai) "ประเภทการตรวจ" else "Appointment type", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Primary)
@@ -102,6 +113,117 @@ fun DoctorAddAppointmentScreen(navController: NavController) {
                     TypeCard(Modifier.weight(1f), Icons.Filled.EventRepeat, if (s.isThai) "ติดตามผล" else "Follow-up", apptType == "followup") { apptType = "followup" }
                 }
             }
+
+            if (apptType == "vaccine") {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Filled.Vaccines, null, tint = Primary)
+                                Text(
+                                    if (s.isThai) "เลือกวัคซีนที่จะฉีด" else "Select vaccine to administer",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = !isCustomVaccine,
+                                    onClick = { isCustomVaccine = false },
+                                    label = { Text(if (s.isThai) "จากสมุด (${state.patientVaccines.size})" else "From Book (${state.patientVaccines.size})") },
+                                    shape = RoundedCornerShape(100.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = isCustomVaccine,
+                                    onClick = { isCustomVaccine = true },
+                                    label = { Text(if (s.isThai) "+ วัคซีนใหม่ / อื่นๆ" else "+ New / Other") },
+                                    shape = RoundedCornerShape(100.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            if (!isCustomVaccine) {
+                                if (state.patientVaccines.isEmpty()) {
+                                    Text(
+                                        if (s.isThai) "ยังไม่มีข้อมูลสมุดวัคซีน — ระบุชื่อวัคซีนใหม่ได้ด้านบน"
+                                        else "No vaccines in book — enter custom name above",
+                                        style = MaterialTheme.typography.bodySmall, color = Outline
+                                    )
+                                } else {
+                                    var expanded by remember { mutableStateOf(false) }
+                                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                                        OutlinedTextField(
+                                            value = selectedVaccineRecord?.let { "${it.vaccineName} (${it.status})" }
+                                                ?: (if (s.isThai) "เลือกวัคซีนจากสมุด..." else "Select vaccine..."),
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            label = { Text(if (s.isThai) "วัคซีนในสมุด" else "Vaccine in book") },
+                                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                            shape = RoundedCornerShape(14.dp),
+                                            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        )
+                                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                            state.patientVaccines.forEach { vac ->
+                                                DropdownMenuItem(
+                                                    text = { Text("${vac.vaccineName} ${vac.ageGroup?.let { "• $it" }.orEmpty()} [${vac.status}]") },
+                                                    onClick = { selectedVaccineRecord = vac; expanded = false }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                OutlinedTextField(
+                                    value = customVaccineName,
+                                    onValueChange = { customVaccineName = it },
+                                    label = { Text(if (s.isThai) "ชื่อวัคซีนใหม่" else "New vaccine name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+
+                                if (duplicateOrSimilarMatch != null) {
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+                                    ) {
+                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                                Text(
+                                                    if (s.isThai) "พบวัคซีนที่ใกล้เคียงในสมุดคนไข้!" else "Similar vaccine found in book!",
+                                                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error
+                                                )
+                                            }
+                                            Text(
+                                                "\"${duplicateOrSimilarMatch.matchedRecord.vaccineName}\" (${duplicateOrSimilarMatch.matchedRecord.status})",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Button(
+                                                onClick = {
+                                                    isCustomVaccine = false
+                                                    selectedVaccineRecord = duplicateOrSimilarMatch.matchedRecord
+                                                    customVaccineName = ""
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                                shape = RoundedCornerShape(100.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(if (s.isThai) "สลับไปเลือกรายการนี้จากสมุด" else "Switch to select from book")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ScheduleDatePickerField(
@@ -127,18 +249,36 @@ fun DoctorAddAppointmentScreen(navController: NavController) {
                 )
             }
             state.error?.let { item { Text(it, color = Error, style = MaterialTheme.typography.labelMedium) } }
+
+            val isVaccineValid = apptType != "vaccine" ||
+                (!isCustomVaccine && selectedVaccineRecord != null) ||
+                (isCustomVaccine && customVaccineName.trim().isNotBlank())
+
             item {
                 Button(
                     onClick = {
-                        val typeLabel = when (apptType) {
-                            "vaccine" -> if (s.isThai) "นัดวัคซีน" else "Vaccine appointment"
-                            "followup" -> if (s.isThai) "นัดติดตามผล" else "Follow-up appointment"
-                            "health_check" -> if (s.isThai) "ตรวจสุขภาพ" else "Health check"
-                            else -> if (s.isThai) "ตรวจทั่วไป" else "General checkup"
+                        val bookingType = when (apptType) {
+                            "vaccine" -> com.lullabyai.app.util.AppointmentBookingType.VACCINE
+                            "followup" -> com.lullabyai.app.util.AppointmentBookingType.FOLLOW_UP
+                            "health_check" -> com.lullabyai.app.util.AppointmentBookingType.HEALTH_CHECK
+                            else -> com.lullabyai.app.util.AppointmentBookingType.NORMAL
                         }
-                        vm.submit(if (notes.isNotBlank()) "$typeLabel: $notes" else typeLabel, "${date}T$time:00")
+                        val vacName = if (bookingType == com.lullabyai.app.util.AppointmentBookingType.VACCINE) {
+                            if (isCustomVaccine) customVaccineName.trim() else selectedVaccineRecord?.vaccineName
+                        } else null
+                        val vacId = if (bookingType == com.lullabyai.app.util.AppointmentBookingType.VACCINE && !isCustomVaccine) {
+                            selectedVaccineRecord?.id
+                        } else null
+
+                        vm.submit(
+                            type = bookingType,
+                            notes = notes,
+                            scheduledAtIso = "${date}T$time:00",
+                            vaccineName = vacName,
+                            vaccineRecordId = vacId
+                        )
                     },
-                    enabled = state.selectedPatient != null && !state.isSaving,
+                    enabled = state.selectedPatient != null && !state.isSaving && isVaccineValid,
                     modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(100.dp)
                 ) {
                     if (state.isSaving) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)

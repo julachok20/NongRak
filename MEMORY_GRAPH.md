@@ -2128,6 +2128,22 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 
 **Build:** `testDebugUnitTest` 78 green ✅ · `assembleDebug` ✅ GREEN.
 
+---
+
+### BATCH BJ — Pedia Connect Vaccine Selection, Similarity/Duplicate Checking, and Doctor Confirmation Sync (2026-08-18, branch `Track-YSC.02`)
+
+| Area | Change |
+|------|--------|
+| **Vaccine Selection in Appointment Booking** | In [`DoctorReservationScreen.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/ui/screens/doctorconnect/DoctorReservationScreen.kt), when the parent selects Appointment Type `VACCINE` (วัคซีน), an interactive Vaccine Selector appears with two modes: **"เลือกจากสมุดวัคซีน (From Vaccine Book)"** and **"+ เพิ่มวัคซีนใหม่ / อื่นๆ (Add New/Other)"**. |
+| **Real-Time Similarity & Duplicate Checker** | Built [`VaccineSimilarityMatcher.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/util/VaccineSimilarityMatcher.kt) supporting alias matching (BCG, HBV, DTP, OPV/IPV, Rotavirus, Influenza, MMR, JE, Varicella, HAV, PCV, HPV, Dengue), substring matching, and typo/edit distance similarity. When typing a new vaccine, if a similar vaccine is found in the child's book, a warning banner appears with a single-tap button: `"สลับไปเลือกรายการนี้จากสมุดวัคซีน" (Switch to select from book)`. |
+| **Appointment Booking Metadata** | Enhanced [`AppointmentBookingMeta.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/util/AppointmentBookingTypes.kt) with `BookedVaccineMeta`, tag encoding `[vac_name:...]` and `[vac_id:...]`, `parseVaccine(...)`, and clean display formatting. |
+| **Doctor Confirmation & Book Sync** | Updated [`DoctorVaccineBookSync.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/data/doctor/DoctorVaccineBookSync.kt), [`DoctorClinicalRecordEntryViewModel.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/viewmodel/DoctorClinicalRecordEntryViewModel.kt), [`DoctorClinicalRecordEntryScreen.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorClinicalRecordEntryScreen.kt), and [`DoctorVaccineCertificateViewModel.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/viewmodel/DoctorVaccineCertificateViewModel.kt). If the appointment linked an existing book record, the doctor's confirmation updates/completes that exact record; if it was a new vaccine, it creates and confirms a new `VaccineRecord` in the child's vaccine book. |
+| **Doctor Manual Appointment Booking** | In [`DoctorAddAppointmentScreen.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/ui/screens/doctor/DoctorAddAppointmentScreen.kt), added vaccine book selection and real-time duplicate checking for doctor-initiated appointments. |
+| **Unit Testing** | Added [`VaccineSelectionAndDoctorSyncTest.kt`](file:///D:/Claude-Access/LullabyAI/app/src/test/java/com/lullabyai/app/util/VaccineSelectionAndDoctorSyncTest.kt) testing exact, alias, and typo matching, metadata encoding/decoding, and sync behavior. |
+
+**Build:** `testDebugUnitTest` 80 green ✅ · `assembleDebug` ✅ GREEN.
+
+
 
 
 

@@ -31,6 +31,7 @@ data class ClinicalFormDraft(
     val followUpDate: String = "",
     val noFollowUp: Boolean = false,
     val vaccineName: String = "",
+    val vaccineRecordId: String? = null,
     val vaccineLot: String = "",
     val vaccineSite: String = "",
     val vaccineReaction: String = "",
@@ -88,12 +89,14 @@ class DoctorClinicalRecordEntryViewModel : ViewModel() {
             val appt = doctorRepo.getAppointment(appointmentId).getOrNull()
             val child = appt?.let { childRepo.getChildById(it.childId).getOrNull() }
             val existingVisit = visitRepo.getVisitByAppointment(appointmentId).getOrNull()
+            val bookedVaccine = com.lullabyai.app.util.AppointmentBookingMeta.parseVaccine(appt?.reason, appt?.notes)
             val draft = when {
                 keepDraft -> _uiState.value.draft
                 existingVisit != null -> draftFromVisit(appointmentId, existingVisit, appt)
                 else -> ClinicalFormDraft(
                     appointmentId = appointmentId,
-                    vaccineName = appt?.reason?.trim().orEmpty()
+                    vaccineName = bookedVaccine.vaccineName ?: appt?.reason?.trim().orEmpty(),
+                    vaccineRecordId = bookedVaccine.vaccineRecordId
                 )
             }
             _uiState.value = DoctorClinicalRecordEntryUiState(
@@ -257,7 +260,8 @@ class DoctorClinicalRecordEntryViewModel : ViewModel() {
                         injectionSite = vaccineSite,
                         reactionNotes = vaccineReaction,
                         isThai = isThai,
-                        includeDoctorVerifiedNote = false
+                        includeDoctorVerifiedNote = false,
+                        targetVaccineRecordId = _uiState.value.draft.vaccineRecordId
                     )
                 }
                 doctorRepo.updateAppointmentStatus(appointmentId, "completed")
@@ -283,6 +287,7 @@ private fun draftFromVisit(
     appt: Appointment?
 ): ClinicalFormDraft {
     val parsedVaccine = VisitReasonTemplates.parseVaccineAdvice(visit.doctorAdvice)
+    val bookedVaccine = com.lullabyai.app.util.AppointmentBookingMeta.parseVaccine(appt?.reason, appt?.notes)
     return ClinicalFormDraft(
         appointmentId = appointmentId,
         symptoms = visit.symptoms?.joinToString("\n")?.ifBlank { null } ?: visit.reason.orEmpty(),
@@ -293,7 +298,8 @@ private fun draftFromVisit(
         height = visit.heightCm?.toString().orEmpty(),
         followUpDate = visit.nextAppointmentDate.orEmpty(),
         noFollowUp = visit.nextAppointmentDate.isNullOrBlank(),
-        vaccineName = parsedVaccine?.vaccineName ?: appt?.reason?.trim().orEmpty(),
+        vaccineName = parsedVaccine?.vaccineName ?: bookedVaccine.vaccineName ?: appt?.reason?.trim().orEmpty(),
+        vaccineRecordId = bookedVaccine.vaccineRecordId,
         vaccineLot = parsedVaccine?.lot.orEmpty(),
         vaccineSite = parsedVaccine?.site.orEmpty(),
         vaccineReaction = parsedVaccine?.reaction.orEmpty(),

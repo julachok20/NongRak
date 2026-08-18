@@ -27,18 +27,81 @@ enum class AppointmentBookingType(val key: String) {
     fun label(isThai: Boolean): String = if (isThai) labelThai() else labelEn()
 }
 
+data class BookedVaccineMeta(
+    val vaccineName: String? = null,
+    val vaccineRecordId: String? = null,
+    val isFromBook: Boolean = false
+)
+
 object AppointmentBookingMeta {
     private const val TYPE_PREFIX = "[type:"
+    private const val VAC_ID_PREFIX = "[vac_id:"
+    private const val VAC_NAME_PREFIX = "[vac_name:"
     private const val EMERGENCY_NOTE = "booking_meta:is_emergency=true"
 
-    fun encodeReason(type: AppointmentBookingType, detail: String?): String {
-        val body = detail?.trim().orEmpty()
-        val prefix = "$TYPE_PREFIX${type.key}]"
-        return when {
-            body.isBlank() -> type.labelThai()
-            body.startsWith(prefix) -> body
-            else -> "$prefix ${type.labelThai()}${if (body.isNotBlank()) ": $body" else ""}"
+    fun encodeReason(
+        type: AppointmentBookingType,
+        detail: String?,
+        vaccineName: String? = null,
+        vaccineRecordId: String? = null
+    ): String {
+        val tags = StringBuilder("$TYPE_PREFIX${type.key}]")
+        val cleanVacId = vaccineRecordId?.trim().takeUnless { it.isNullOrBlank() }
+        val cleanVacName = vaccineName?.trim().takeUnless { it.isNullOrBlank() }
+
+        if (cleanVacId != null) {
+            tags.append("$VAC_ID_PREFIX$cleanVacId]")
         }
+        if (cleanVacName != null) {
+            tags.append("$VAC_NAME_PREFIX$cleanVacName]")
+        }
+
+        val prefix = tags.toString()
+        val defaultHeader = if (type == AppointmentBookingType.VACCINE && cleanVacName != null) {
+            "วัคซีน: $cleanVacName"
+        } else {
+            type.labelThai()
+        }
+
+        val body = detail?.trim().orEmpty()
+        return when {
+            body.isBlank() -> "$prefix $defaultHeader"
+            body.startsWith(prefix) -> body
+            else -> "$prefix $defaultHeader${if (body.isNotBlank() && body != defaultHeader) ": $body" else ""}"
+        }
+    }
+
+    fun parseVaccine(reason: String?, notes: String?): BookedVaccineMeta {
+        val r = reason.orEmpty()
+        val n = notes.orEmpty()
+        val combined = "$r\n$n"
+
+        val vacId = if (combined.contains(VAC_ID_PREFIX)) {
+            combined.substringAfter(VAC_ID_PREFIX).substringBefore("]").trim()
+        } else null
+
+        val vacName = if (combined.contains(VAC_NAME_PREFIX)) {
+            combined.substringAfter(VAC_NAME_PREFIX).substringBefore("]").trim()
+        } else null
+
+        if (!vacName.isNullOrBlank() || !vacId.isNullOrBlank()) {
+            return BookedVaccineMeta(
+                vaccineName = vacName,
+                vaccineRecordId = vacId,
+                isFromBook = !vacId.isNullOrBlank()
+            )
+        }
+
+        val displayed = displayReason(reason, isThai = true)
+        val extractedName = if (displayed.startsWith("วัคซีน:", ignoreCase = true) || displayed.startsWith("Vaccine:", ignoreCase = true)) {
+            displayed.substringAfter(":").substringBefore(":").trim().substringBefore("(").trim()
+        } else null
+
+        return BookedVaccineMeta(
+            vaccineName = extractedName?.takeIf { it.isNotBlank() },
+            vaccineRecordId = null,
+            isFromBook = false
+        )
     }
 
     fun parseType(reason: String?, notes: String?): AppointmentBookingType {
@@ -70,14 +133,21 @@ object AppointmentBookingMeta {
         else "$base\n$EMERGENCY_NOTE"
     }
 
-    /** Human-readable reason without the type prefix. */
+    /** Human-readable reason without the bracket tags. */
     fun displayReason(reason: String?, isThai: Boolean): String {
         val type = parseType(reason, null)
-        val raw = reason?.trim().orEmpty()
-        if (raw.startsWith(TYPE_PREFIX)) {
-            val after = raw.substringAfter("]").trim()
-            if (after.isNotBlank()) return after.removePrefix(type.labelThai()).trim(' ', ':')
+        var raw = reason?.trim().orEmpty()
+        while (raw.startsWith("[")) {
+            val closeIdx = raw.indexOf("]")
+            if (closeIdx != -1) {
+                raw = raw.substring(closeIdx + 1).trim()
+            } else {
+                break
+            }
         }
-        return raw.ifBlank { type.label(isThai) }
+        if (raw.isNotBlank()) {
+            return raw
+        }
+        return type.label(isThai)
     }
 }

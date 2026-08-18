@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 data class DoctorAddAppointmentUiState(
     val allPatients: List<Child> = emptyList(),
     val selectedPatient: Child? = null,
+    val patientVaccines: List<com.lullabyai.app.data.model.VaccineRecord> = emptyList(),
     val isSaving: Boolean = false,
     val saved: Boolean = false,
     val error: String? = null
@@ -27,6 +28,7 @@ data class DoctorAddAppointmentUiState(
 class DoctorAddAppointmentViewModel : ViewModel() {
     private val doctorRepo = DoctorRepository()
     private val childRepo = ChildRepository()
+    private val healthRepo = com.lullabyai.app.data.repository.HealthRepository()
 
     private val _uiState = MutableStateFlow(DoctorAddAppointmentUiState())
     val uiState: StateFlow<DoctorAddAppointmentUiState> = _uiState
@@ -41,15 +43,33 @@ class DoctorAddAppointmentViewModel : ViewModel() {
     }
 
     fun selectPatient(child: Child?) {
-        _uiState.value = _uiState.value.copy(selectedPatient = child)
+        _uiState.value = _uiState.value.copy(selectedPatient = child, patientVaccines = emptyList())
+        if (child != null) {
+            viewModelScope.launch {
+                val vacs = healthRepo.getVaccineRecords(child.id).getOrDefault(emptyList())
+                _uiState.value = _uiState.value.copy(patientVaccines = vacs)
+            }
+        }
     }
 
-    fun submit(reason: String, scheduledAtIso: String) {
+    fun submit(
+        type: com.lullabyai.app.util.AppointmentBookingType,
+        notes: String,
+        scheduledAtIso: String,
+        vaccineName: String? = null,
+        vaccineRecordId: String? = null
+    ) {
         val doctorId = supabase.auth.currentUserOrNull()?.id ?: return
         val child = _uiState.value.selectedPatient ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
-            val created = doctorRepo.requestAppointment(doctorId, child.id, null, reason.ifBlank { null })
+            val encodedReason = com.lullabyai.app.util.AppointmentBookingMeta.encodeReason(
+                type = type,
+                detail = notes.ifBlank { null },
+                vaccineName = vaccineName,
+                vaccineRecordId = vaccineRecordId
+            )
+            val created = doctorRepo.requestAppointment(doctorId, child.id, null, encodedReason)
             val id = created.getOrNull()?.id
             if (id != null) {
                 doctorRepo.updateAppointmentStatus(id, "confirmed", scheduledAt = scheduledAtIso)

@@ -55,6 +55,33 @@ fun DoctorReservationScreen(doctorId: String, childViewModel: ChildViewModel, na
     var bookingType by remember { mutableStateOf<AppointmentBookingType?>(null) }
     val isEmergency = bookingType == AppointmentBookingType.EMERGENCY
 
+    // Vaccine selection state (when bookingType == VACCINE)
+    var isCustomVaccine by remember { mutableStateOf(false) }
+    var selectedVaccineRecord by remember { mutableStateOf<com.lullabyai.app.data.model.VaccineRecord?>(null) }
+    var customVaccineName by remember { mutableStateOf("") }
+
+    val healthRepo = remember { com.lullabyai.app.data.repository.HealthRepository() }
+    var loadedVaccines by remember { mutableStateOf<List<com.lullabyai.app.data.model.VaccineRecord>>(emptyList()) }
+
+    LaunchedEffect(selectedChildId) {
+        val cid = selectedChildId
+        if (!cid.isNullOrBlank()) {
+            loadedVaccines = healthRepo.getVaccineRecords(cid).getOrDefault(emptyList())
+        } else {
+            loadedVaccines = emptyList()
+        }
+    }
+
+    val childVaccines = remember(loadedVaccines, childState.vaccines, selectedChildId) {
+        if (loadedVaccines.isNotEmpty()) loadedVaccines
+        else selectedChildId?.let { id -> childState.vaccines.filter { it.childId == id } } ?: emptyList()
+    }
+    val duplicateOrSimilarMatch = remember(customVaccineName, childVaccines, isCustomVaccine) {
+        if (isCustomVaccine && customVaccineName.trim().isNotBlank()) {
+            com.lullabyai.app.util.VaccineSimilarityMatcher.findSimilarVaccine(customVaccineName, childVaccines)
+        } else null
+    }
+
     LaunchedEffect(doctorId) {
         vm.load(doctorId)
     }
@@ -195,6 +222,185 @@ fun DoctorReservationScreen(doctorId: String, childViewModel: ChildViewModel, na
                 }
             }
 
+            // Vaccine Selection Section (When Vaccine type is selected)
+            if (bookingType == AppointmentBookingType.VACCINE) {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Filled.LocalHospital,
+                                contentDescription = null,
+                                tint = Primary
+                            )
+                            Text(
+                                if (s.isThai) "เลือกวัคซีนที่ต้องการนัดฉีด" else "Select Vaccine for Appointment",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Mode switcher: จากสมุดวัคซีน vs เพิ่มวัคซีนใหม่
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = !isCustomVaccine,
+                                onClick = { isCustomVaccine = false },
+                                label = {
+                                    Text(
+                                        if (s.isThai) "จากสมุดวัคซีน (${childVaccines.size})"
+                                        else "From Vaccine Book (${childVaccines.size})"
+                                    )
+                                },
+                                shape = RoundedCornerShape(100.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = isCustomVaccine,
+                                onClick = { isCustomVaccine = true },
+                                label = {
+                                    Text(
+                                        if (s.isThai) "+ เพิ่มวัคซีนใหม่ / อื่นๆ"
+                                        else "+ Add New / Other"
+                                    )
+                                },
+                                shape = RoundedCornerShape(100.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        if (!isCustomVaccine) {
+                            if (childVaccines.isEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        if (s.isThai) "ยังไม่มีข้อมูลในสมุดวัคซีนของน้อง"
+                                        else "No vaccines found in child's book",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Outline
+                                    )
+                                    OutlinedButton(
+                                        onClick = { isCustomVaccine = true },
+                                        shape = RoundedCornerShape(100.dp)
+                                    ) {
+                                        Text(if (s.isThai) "พิมพ์ระบุวัคซีนใหม่" else "Enter new vaccine name")
+                                    }
+                                }
+                            } else {
+                                BookingDropdown(
+                                    label = if (s.isThai) "เลือกวัคซีนจากสมุด" else "Select vaccine from book",
+                                    display = selectedVaccineRecord?.let {
+                                        "${it.vaccineName} (${vaccineStatusLabel(it.status, s.isThai)})"
+                                    } ?: (if (s.isThai) "กรุณาเลือกวัคซีน..." else "Please select a vaccine..."),
+                                    options = childVaccines,
+                                    optionLabel = {
+                                        val ageStr = it.ageGroup?.let { g -> " • $g" }.orEmpty()
+                                        "${it.vaccineName}$ageStr [${vaccineStatusLabel(it.status, s.isThai)}]"
+                                    },
+                                    onSelect = { selectedVaccineRecord = it }
+                                )
+                                if (selectedVaccineRecord == null) {
+                                    Text(
+                                        if (s.isThai) "กรุณาเลือกรายการวัคซีนที่ต้องการนัดหมาย"
+                                        else "Please pick a vaccine to book",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        } else {
+                            OutlinedTextField(
+                                value = customVaccineName,
+                                onValueChange = { customVaccineName = it },
+                                label = { Text(if (s.isThai) "ชื่อวัคซีนใหม่ / เพิ่มเติม" else "New / Other Vaccine Name") },
+                                placeholder = {
+                                    Text(
+                                        if (s.isThai) "เช่น วัคซีนอีสุกอีใส, ไข้เลือดออก, HPV, หรืออื่นๆ"
+                                        else "e.g. Varicella, Dengue, HPV..."
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp)
+                            )
+
+                            // Duplicate / Similarity Warning
+                            if (duplicateOrSimilarMatch != null) {
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.28f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                                    )
+                                ) {
+                                    Column(
+                                        Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = androidx.compose.material.icons.Icons.Filled.LocalHospital,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Text(
+                                                if (s.isThai) "พบวัคซีนที่ตรงหรือใกล้เคียงในสมุดวัคซีน!"
+                                                else "Similar vaccine found in book!",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                        Text(
+                                            text = if (s.isThai)
+                                                "พบรายการ: \"${duplicateOrSimilarMatch.matchedRecord.vaccineName}\" (${duplicateOrSimilarMatch.matchedRecord.ageGroup ?: "ไม่ระบุกลุ่มอายุ"})\nสถานะปัจจุบัน: ${vaccineStatusLabel(duplicateOrSimilarMatch.matchedRecord.status, true)}\nข้อสังเกต: ${duplicateOrSimilarMatch.matchReason}"
+                                            else
+                                                "Found: \"${duplicateOrSimilarMatch.matchedRecord.vaccineName}\" (${duplicateOrSimilarMatch.matchedRecord.ageGroup ?: "No age group"})\nStatus: ${vaccineStatusLabel(duplicateOrSimilarMatch.matchedRecord.status, false)}\nNote: ${duplicateOrSimilarMatch.matchReason}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Button(
+                                            onClick = {
+                                                isCustomVaccine = false
+                                                selectedVaccineRecord = duplicateOrSimilarMatch.matchedRecord
+                                                customVaccineName = ""
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.error
+                                            ),
+                                            shape = RoundedCornerShape(100.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                if (s.isThai) "สลับไปเลือกรายการนี้จากสมุดวัคซีน"
+                                                else "Switch to select from vaccine book",
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Date + time — dropdowns, hidden for emergency
             if (!isEmergency) {
                 if (datesAvailable.isEmpty()) {
@@ -261,16 +467,33 @@ fun DoctorReservationScreen(doctorId: String, childViewModel: ChildViewModel, na
 
             ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
+            val isVaccineValid = bookingType != AppointmentBookingType.VACCINE ||
+                (!isCustomVaccine && selectedVaccineRecord != null) ||
+                (isCustomVaccine && customVaccineName.trim().isNotBlank())
+
             Button(
                 onClick = {
                     val type = bookingType ?: return@Button
                     selectedChildId?.let { childId ->
-                        val encodedReason = AppointmentBookingMeta.encodeReason(type, reason.ifBlank { null })
+                        val vacName = if (type == AppointmentBookingType.VACCINE) {
+                            if (isCustomVaccine) customVaccineName.trim() else selectedVaccineRecord?.vaccineName
+                        } else null
+                        val vacRecordId = if (type == AppointmentBookingType.VACCINE && !isCustomVaccine) {
+                            selectedVaccineRecord?.id
+                        } else null
+
+                        val encodedReason = AppointmentBookingMeta.encodeReason(
+                            type = type,
+                            detail = reason.ifBlank { null },
+                            vaccineName = vacName,
+                            vaccineRecordId = vacRecordId
+                        )
                         vm.book(doctorId, childId, selectedSlotId, encodedReason, isEmergency, s.isThai)
                     }
                 },
                 enabled = !ui.booking && selectedChildId != null && bookingType != null &&
                     ui.linkGate == ClinicBookingGate.CAN_BOOK &&
+                    isVaccineValid &&
                     (isEmergency || datesAvailable.isEmpty() || selectedSlotId != null),
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)
             ) {
@@ -291,6 +514,14 @@ fun DoctorReservationScreen(doctorId: String, childViewModel: ChildViewModel, na
             Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+private fun vaccineStatusLabel(status: String?, isThai: Boolean): String = when (status) {
+    "completed" -> if (isThai) "ฉีดแล้ว" else "Completed"
+    "overdue" -> if (isThai) "เลยกำหนด" else "Overdue"
+    "appointment" -> if (isThai) "มีนัดแล้ว" else "Appointment"
+    "skipped" -> if (isThai) "ข้าม" else "Skipped"
+    else -> if (isThai) "รอฉีด" else "Upcoming"
 }
 
 /** The four types the parent picks from. [AppointmentBookingType.HEALTH_CHECK] stays in the enum so
