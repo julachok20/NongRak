@@ -39,7 +39,6 @@ fun EditProfileScreen(
     val uiState by authViewModel.uiState.collectAsState()
     val context = LocalContext.current
     var fullName by remember { mutableStateOf(uiState.profile?.fullName ?: "") }
-    var username by remember { mutableStateOf(uiState.profile?.username ?: "") }
 
     LaunchedEffect(Unit) { authViewModel.loadProfile() }
 
@@ -124,16 +123,6 @@ fun EditProfileScreen(
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("ชื่อผู้ใช้ (Username)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                        OutlinedTextField(
-                            value = username, onValueChange = { username = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            leadingIcon = { Icon(Icons.Filled.AlternateEmail, null, tint = Outline) },
-                            singleLine = true, shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
-                        )
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("อีเมล", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                         OutlinedTextField(
                             value = "", onValueChange = {},
@@ -154,7 +143,7 @@ fun EditProfileScreen(
             PrimaryButton(
                 text = "บันทึกการเปลี่ยนแปลง",
                 onClick = {
-                    authViewModel.updateProfile(username.ifBlank { null }, fullName.ifBlank { null }, null) { onBack() }
+                    authViewModel.updateProfile(uiState.profile?.username, fullName.ifBlank { null }, null) { onBack() }
                 },
                 isLoading = uiState.isLoading
             )
