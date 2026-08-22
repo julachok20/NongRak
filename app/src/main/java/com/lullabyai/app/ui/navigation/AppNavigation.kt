@@ -234,9 +234,30 @@ fun AppNavigation(
             .background(MaterialTheme.colorScheme.background)
             .imePadding()
     ) {
+        val currentChildState by childViewModel.uiState.collectAsState()
+        if (currentChildState.requireRegistrationPrompt != null) {
+            com.lullabyai.app.ui.components.RequireRegistrationDialog(
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนใช้งาน" else "Registration Required",
+                message = currentChildState.requireRegistrationPrompt ?: "",
+                isThai = lang == "th",
+                onDismiss = { childViewModel.dismissRegistrationPrompt() },
+                onSignUp = {
+                    childViewModel.dismissRegistrationPrompt()
+                    navController.navigate(Screen.SignUp.route)
+                },
+                onSignIn = {
+                    childViewModel.dismissRegistrationPrompt()
+                    navController.navigate(Screen.Login.route)
+                }
+            )
+        }
     // Slide (not crossfade) so two differently-themed screen backgrounds (e.g. onboarding's forced
     // light theme vs. the rest of the app in dark mode) never alpha-blend into a visible flash —
     // each screen stays fully opaque and simply slides, only briefly exposing the themed Box behind.
+    com.lullabyai.app.ui.components.LineOaBanner(
+        onOpenLink = { navController.navigate(Screen.LineLink.route) }
+    )
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -251,7 +272,11 @@ fun AppNavigation(
                     onSignUp = { navController.navigate(Screen.SignUp.route) },
                     onLogin = { navController.navigate(Screen.Login.route) },
                     settingsViewModel = settingsViewModel,
-                    onDoctorMode = { navController.navigate(Screen.DoctorWelcome.route) }
+                    onDoctorMode = { navController.navigate(Screen.DoctorWelcome.route) },
+                    onGuestMode = {
+                        childViewModel.initGuestChild()
+                        navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
+                    }
                 )
             }
         }
@@ -332,59 +357,75 @@ fun AppNavigation(
         }
         composable(Screen.AddChildChoice.route) {
             val authState by authViewModel.uiState.collectAsState()
-            NongRakTheme(darkTheme = false) {
-                AddChildChoiceScreen(
-                    onAddNew = {
-                        // First-ever child (relationship not set yet) still needs the medical
-                        // disclaimer + Last Setup; a subsequent child (addMode) skips both.
-                        if (authState.profile?.relationship.isNullOrBlank()) {
-                            onboardingViewModel.reset()
-                            navController.navigate(Screen.MedicalDisclaimer.route)
-                        } else {
-                            onboardingViewModel.startAddChild()
-                            navController.navigate(Screen.OnboardingStep1.route)
-                        }
-                    },
-                    onSync = { navController.navigate(Screen.SyncChild.route) },
-                    onUploadCertificate = { navController.navigate(Screen.UploadBirthCertificate.route) },
-                    // #12: backing out of Add Child goes HOME, not to Welcome. popBackStack() sent
-                    // first-run users back to the welcome screen because that is literally what
-                    // preceded this screen; popUpTo(0) clears that history so Dashboard is the root.
-                    onBack = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } }
-                )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนเพิ่มข้อมูลลูก" else "Registration Required to Add Child",
+                message = if (lang == "th") "บัญชีทดลอง (Test) ไม่สามารถเพิ่มหรือซิงค์ข้อมูลลูกได้ กรุณาสมัครสมาชิกก่อนดำเนินการ" else "Test accounts cannot add or sync children. Please sign up to manage your children."
+            ) {
+                NongRakTheme(darkTheme = false) {
+                    AddChildChoiceScreen(
+                        onAddNew = {
+                            if (authState.profile?.relationship.isNullOrBlank()) {
+                                onboardingViewModel.reset()
+                                navController.navigate(Screen.MedicalDisclaimer.route)
+                            } else {
+                                onboardingViewModel.startAddChild()
+                                navController.navigate(Screen.OnboardingStep1.route)
+                            }
+                        },
+                        onSync = { navController.navigate(Screen.SyncChild.route) },
+                        onUploadCertificate = { navController.navigate(Screen.UploadBirthCertificate.route) },
+                        onBack = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } }
+                    )
+                }
             }
         }
         composable(Screen.SyncChild.route) {
-            NongRakTheme(darkTheme = false) {
-                com.lullabyai.app.ui.screens.access.SyncChildProfileScreen(
-                    viewModel = viewModel(),
-                    navController = navController,
-                    onBack = { navController.popBackStack() },
-                    onDone = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
-                    onSeePendingRequests = { navController.navigate(Screen.PendingAccessRequests.route) },
-                    footerTab = com.lullabyai.app.ui.components.BottomTab.HOME
-                )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนซิงค์ข้อมูลลูก" else "Registration Required to Sync Child",
+                message = if (lang == "th") "บัญชีทดลอง (Test) ไม่สามารถซิงค์ข้อมูลลูกได้ กรุณาสมัครสมาชิกก่อนดำเนินการ" else "Test accounts cannot sync child profiles. Please sign up."
+            ) {
+                NongRakTheme(darkTheme = false) {
+                    com.lullabyai.app.ui.screens.access.SyncChildProfileScreen(
+                        viewModel = viewModel(),
+                        navController = navController,
+                        onBack = { navController.popBackStack() },
+                        onDone = { navController.navigate(Screen.Dashboard.route) { popUpTo(0) } },
+                        onSeePendingRequests = { navController.navigate(Screen.PendingAccessRequests.route) },
+                        footerTab = com.lullabyai.app.ui.components.BottomTab.HOME
+                    )
+                }
             }
         }
         composable(Screen.UploadBirthCertificate.route) {
             val authState by authViewModel.uiState.collectAsState()
-            NongRakTheme(darkTheme = false) {
-                UploadBirthCertificateScreen(
-                    onExtracted = { name, birthdate, gender ->
-                        // Same first-child-vs-add-child branch as AddChildChoice's "Add new child":
-                        // first-ever child still needs the medical disclaimer + Last Setup.
-                        if (authState.profile?.relationship.isNullOrBlank()) {
-                            onboardingViewModel.reset()
-                            onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
-                            navController.navigate(Screen.MedicalDisclaimer.route)
-                        } else {
-                            onboardingViewModel.startAddChild()
-                            onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
-                            navController.navigate(Screen.OnboardingStep1.route)
-                        }
-                    },
-                    onBack = { navController.popBackStack() }
-                )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนเพิ่มข้อมูลลูก" else "Registration Required to Add Child"
+            ) {
+                NongRakTheme(darkTheme = false) {
+                    UploadBirthCertificateScreen(
+                        onExtracted = { name, birthdate, gender ->
+                            if (authState.profile?.relationship.isNullOrBlank()) {
+                                onboardingViewModel.reset()
+                                onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
+                                navController.navigate(Screen.MedicalDisclaimer.route)
+                            } else {
+                                onboardingViewModel.startAddChild()
+                                onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
+                                navController.navigate(Screen.OnboardingStep1.route)
+                            }
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
             }
         }
         composable(Screen.OnboardingStep1.route) {
@@ -412,14 +453,13 @@ fun AppNavigation(
             OnboardingFlowTheme(onboardingViewModel, settingsViewModel) {
                 OnboardingStep2Screen(
                     onboardingViewModel = onboardingViewModel,
-                    onNext = {
-                        if (onboardingState.addMode) {
-                            onboardingViewModel.completeOnboarding {
-                                navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
-                            }
-                        } else {
-                            navController.navigate(Screen.OnboardingStep3.route)
+                    onComplete = {
+                        onboardingViewModel.completeOnboarding {
+                            navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
                         }
+                    },
+                    onFillMore = {
+                        navController.navigate(Screen.OnboardingStep3.route)
                     },
                     onBack = {
                         if (onboardingState.addMode) navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
@@ -434,18 +474,14 @@ fun AppNavigation(
                 OnboardingStep3Screen(
                     onboardingViewModel = onboardingViewModel,
                     onNext = {
-                        if (onboardingState.addMode) {
-                            // Add-child: no username step — save now and go to the dashboard.
-                            onboardingViewModel.completeOnboarding {
-                                navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
-                            }
-                        } else {
-                            navController.navigate(Screen.LastSetup.route)
-                        }
+                        navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
                     },
                     onBack = {
-                        if (onboardingState.addMode) navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
-                        else navController.popBackStack()
+                        if (onboardingState.existingChildId != null) {
+                            navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
+                        } else {
+                            navController.popBackStack()
+                        }
                     }
                 )
             }
@@ -497,7 +533,16 @@ fun AppNavigation(
                 childViewModel = childViewModel,
                 chatViewModel = chatViewModel,
                 authViewModel = authViewModel,
-                onNavigateToChat = { navController.navigate(Screen.AiChat.route) },
+                onNavigateToChat = {
+                    navController.navigate(Screen.AiChat.route) {
+                        popUpTo(Screen.Dashboard.route) {
+                            saveState = true
+                            inclusive = false
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 onNavigateToChild = { navController.navigate(Screen.ChildSummary.route) },
                 onNavigateToVaccine = { navController.navigate(Screen.VaccineBook.route) },
                 onNavigateToDevelopment = { navController.navigate(Screen.ChildDevelopment.route) },
@@ -512,11 +557,18 @@ fun AppNavigation(
                 onNavigateToSleep = { navController.navigate(Screen.SleepTracker.route) },
                 onNavigateToAddChild = { navController.navigate(Screen.AddChildChoice.route) },
                 onNavigateToMentalHealth = { navController.navigate(Screen.MentalHealthAssessment.route) },
-                onNavigateToPostpartum = { navController.navigate(Screen.PostpartumCheckIn.route) },
                 onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
                 onNavigateToWidgets = { navController.navigate(Screen.WidgetsIntro.route) },
                 onNavigateHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onNavigateToConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } },
+                onNavigateToSignUp = { navController.navigate(Screen.SignUp.route) },
+                onNavigateToHealthSurvey = {
+                    val activeChild = childViewModel.uiState.value.child
+                    if (activeChild != null) {
+                        onboardingViewModel.initFromChild(activeChild)
+                    }
+                    navController.navigate(Screen.OnboardingStep3.route)
+                },
                 isTourActive = tourActive
             )
         }
@@ -525,8 +577,22 @@ fun AppNavigation(
             AIChatScreen(
                 chatViewModel = chatViewModel,
                 childViewModel = childViewModel,
-                onBack = { navController.popBackStack() },
-                onNavHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onBack = {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(Screen.Dashboard.route) {
+                            inclusive = false
+                        }
+                        launchSingleTop = true
+                    }
+                },
+                onNavHome = {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(Screen.Dashboard.route) {
+                            inclusive = false
+                        }
+                        launchSingleTop = true
+                    }
+                },
                 onNavChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
                 onNavSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
                 onNavStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
@@ -537,7 +603,6 @@ fun AppNavigation(
             ChildSummaryScreen(
                 childViewModel, chatViewModel, navController, onboardingViewModel,
                 onBack = { navController.popBackStack() },
-                parentTourStep = if (tourActive) tourStep else null,
                 isTourMode = tourActive
             )
         }
@@ -611,10 +676,24 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.child.SicknessFollowUpScreen(childViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.LogSicknessSymptoms.route) {
-            com.lullabyai.app.ui.screens.child.LogSicknessSymptomsScreen(childViewModel, navController) { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกอาการป่วย" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.child.LogSicknessSymptomsScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.AddMedicineSchedule.route) {
-            AddMedicineScheduleScreen(childViewModel, navController) { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนตั้งเวลาเตือนยา" else "Registration Required"
+            ) {
+                AddMedicineScheduleScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.MedicalDocumentHistory.route) {
             MedicalDocumentHistoryScreen(childViewModel, navController) { navController.popBackStack() }
@@ -627,10 +706,17 @@ fun AppNavigation(
             route = Screen.AddSleepTime.route,
             arguments = listOf(navArgument("scheduleId") { nullable = true; defaultValue = null })
         ) { entry ->
-            AddSleepTimeScreen(
-                childViewModel, chatViewModel, navController,
-                scheduleId = entry.arguments?.getString("scheduleId")
-            ) { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกเวลานอน" else "Registration Required"
+            ) {
+                AddSleepTimeScreen(
+                    childViewModel, chatViewModel, navController,
+                    scheduleId = entry.arguments?.getString("scheduleId")
+                ) { navController.popBackStack() }
+            }
         }
         composable(Screen.SleepSchedule.route) {
             SleepScheduleScreen(childViewModel, navController) { navController.popBackStack() }
@@ -643,16 +729,38 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.growth.GrowthHistoryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.AddGrowthRecord.route) {
-            com.lullabyai.app.ui.screens.growth.AddGrowthRecordScreen(childViewModel, navController) { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกการเติบโต" else "Registration Required to Record Growth",
+                message = if (lang == "th") "บัญชีทดลองสามารถดูข้อมูลตัวอย่างได้เท่านั้น กรุณาสมัครสมาชิกเพื่อเริ่มบันทึกส่วนสูงและน้ำหนัก" else "Test account can only view sample data. Please sign up to record growth."
+            ) {
+                com.lullabyai.app.ui.screens.growth.AddGrowthRecordScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.SiblingCompare.route) {
             com.lullabyai.app.ui.screens.growth.SiblingCompareScreen(childViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.CameraScan.route) {
-            com.lullabyai.app.ui.screens.chat.CameraScanScreen(isThai = lang == "th") { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนใช้งาน AI สแกน" else "Registration Required for AI Scan"
+            ) {
+                com.lullabyai.app.ui.screens.chat.CameraScanScreen(isThai = lang == "th") { navController.popBackStack() }
+            }
         }
         composable(Screen.VoiceCall.route) {
-            com.lullabyai.app.ui.screens.chat.CallScreen(chatViewModel, childViewModel, isThai = lang == "th") { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนโทรหา AI" else "Registration Required for AI Call"
+            ) {
+                com.lullabyai.app.ui.screens.chat.CallScreen(chatViewModel, childViewModel, isThai = lang == "th") { navController.popBackStack() }
+            }
         }
         composable(Screen.HealthLog.route) {
             com.lullabyai.app.ui.screens.child.HealthLogScreen(navController, isThai = lang == "th")
@@ -679,26 +787,22 @@ fun AppNavigation(
             com.lullabyai.app.ui.screens.stats.MonthlyReportScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
         }
         composable(Screen.MentalHealthAssessment.route) {
-            com.lullabyai.app.ui.screens.mentalhealth.MentalHealthAssessmentScreen(
-                authViewModel,
-                onDone = { navController.navigate(Screen.MentalHealthResult.route) { popUpTo(Screen.Dashboard.route) } },
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนทำแบบประเมิน" else "Registration Required",
+                message = if (lang == "th") "แบบประเมินสุขภาพจิตและรายงานวิเคราะห์เปิดให้ใช้งานสำหรับสมาชิกที่ลงทะเบียนเท่านั้น" else "Mental health screening is available for registered members only."
+            ) {
+                com.lullabyai.app.ui.screens.mentalhealth.MentalHealthAssessmentScreen(
+                    authViewModel,
+                    onDone = { navController.navigate(Screen.MentalHealthResult.route) { popUpTo(Screen.Dashboard.route) } },
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.MentalHealthResult.route) {
             com.lullabyai.app.ui.screens.mentalhealth.MentalHealthResultScreen(authViewModel, navController) {
-                navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
-            }
-        }
-        composable(Screen.PostpartumCheckIn.route) {
-            com.lullabyai.app.ui.screens.mentalhealth.PostpartumCheckInScreen(
-                authViewModel,
-                onDone = { navController.navigate(Screen.PostpartumResult.route) { popUpTo(Screen.Dashboard.route) } },
-                onBack = { navController.popBackStack() }
-            )
-        }
-        composable(Screen.PostpartumResult.route) {
-            com.lullabyai.app.ui.screens.mentalhealth.PostpartumResultScreen(authViewModel, navController) {
                 navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
             }
         }
@@ -724,39 +828,73 @@ fun AppNavigation(
             EditProfileScreen(authViewModel = authViewModel, navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.MedicalDataVault.route) {
-            com.lullabyai.app.ui.screens.settings.MedicalDataVaultScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ฟีเจอร์คลังเอกสารสุขภาพ" else "Medical Data Vault"
+            ) {
+                com.lullabyai.app.ui.screens.settings.MedicalDataVaultScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.AiDataRetention.route) {
             com.lullabyai.app.ui.screens.settings.AiDataRetentionScreen(childViewModel, navController) { navController.popBackStack() }
         }
-        composable(Screen.PermissionAccess.route) {
-            com.lullabyai.app.ui.screens.access.PermissionAccessScreen(
-                viewModel = viewModel(), navController = navController,
+        composable(Screen.LineLink.route) {
+            com.lullabyai.app.ui.screens.settings.LineLinkScreen(
+                navController = navController,
                 onBack = { navController.popBackStack() }
             )
         }
-        composable(Screen.ActivityHistory.route) {
-            com.lullabyai.app.ui.screens.access.ActivityHistoryScreen(
-                viewModel = viewModel(), navController = navController,
+        composable(Screen.PermissionAccess.route) {
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
                 onBack = { navController.popBackStack() },
-                // The screen only offers this to owners/co-owners, and only against caregivers.
-                onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) },
-                onReplyToEntry = { peerId, subject ->
-                    navController.navigate(Screen.CareChat.route(peerId, subject))
-                },
-                onOpenHub = { navController.navigate(Screen.CareCircle.route) }
-            )
+                title = if (lang == "th") "ฟีเจอร์การจัดการสิทธิ์การเข้าถึง" else "Access Permission Management"
+            ) {
+                com.lullabyai.app.ui.screens.access.PermissionAccessScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.ActivityHistory.route) {
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ประวัติกิจกรรมของผู้ดูแล" else "Caregiver Activity History"
+            ) {
+                com.lullabyai.app.ui.screens.access.ActivityHistoryScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() },
+                    // The screen only offers this to owners/co-owners, and only against caregivers.
+                    onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) },
+                    onReplyToEntry = { peerId, subject ->
+                        navController.navigate(Screen.CareChat.route(peerId, subject))
+                    },
+                    onOpenHub = { navController.navigate(Screen.CareCircle.route) }
+                )
+            }
         }
         composable(Screen.CareCircle.route) {
-            com.lullabyai.app.ui.screens.access.CareCircleScreen(
-                viewModel = viewModel(), navController = navController,
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
                 onBack = { navController.popBackStack() },
-                onOpenChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
-            )
+                title = if (lang == "th") "กลุ่มผู้ดูแลเด็ก (Care Circle)" else "Care Circle"
+            ) {
+                com.lullabyai.app.ui.screens.access.CareCircleScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() },
+                    onOpenChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
+                )
+            }
         }
         composable(
             Screen.CareChat.route,
@@ -768,12 +906,19 @@ fun AppNavigation(
             )
         ) { backStackEntry ->
             val peerId = backStackEntry.arguments?.getString("peerId") ?: return@composable
-            com.lullabyai.app.ui.screens.access.CareChatScreen(
-                viewModel = viewModel(), navController = navController,
-                peerId = peerId,
-                quote = backStackEntry.arguments?.getString("quote").orEmpty(),
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "แชทระหว่างผู้ดูแล" else "Caregiver Chat"
+            ) {
+                com.lullabyai.app.ui.screens.access.CareChatScreen(
+                    viewModel = viewModel(), navController = navController,
+                    peerId = peerId,
+                    quote = backStackEntry.arguments?.getString("quote").orEmpty(),
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.ExpenseHistory.route) {
             com.lullabyai.app.ui.screens.expense.ExpenseHistoryScreen(
@@ -790,48 +935,97 @@ fun AppNavigation(
             )
         }
         composable(Screen.ActivitySchedule.route) {
-            com.lullabyai.app.ui.screens.schedule.ActivityScheduleScreen(
-                viewModel = viewModel(), navController = navController,
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
                 onBack = { navController.popBackStack() },
-                onAdd = { navController.navigate(Screen.AddActivity.route) }
-            )
+                title = if (lang == "th") "ฟีเจอร์ปฏิทินและกิจกรรม" else "Activity & Calendar"
+            ) {
+                com.lullabyai.app.ui.screens.schedule.ActivityScheduleScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() },
+                    onAdd = { navController.navigate(Screen.AddActivity.route) }
+                )
+            }
         }
         composable(Screen.AddActivity.route) {
-            com.lullabyai.app.ui.screens.schedule.AddActivityScreen(
-                viewModel = viewModel(), navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนเพิ่มกิจกรรม" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.schedule.AddActivityScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.AddExpense.route) {
-            com.lullabyai.app.ui.screens.expense.AddExpenseScreen(
-                viewModel = viewModel(), navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกค่าใช้จ่าย" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.expense.AddExpenseScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.CaregiverUpdate.route) {
-            com.lullabyai.app.ui.screens.access.CaregiverUpdateScreen(
-                viewModel = viewModel(), navController = navController,
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
                 onBack = { navController.popBackStack() },
-                onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
-            )
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนจัดการผู้ดูแล" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.access.CaregiverUpdateScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() },
+                    onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
+                )
+            }
         }
         composable(Screen.AddUserAccessActivity.route) {
-            com.lullabyai.app.ui.screens.access.AddUserAccessActivityScreen(
-                viewModel = viewModel(), navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนเพิ่มสิทธิ์ผู้ดูแล" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.access.AddUserAccessActivityScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.ShareAccessQr.route) {
-            com.lullabyai.app.ui.screens.access.ShareAccessQrScreen(
-                viewModel = viewModel(), navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนแชร์สิทธิ์เข้าถึง" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.access.ShareAccessQrScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.RoleManagement.route) {
-            com.lullabyai.app.ui.screens.access.RoleManagementScreen(
-                viewModel = viewModel(), navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนจัดการบทบาทและสิทธิ์" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.access.RoleManagementScreen(
+                    viewModel = viewModel(), navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(
             Screen.PermissionSettingsDetail.route,
@@ -844,10 +1038,25 @@ fun AppNavigation(
             )
         }
         composable(Screen.MilkRecord.route) {
-            com.lullabyai.app.ui.screens.nutrition.MilkRecordScreen(childViewModel, nutritionViewModel, lang, navController) { navController.popBackStack() }
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกการให้นม" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.nutrition.MilkRecordScreen(childViewModel, nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.HelpFaq.route) {
             HelpFaqScreen(navController = navController, onBack = { navController.popBackStack() })
+        }
+        composable(Screen.Feedback.route) {
+            com.lullabyai.app.ui.screens.settings.FeedbackScreen(
+                navController = navController,
+                authViewModel = authViewModel,
+                lang = lang,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(Screen.ChangePassword.route) {
             ChangePasswordScreen(authViewModel = authViewModel, navController = navController, onBack = { navController.popBackStack() })
@@ -859,7 +1068,15 @@ fun AppNavigation(
             AboutUsScreen(navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.WidgetsIntro.route) {
-            com.lullabyai.app.ui.screens.settings.WidgetsIntroScreen(navController = navController, onBack = { navController.popBackStack() })
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "วิดเจ็ตสำหรับสมาชิก" else "Widgets for Registered Members",
+                message = if (lang == "th") "ฟีเจอร์วิดเจ็ตหน้าจอหลักเปิดให้ใช้งานสำหรับสมาชิกที่ลงทะเบียนเท่านั้น กรุณาสมัครสมาชิกเพื่อใช้งาน" else "Home screen widgets require an account. Please sign up."
+            ) {
+                com.lullabyai.app.ui.screens.settings.WidgetsIntroScreen(navController = navController, onBack = { navController.popBackStack() })
+            }
         }
         composable(Screen.PrivacyPolicy.route) {
             PrivacyPolicyScreen(navController = navController, onBack = { navController.popBackStack() })
@@ -878,18 +1095,32 @@ fun AppNavigation(
             PrivacyPolicyScreen(navController = navController, onBack = { navController.popBackStack() }, isDoctor = true)
         }
         composable(Screen.EditChild.route) {
-            com.lullabyai.app.ui.screens.child.EditChildScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "แก้ไขข้อมูลเด็ก" else "Edit Child Profile"
+            ) {
+                com.lullabyai.app.ui.screens.child.EditChildScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.AddHealthRecord.route) {
-            com.lullabyai.app.ui.screens.child.AddHealthRecordScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "บันทึกสุขภาพเด็ก" else "Add Health Record"
+            ) {
+                com.lullabyai.app.ui.screens.child.AddHealthRecordScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.HealthDetail.route) {
             com.lullabyai.app.ui.screens.child.HealthDetailScreen(
@@ -1216,11 +1447,18 @@ fun AppNavigation(
         // this file (five concurrent writers would have collided), so they declared their route
         // constants locally and the orchestrator registers them here.
         composable(com.lullabyai.app.ui.screens.child.VACCINE_BOOK_SCAN_ROUTE) {
-            com.lullabyai.app.ui.screens.child.VaccineBookScanScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนสแกนสมุดวัคซีน" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.child.VaccineBookScanScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(com.lullabyai.app.ui.screens.sleep.PRO_SLEEP_HUB_ROUTE) {
             com.lullabyai.app.ui.screens.sleep.ProSleepHubScreen(
@@ -1230,11 +1468,18 @@ fun AppNavigation(
             )
         }
         composable(com.lullabyai.app.ui.screens.sleep.RECORD_SLEEP_HISTORY_ROUTE) {
-            com.lullabyai.app.ui.screens.sleep.RecordSleepHistoryScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกประวัตินอน" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.sleep.RecordSleepHistoryScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(com.lullabyai.app.ui.screens.child.AI_GUIDANCE_ROUTE) {
             com.lullabyai.app.ui.screens.child.AiGuidanceScreen(
@@ -1257,20 +1502,34 @@ fun AppNavigation(
             }
         }
         composable(Screen.SyncChildProfile.route) {
-            com.lullabyai.app.ui.screens.access.SyncChildProfileScreen(
-                viewModel = viewModel(),
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
                 navController = navController,
                 onBack = { navController.popBackStack() },
-                onDone = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
-                onSeePendingRequests = { navController.navigate(Screen.PendingAccessRequests.route) }
-            )
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนซิงค์ข้อมูลลูก" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.access.SyncChildProfileScreen(
+                    viewModel = viewModel(),
+                    navController = navController,
+                    onBack = { navController.popBackStack() },
+                    onDone = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
+                    onSeePendingRequests = { navController.navigate(Screen.PendingAccessRequests.route) }
+                )
+            }
         }
         composable(Screen.PendingAccessRequests.route) {
-            com.lullabyai.app.ui.screens.access.PendingAccessRequestsScreen(
-                viewModel = viewModel(),
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนจัดการคำขอเข้าถึง" else "Registration Required"
+            ) {
+                com.lullabyai.app.ui.screens.access.PendingAccessRequestsScreen(
+                    viewModel = viewModel(),
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.LabResults.route) {
             com.lullabyai.app.ui.screens.access.ConnectAccessGuard(
@@ -1377,28 +1636,98 @@ fun AppNavigation(
 
         // --- Diary / Special Memories (#10) — append-only ---
         composable(Screen.ChildDiary.route) {
-            com.lullabyai.app.ui.screens.diary.ChildDiaryScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "สมุดบันทึกความทรงจำ (Diary)" else "Child Diary"
+            ) {
+                com.lullabyai.app.ui.screens.diary.ChildDiaryScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.CompareMemories.route) {
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ย้อนดูความเปลี่ยนแปลง (Then vs Now)" else "Compare Growth (Then vs Now)"
+            ) {
+                val diaryVm: com.lullabyai.app.viewmodel.DiaryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+                com.lullabyai.app.ui.screens.diary.CompareMemoriesScreen(
+                    navController = navController,
+                    vm = diaryVm,
+                    isThai = lang == "th"
+                )
+            }
         }
         composable(Screen.RewindMemory.route) {
-            com.lullabyai.app.ui.screens.diary.RewindMemoryScreen(
+
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ย้อนดูความทรงจำ (Rewind)" else "Rewind Memory"
+            ) {
+                com.lullabyai.app.ui.screens.diary.RewindMemoryScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.SpecialMemoriesGallery.route) {
-            com.lullabyai.app.ui.screens.diary.SpecialMemoriesGalleryScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "แกลเลอรีความทรงจำพิเศษ" else "Special Memories Gallery"
+            ) {
+                com.lullabyai.app.ui.screens.diary.SpecialMemoriesGalleryScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.AddMemory.route) {
-            com.lullabyai.app.ui.screens.diary.AddMemoryScreen(
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
                 navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "เพิ่มบันทึกความทรงจำใหม่" else "Add New Memory"
+            ) {
+                com.lullabyai.app.ui.screens.diary.AddMemoryScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.ChildRecognitionSetup.route) {
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ตั้งค่าการจดจำใบหน้าลูก" else "Child Recognition Setup"
+            ) {
+                com.lullabyai.app.ui.screens.diary.ChildRecognitionSetupScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.GalleryAiSettings.route) {
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "ตั้งค่าแกลเลอรี AI" else "Gallery AI Settings"
+            ) {
+                com.lullabyai.app.ui.screens.diary.GalleryAiSettingsScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
 
         // --- Oral Health Pro System ---

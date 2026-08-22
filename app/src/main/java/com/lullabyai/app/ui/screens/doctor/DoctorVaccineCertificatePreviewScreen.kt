@@ -46,6 +46,7 @@ fun DoctorVaccineCertificatePreviewScreen(
     val preview by certVm.preview.collectAsState()
     val isWorking by certVm.isWorking.collectAsState()
     val error by certVm.error.collectAsState()
+    var viewingDocument by remember { mutableStateOf<com.lullabyai.app.ui.components.DocumentViewSource?>(null) }
 
     val data = preview
     if (data == null) {
@@ -190,22 +191,11 @@ fun DoctorVaccineCertificatePreviewScreen(
                             ).show()
                             return@Surface
                         }
-                        runCatching {
-                            val uri = FileProvider.getUriForFile(
-                                context, "${context.packageName}.fileprovider", data.pdfFile
-                            )
-                            val view = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "application/pdf")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(Intent.createChooser(view, null))
-                        }.onFailure {
-                            Toast.makeText(
-                                context,
-                                if (s.isThai) "เปิดไฟล์ PDF ไม่สำเร็จ — ติดตั้งแอปอ่าน PDF" else "Could not open PDF — install a PDF viewer",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+                        viewingDocument = com.lullabyai.app.ui.components.DocumentViewSource.Local(
+                            file = data.pdfFile,
+                            displayTitle = if (s.isThai) "ใบรับรองวัคซีน - ${data.childName}" else "Vaccine Certificate - ${data.childName}",
+                            mime = "application/pdf"
+                        )
                     },
                     shape = RoundedCornerShape(16.dp),
                     color = SurfaceContainerLow,
@@ -301,6 +291,12 @@ fun DoctorVaccineCertificatePreviewScreen(
             }
         }
     }
+
+    com.lullabyai.app.ui.components.InAppDocumentViewerDialog(
+        source = viewingDocument,
+        onDismiss = { viewingDocument = null },
+        isThai = s.isThai
+    )
 }
 
 @Composable

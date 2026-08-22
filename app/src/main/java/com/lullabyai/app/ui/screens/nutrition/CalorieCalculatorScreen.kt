@@ -67,6 +67,15 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
             portion = ""; spilled = false; spillFraction = 0f
         }
     }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val bytes = com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, uri)
+            if (bytes != null) {
+                vm.addFoodFromPhoto(bytes, lang, portion, spillFraction)
+                portion = ""; spilled = false; spillFraction = 0f
+            }
+        }
+    }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) cameraLauncher.launch(null)
         else Toast.makeText(context, if (isThai) "ต้องอนุญาตให้ใช้กล้องก่อน" else "Camera permission is needed", Toast.LENGTH_SHORT).show()
@@ -158,12 +167,27 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant)
                     )
 
-                    OutlinedButton(
-                        onClick = { openCamera() },
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), enabled = !ui.calculating
-                    ) {
-                        Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text(if (isThai) "ถ่ายรูปอาหาร ให้ AI คำนวณให้" else "Take a photo — AI calculates for you", fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { openCamera() },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(100.dp),
+                            enabled = !ui.calculating
+                        ) {
+                            Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (isThai) "ถ่ายรูปอาหาร" else "Take photo", fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = { galleryLauncher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(100.dp),
+                            enabled = !ui.calculating
+                        ) {
+                            Icon(Icons.Filled.PhotoLibrary, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (isThai) "เลือกรูปภาพ" else "Upload photo", fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
                     }
 
                     Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.3f))) {

@@ -59,13 +59,13 @@ class ChatViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
 
-    private fun welcomeMessage(relationship: String?) = UiChatMessage(
+    private fun welcomeMessage(relationship: String?, isThai: Boolean = true) = UiChatMessage(
         id = "welcome",
         role = "model",
-        content = RelationshipLabels.chatWelcome(relationship)
+        content = RelationshipLabels.chatWelcome(relationship, isThai)
     )
 
-    fun loadSessions() {
+    fun loadSessions(isThai: Boolean = true) {
         viewModelScope.launch {
             val relationship = authRepo.getProfile().getOrNull()?.relationship
             if (relationship != null) {
@@ -76,20 +76,20 @@ class ChatViewModel : ViewModel() {
                 // Auto-open most recent, or create a new one if none
                 if (_uiState.value.currentSessionId == null) {
                     if (sessions.isNotEmpty()) openSession(sessions.first().id)
-                    else newChat()
+                    else newChat(isThai)
                 }
             }
         }
     }
 
-    fun newChat() {
+    fun newChat(isThai: Boolean = true) {
         viewModelScope.launch {
-            repo.createSession().onSuccess { session ->
+            repo.createSession(if (isThai) "แชทใหม่" else "New Chat").onSuccess { session ->
                 val sessions = listOf(session) + _uiState.value.sessions
                 _uiState.value = _uiState.value.copy(
                     sessions = sessions,
                     currentSessionId = session.id,
-                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship))
+                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship, isThai))
                 )
             }
         }
@@ -107,31 +107,31 @@ class ChatViewModel : ViewModel() {
         }
     }
 
-    fun openSession(sessionId: String) {
+    fun openSession(sessionId: String, isThai: Boolean = true) {
         _uiState.value = _uiState.value.copy(currentSessionId = sessionId, isLoading = true)
         viewModelScope.launch {
             repo.getMessages(sessionId).onSuccess { msgs ->
-                val welcome = welcomeMessage(_uiState.value.parentRelationship)
+                val welcome = welcomeMessage(_uiState.value.parentRelationship, isThai)
                 val ui = if (msgs.isEmpty()) listOf(welcome)
                 else msgs.map { UiChatMessage(it.id, it.role, it.content) }
                 _uiState.value = _uiState.value.copy(messages = ui, isLoading = false)
             }.onFailure {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship))
+                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship, isThai))
                 )
             }
         }
     }
 
-    fun deleteChat(sessionId: String) {
+    fun deleteChat(sessionId: String, isThai: Boolean = true) {
         viewModelScope.launch {
             repo.deleteSession(sessionId).onSuccess {
                 val remaining = _uiState.value.sessions.filterNot { it.id == sessionId }
                 _uiState.value = _uiState.value.copy(sessions = remaining)
                 if (_uiState.value.currentSessionId == sessionId) {
-                    if (remaining.isNotEmpty()) openSession(remaining.first().id)
-                    else newChat()
+                    if (remaining.isNotEmpty()) openSession(remaining.first().id, isThai)
+                    else newChat(isThai)
                 }
             }
         }
@@ -185,19 +185,27 @@ class ChatViewModel : ViewModel() {
             .onSuccess { if (it.fed && announce) _uiState.value = _uiState.value.copy(bondFeed = it) }
     }
 
-    fun sendMessage(content: String, child: Child?, imageBytes: ByteArray? = null, imageUri: String? = null, imageMime: String? = null, persona: String? = null) {
+    fun sendMessage(
+        content: String,
+        child: Child?,
+        imageBytes: ByteArray? = null,
+        imageUri: String? = null,
+        imageMime: String? = null,
+        persona: String? = null,
+        isThai: Boolean = true
+    ) {
         val sessionId = _uiState.value.currentSessionId ?: return
         val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = content, imageUri = imageUri)
         // Persona instruction rides along with the text (the system prompt is fixed inside
         // ChatRepository); the bubble above keeps the parent's raw wording. Empty for NORMAL, so
         // normal chat sends exactly what it always did.
-        val outgoing = _uiState.value.mode.promptPrefix() + content
+        val outgoing = _uiState.value.mode.promptPrefix(isThai) + content
         _uiState.value = _uiState.value.copy(
             messages = _uiState.value.messages.filterNot { it.id == "welcome" } + userMsg,
             isLoading = true
         )
         viewModelScope.launch {
-            repo.sendMessage(sessionId, outgoing, child, imageBytes, imageMime, _uiState.value.parentRelationship, persona ?: activePersona)
+            repo.sendMessage(sessionId, outgoing, child, imageBytes, imageMime, _uiState.value.parentRelationship, persona ?: activePersona, isThai)
                 .onSuccess { response ->
                     // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
                     // RelationshipLabels.chatSystemPrompt) — strip it into structured data for the
@@ -228,7 +236,11 @@ class ChatViewModel : ViewModel() {
                     repo.getSessions().onSuccess { _uiState.value = _uiState.value.copy(sessions = it) }
                 }
                 .onFailure {
-                    val errMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "model", content = "ขออภัย เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง")
+                    val errMsg = UiChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        role = "model",
+                        content = if (isThai) "ขออภัย เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง" else "Sorry, an error occurred. Please try again."
+                    )
                     _uiState.value = _uiState.value.copy(
                         messages = _uiState.value.messages + errMsg,
                         isLoading = false

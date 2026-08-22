@@ -1,5 +1,6 @@
 package com.lullabyai.app.ui.screens.onboarding
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.OnboardingViewModel
@@ -22,7 +24,8 @@ import com.lullabyai.app.viewmodel.OnboardingViewModel
 @Composable
 fun OnboardingStep2Screen(
     onboardingViewModel: OnboardingViewModel,
-    onNext: () -> Unit,
+    onComplete: () -> Unit,
+    onFillMore: () -> Unit,
     onBack: () -> Unit
 ) {
     val state by onboardingViewModel.uiState.collectAsState()
@@ -59,7 +62,7 @@ fun OnboardingStep2Screen(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Height (cm) ส่วนสูง", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("ส่วนสูง (cm) (ไม่บังคับ)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         OutlinedTextField(
                             value = height, onValueChange = { height = it },
                             modifier = Modifier.fillMaxWidth(),
@@ -68,7 +71,7 @@ fun OnboardingStep2Screen(
                         )
                     }
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Weight (kg) น้ำหนัก", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("น้ำหนัก (kg) (ไม่บังคับ)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         OutlinedTextField(
                             value = weight, onValueChange = { weight = it },
                             modifier = Modifier.fillMaxWidth(),
@@ -79,7 +82,7 @@ fun OnboardingStep2Screen(
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Sleep hours per day (ชั่วโมง)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("ชั่วโมงการนอนต่อวัน (ไม่บังคับ)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Slider(
                         value = sleepHours,
                         onValueChange = { sleepHours = it },
@@ -95,7 +98,7 @@ fun OnboardingStep2Screen(
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Daily Activity Level", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("ระดับกิจกรรมต่อวัน (ไม่บังคับ)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     listOf(
                         Triple("low", Icons.Filled.NightlightRound, "Low Activity\nนอนหลับมากและทำกิจกรรมน้อย"),
                         Triple("moderate", Icons.Filled.DirectionsWalk, "Moderate Activity\nมีการพักผ่อนและเล่นตามปกติ"),
@@ -111,7 +114,7 @@ fun OnboardingStep2Screen(
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("กรุ๊ปเลือด (Blood Group)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("กรุ๊ปเลือด (ไม่บังคับ)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         listOf("A", "B", "AB", "O").forEach { bg ->
                             val sel = bloodGroup == bg
@@ -138,8 +141,8 @@ fun OnboardingStep2Screen(
                     Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(Icons.Filled.AutoAwesome, null, tint = Primary)
                         Column {
-                            Text("AI Insights Ready", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            Text("ข้อมูลเหล่านี้จะช่วยให้ AI วิเคราะห์และแนะนำที่เหมาะสมที่สุด", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("AI พร้อมวิเคราะห์ทันที", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Text("สามารถเลือกเข้าสู่หน้าหลักได้ทันที หรือกรอกข้อมูลเพิ่มเติมเพื่อการวิเคราะห์ที่ละเอียดขึ้น", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -166,24 +169,64 @@ fun OnboardingStep2Screen(
                     }
                 }
 
+                Spacer(Modifier.height(8.dp))
+
+                // Button 1 (MAIN): เข้าสู่หน้าหลักเลย
                 PrimaryButton(
                     text = when {
                         state.isLoading -> "..."
-                        state.addMode -> "Complete ✓"
-                        else -> "Next →"
+                        else -> "เข้าสู่หน้าหลักเลย ✓"
                     },
                     enabled = !state.isLoading,
                     onClick = {
                         onboardingViewModel.updateStep2(height, weight, sleepHours, activityLevel, bloodGroup)
-                        if (state.addMode) {
-                            onboardingViewModel.setNoKnownAllergies(true)
-                            onboardingViewModel.updateStep3(false, "", emptyList(), "")
-                        }
-                        onNext()
+                        onboardingViewModel.setNoKnownAllergies(true)
+                        onboardingViewModel.updateStep3(false, "", emptyList(), "")
+                        onComplete()
                     }
                 )
 
-                Text("Secure and private health data processing.", style = MaterialTheme.typography.labelSmall, color = Outline)
+                // Button 2 (SECOND): กรอกข้อมูลเพิ่มเติม -> linking to Step 3
+                OutlinedButton(
+                    onClick = {
+                        onboardingViewModel.updateStep2(height, weight, sleepHours, activityLevel, bloodGroup)
+                        onFillMore()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 50.dp),
+                    shape = RoundedCornerShape(100.dp),
+                    border = BorderStroke(1.5.dp, Primary),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                    enabled = !state.isLoading
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.EditNote, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "กรอกข้อมูลเพิ่มเติม (วัคซีน / สุขภาพ) →",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Text(
+                    "Secure and private health data processing.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Outline,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -210,10 +253,15 @@ private fun ActivityCard(icon: ImageVector, label: String, selected: Boolean, on
             ) {
                 Icon(icon, null, tint = if (selected) Primary else Outline, modifier = Modifier.size(22.dp))
             }
-            Text(label, style = MaterialTheme.typography.bodyMedium, color = if (selected) Primary else MaterialTheme.colorScheme.onSurface, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-            Spacer(Modifier.weight(1f))
-            if (selected) RadioButton(selected = true, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = Primary))
-            else RadioButton(selected = false, onClick = null)
+            Text(
+                label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) Primary else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                lineHeight = 20.sp
+            )
+            RadioButton(selected = selected, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = Primary))
         }
     }
 }

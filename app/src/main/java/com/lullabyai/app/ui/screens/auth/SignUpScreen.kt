@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,6 +44,11 @@ fun SignUpScreen(
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val isThai = settings.language == AppLanguage.TH
     val googleSignIn = rememberGoogleSignInAction(
+        authViewModel = authViewModel,
+        isThai = isThai,
+        onSuccess = onSignUpSuccess
+    )
+    val lineSignIn = com.lullabyai.app.ui.components.rememberLineSignInAction(
         authViewModel = authViewModel,
         isThai = isThai,
         onSuccess = onSignUpSuccess
@@ -269,6 +275,26 @@ fun SignUpScreen(
                             Icon(Icons.Filled.AccountCircle, null, tint = Color(0xFF4285F4), modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("สมัครด้วย Google", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+
+                    // Hidden until a Login channel is configured, so a build without one shows no
+                    // button that cannot work. LINE sign-in also links notifications in the same
+                    // step — there is no second pairing screen afterwards.
+                    if (com.lullabyai.app.util.LineAuthHelper.isConfigured) {
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = lineSignIn,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = RoundedCornerShape(100.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF06C755),   // LINE brand green
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Filled.Chat, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("สมัครด้วย LINE", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }

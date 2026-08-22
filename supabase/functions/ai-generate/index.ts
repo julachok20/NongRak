@@ -226,6 +226,102 @@ async function tryGeminiTts(text: string, voice: string, style: string) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Self-hosted NVIDIA box (GB10 / Grace Blackwell), reached over a Cloudflare Tunnel.
+//
+// Speaks the OpenAI Chat Completions API — what vLLM, llama.cpp and Ollama all serve,
+// and the same shape MedGemmaClient already talks on the device. No new protocol.
+//
+// First in the chain: it is the only provider with no per-token cost and the only one
+// where a family's questions about their child never leave hardware we own. Everything
+// below it is untouched, so a box that is rebooting, loading a model, or simply off
+// costs one failed request and the cloud answers exactly as it does today.
+//
+// LOCAL_AI_URL unset -> returns null instantly, so this deploys safely BEFORE the
+// hardware exists and switches on by setting one secret.
+//
+// Two cases deliberately skip local and go straight to Gemini:
+//   * useSearch  — Google Search grounding has no local equivalent, and the nutrition
+//                  and research features depend on it being real.
+//   * image      — only when LOCAL_AI_VISION is not "true". A text-only local model
+//                  handed an image answers confidently about nothing.
+// ---------------------------------------------------------------------------
+async function tryLocal(
+  prompt: string,
+  useSearch: boolean,
+  maxTokens: number,
+  system: string,
+  jsonMode: boolean,
+  image: ImageInput,
+) {
+  const base = (Deno.env.get("LOCAL_AI_URL") ?? "").trim().replace(/\/+$/, "");
+  if (!base) return null;
+  if (useSearch) return null;
+  if (image && Deno.env.get("LOCAL_AI_VISION") !== "true") return null;
+
+  const url = base.endsWith("/chat/completions") ? base : `${base}/v1/chat/completions`;
+  const model = Deno.env.get("LOCAL_AI_MODEL") ?? "local";
+
+  // Decode on a GB10 is memory-bandwidth bound (~273 GB/s), not compute bound: a 12B at
+  // 4-bit runs ~25 tok/s and a 27B nearer 12, so a full 1024-token answer can genuinely
+  // take over a minute. The tunnel is what makes so generous a budget safe — when the box
+  // is down Cloudflare answers 502/530 in well under a second, so this ceiling is only
+  // ever spent on a machine that is actually working.
+  // maxTokens is the better lever if answers feel slow; this is just the ceiling.
+  const timeoutMs = Number(Deno.env.get("LOCAL_AI_TIMEOUT_MS") ?? 90_000);
+
+  const userContent = image
+    ? [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } },
+      ]
+    : prompt;
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    temperature: 0.7,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: userContent },
+    ],
+  };
+  // vLLM enforces this with guided decoding, so JSON callers get valid JSON or nothing —
+  // the same guarantee responseMimeType gives us on Gemini.
+  if (jsonMode) body.response_format = { type: "json_object" };
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // Cloudflare Access service token: Cloudflare rejects anything without it at its own
+  // edge, so unauthenticated traffic never reaches the box at all. The bearer token is a
+  // second lock on the inference server itself.
+  const cfId = Deno.env.get("LOCAL_AI_CF_CLIENT_ID");
+  const cfSecret = Deno.env.get("LOCAL_AI_CF_CLIENT_SECRET");
+  if (cfId && cfSecret) {
+    headers["CF-Access-Client-Id"] = cfId;
+    headers["CF-Access-Client-Secret"] = cfSecret;
+  }
+  const bearer = Deno.env.get("LOCAL_AI_TOKEN");
+  if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text.trim()) return null;
+    return { text, provider: `Local (${model})` };
+  } catch (_) {
+    // Box off, tunnel down, model still loading, or over the time budget — all the same
+    // answer here: say nothing and let the cloud chain take the turn.
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "POST only" }), { status: 405, headers: { "Content-Type": "application/json" } });
@@ -271,8 +367,10 @@ Deno.serve(async (req: Request) => {
   }
   if (!prompt) prompt = "ช่วยดูรูปภาพนี้และให้คำแนะนำ";
 
-  // Cost order: free Gemini -> free OpenRouter -> PAID Claude (true last resort).
-  const result = (await tryGemini(prompt, useSearch, maxTokens, system, jsonMode, image))
+  // Cost order: self-hosted GB10 (free, private) -> free Gemini -> free OpenRouter
+  // -> PAID Claude (true last resort). tryLocal is a no-op until LOCAL_AI_URL is set.
+  const result = (await tryLocal(prompt, useSearch, maxTokens, system, jsonMode, image))
+    ?? (await tryGemini(prompt, useSearch, maxTokens, system, jsonMode, image))
     ?? (await tryOpenRouter(prompt, maxTokens, system, image))
     ?? (await tryClaude(prompt, maxTokens, system, image));
   const payload = result ?? { text: FALLBACK, provider: "" };

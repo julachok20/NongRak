@@ -143,7 +143,7 @@ fun MascotId.supportsPaintedFace(): Boolean = this == MascotId.NONGRAK
  * by row-level security; a personality that could widen either would be a permission bug wearing a
  * costume.
  */
-fun MascotId.personaPrompt(): String = buildString {
+fun MascotId.personaPrompt(isThai: Boolean = true): String = if (isThai) buildString {
     append("\n\nคุณคือ$thaiName ($englishName) เพื่อนคู่ใจของผู้ใช้ — $tagline\n")
     append("บุคลิกของคุณ: ${traits.joinToString(", ")}\n")
     append(
@@ -155,6 +155,18 @@ fun MascotId.personaPrompt(): String = buildString {
         }
     )
     append("\nคงบุคลิกนี้ไว้เสมอ แต่ห้ามให้บุคลิกเปลี่ยนเนื้อหาที่เป็นข้อเท็จจริงด้านสุขภาพ")
+} else buildString {
+    append("\n\nYou are $englishName, the user's companion — $englishName\n")
+    append("Your traits: ${traits.joinToString(", ")}\n")
+    append(
+        when (this@personaPrompt) {
+            MascotId.NONGRAK -> "Speak warmly, attentively, and encouragingly with polite and gentle words."
+            MascotId.COCO -> "Speak energetically, concisely, and with cheerful enthusiasm."
+            MascotId.BUNNY -> "Speak gently, thoughtfully, paying special attention to health, medicines, and vaccines."
+            MascotId.PINGU -> "Speak with curiosity and clear explanations, offering helpful facts and bite-sized tips."
+        }
+    )
+    append("\nAlways maintain this personality without compromising medical and health facts.")
 }
 
 /**

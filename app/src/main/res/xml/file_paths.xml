@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- Generated PDF reports are written to cacheDir/reports and shared from there. -->
+    <!-- Generated PDF reports, watermarked videos, and exported media -->
     <cache-path name="reports" path="reports/" />
+    <cache-path name="exports" path="exports/" />
+    <cache-path name="shared" path="." />
+    <files-path name="media" path="." />
 </paths>

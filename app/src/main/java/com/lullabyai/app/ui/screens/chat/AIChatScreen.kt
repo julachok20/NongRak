@@ -138,6 +138,8 @@ fun AIChatScreen(
     var selectedIsDocument by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val isThai = com.lullabyai.app.ui.localization.LocalStrings.current.isThai
+    val isGuest = childState.child?.userId == "guest" || childState.child?.id == "guest_child_local"
+    var showGuestRequirementDialog by remember { mutableStateOf(false) }
     val tts = com.lullabyai.app.util.rememberTtsSpeaker()
     var voiceEnabled by remember { mutableStateOf(false) }
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
@@ -148,7 +150,7 @@ fun AIChatScreen(
 
     // Switching companion switches voice: each one answers in its own manner from the next message
     // onward. Set here rather than at each send, so every path through the screen picks it up.
-    LaunchedEffect(mascot) { chatViewModel.setCompanion(mascot.assetPrefix, mascot.personaPrompt()) }
+    LaunchedEffect(mascot, isThai) { chatViewModel.setCompanion(mascot.assetPrefix, mascot.personaPrompt(isThai)) }
 
     // Auto Record vs Confirm before Record. Read here and pushed down so ChatViewModel stays
     // Context-free, and so flipping the setting takes effect without restarting the chat.
@@ -191,7 +193,7 @@ fun AIChatScreen(
         }
     }
     var attachMenuOpen by remember { mutableStateOf(false) }
-    // Speech-to-text via Google's recognizer dialog (Thai), result fills the input field.
+    // Speech-to-text via Google's recognizer dialog, result fills the input field.
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
             val spoken = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
@@ -199,16 +201,24 @@ fun AIChatScreen(
         }
     }
     fun startSpeech() {
+        if (isGuest) {
+            showGuestRequirementDialog = true
+            return
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "th-TH")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "พูดข้อความของคุณ...")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (isThai) "th-TH" else "en-US")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, if (isThai) "พูดข้อความของคุณ..." else "Speak your message...")
         }
         runCatching { speechLauncher.launch(intent) }
     }
 
     // Send the current text + optional image/document, then clear both.
     fun sendCurrent() {
+        if (isGuest) {
+            showGuestRequirementDialog = true
+            return
+        }
         val text = inputText.trim()
         val uri = selectedImageUri
         if (text.isBlank() && uri == null) return
@@ -217,13 +227,13 @@ fun AIChatScreen(
             else com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, it)
         }
         val mime = if (selectedIsDocument) "application/pdf" else "image/jpeg"
-        chatViewModel.sendMessage(text, childState.child, imageBytes = bytes, imageUri = uri?.toString(), imageMime = mime)
+        chatViewModel.sendMessage(text, childState.child, imageBytes = bytes, imageUri = uri?.toString(), imageMime = mime, isThai = isThai)
         inputText = ""
         selectedImageUri = null
         selectedIsDocument = false
     }
 
-    LaunchedEffect(Unit) { chatViewModel.loadSessions() }
+    LaunchedEffect(isThai) { chatViewModel.loadSessions(isThai) }
 
     // Reads the latest AI reply aloud when voice is enabled — one utterance per new message.
     LaunchedEffect(chatState.messages, voiceEnabled) {
@@ -255,10 +265,10 @@ fun AIChatScreen(
                     HistoryDrawer(
                         sessions = chatState.sessions,
                         currentSessionId = chatState.currentSessionId,
-                        onOpen = { scope.launch { drawerState.close() }; chatViewModel.openSession(it) },
+                        onOpen = { scope.launch { drawerState.close() }; chatViewModel.openSession(it, isThai) },
                         onRename = { id, title -> sessionToRename = id to title },
                         onDelete = { sessionToDelete = it },
-                        onNewChat = { scope.launch { drawerState.close() }; chatViewModel.newChat() },
+                        onNewChat = { scope.launch { drawerState.close() }; chatViewModel.newChat(isThai) },
                         onClose = { scope.launch { drawerState.close() } }
                     )
                 }
@@ -272,7 +282,7 @@ fun AIChatScreen(
                             onChildModeChange = { on ->
                                 chatViewModel.setMode(if (on) ChatMode.CHILD else ChatMode.NORMAL)
                             },
-                            title = "คุยกับ${mascot.thaiName}",
+                            title = if (isThai) "คุยกับ${mascot.thaiName}" else "Chat with ${mascot.englishName}",
                             onSwitchMascot = { onNavigate(Screen.MascotSwitch.route) },
                             voiceEnabled = voiceEnabled,
                             onToggleVoice = {
@@ -328,24 +338,76 @@ fun AIChatScreen(
                                     }
                                 }
                             }
-                            ChatInputBar(
-                                value = inputText,
-                                onValueChange = { inputText = it },
-                                attachMenuOpen = attachMenuOpen,
-                                onAttachMenu = { attachMenuOpen = it },
-                                onPickImage = {
-                                    attachMenuOpen = false
-                                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                },
-                                onPickDocument = {
-                                    attachMenuOpen = false
-                                    documentPicker.launch(arrayOf("application/pdf"))
-                                },
-                                onMic = { startSpeech() },
-                                onSend = { sendCurrent() },
-                                placeholder = "พิมพ์ข้อความถึง${mascot.thaiName}...",
-                                sendEnabled = (inputText.isNotBlank() || selectedImageUri != null) && !chatState.isLoading
-                            )
+                            if (isGuest) {
+                                Surface(
+                                    color = Color(0xFFF3E8FF),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8B4FE))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Filled.Lock, contentDescription = null, tint = StitchPrimary, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                if (isThai) "บัญชีทดลอง (Test) — ต้องสมัครสมาชิกก่อนใช้งาน AI" else "Test Account — Sign up required for AI",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = StitchPrimary
+                                            )
+                                        }
+                                        Text(
+                                            if (isThai) "ระบบ AI ผู้ช่วยส่วนตัวเปิดให้ใช้งานสำหรับสมาชิกที่ลงทะเบียนเท่านั้น" else "AI companion features are available to registered members only.",
+                                            fontSize = 12.sp,
+                                            color = StitchInkSoft,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Button(
+                                                onClick = { onNavigate(Screen.SignUp.route) },
+                                                shape = RoundedCornerShape(100.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = StitchPrimary),
+                                                modifier = Modifier.weight(1f).height(38.dp)
+                                            ) {
+                                                Text(if (isThai) "สมัครสมาชิก (ฟรี)" else "Sign up (Free)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { onNavigate(Screen.Login.route) },
+                                                shape = RoundedCornerShape(100.dp),
+                                                modifier = Modifier.weight(1f).height(38.dp)
+                                            ) {
+                                                Text(if (isThai) "เข้าสู่ระบบ" else "Sign in", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = StitchPrimary)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                ChatInputBar(
+                                    value = inputText,
+                                    onValueChange = { inputText = it },
+                                    attachMenuOpen = attachMenuOpen,
+                                    onAttachMenu = { attachMenuOpen = it },
+                                    onPickImage = {
+                                        attachMenuOpen = false
+                                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    },
+                                    onPickDocument = {
+                                        attachMenuOpen = false
+                                        documentPicker.launch(arrayOf("application/pdf"))
+                                    },
+                                    onMic = { startSpeech() },
+                                    onSend = { sendCurrent() },
+                                    placeholder = "พิมพ์ข้อความถึง${mascot.thaiName}...",
+                                    sendEnabled = (inputText.isNotBlank() || selectedImageUri != null) && !chatState.isLoading
+                                )
+                            }
                             com.lullabyai.app.ui.components.AppBottomNav(
                                 selected = com.lullabyai.app.ui.components.BottomTab.CHATBOT,
                                 onHome = onNavHome,
@@ -359,10 +421,23 @@ fun AIChatScreen(
                     },
                     containerColor = StitchSurface
                 ) { padding ->
+                    if (showGuestRequirementDialog) {
+                        com.lullabyai.app.ui.components.RequireRegistrationDialog(
+                            title = if (isThai) "ต้องสมัครสมาชิกก่อนใช้งาน AI" else "Registration Required for AI",
+                            message = if (isThai) "ระบบ AI ผู้ช่วยส่วนตัวเปิดให้ใช้งานสำหรับสมาชิกที่ลงทะเบียน กรุณาสมัครสมาชิกหรือเข้าสู่ระบบเพื่อใช้งาน" else "AI companion features require an account. Please register or sign in to start chatting.",
+                            isThai = isThai,
+                            onDismiss = { showGuestRequirementDialog = false },
+                            onSignUp = {
+                                showGuestRequirementDialog = false
+                                onNavigate(Screen.SignUp.route)
+                            },
+                            onSignIn = {
+                                showGuestRequirementDialog = false
+                                onNavigate(Screen.Login.route)
+                            }
+                        )
+                    }
                     Column(Modifier.fillMaxSize().padding(padding)) {
-                        // The pet is never scrolled away. It is the screen's subject, not a
-                        // welcome state — hiding it the moment the parent types would make the
-                        // companion feel like a banner instead of something being cared for.
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -377,6 +452,10 @@ fun AIChatScreen(
                                     bondingLevel = bondingLevel,
                                     bondingPercent = bondingPercent,
                                     onPlay = {
+                                        if (isGuest) {
+                                            showGuestRequirementDialog = true
+                                            return@CompanionCard
+                                        }
                                         chatViewModel.sendMessage(
                                             "มาเล่นเกมทายคำกับ${mascot.thaiName}กันหน่อย",
                                             childState.child
@@ -388,16 +467,23 @@ fun AIChatScreen(
                                 CompanionCtaRow(
                                     storyActive = chatState.mode == ChatMode.STORY,
                                     onStory = {
+                                        if (isGuest) {
+                                            showGuestRequirementDialog = true
+                                            return@CompanionCtaRow
+                                        }
                                         chatViewModel.setMode(
                                             if (chatState.mode == ChatMode.STORY) ChatMode.NORMAL else ChatMode.STORY
                                         )
                                     },
-                                    onCall = { onNavigate(Screen.VoiceCall.route) }
+                                    onCall = {
+                                        if (isGuest) {
+                                            showGuestRequirementDialog = true
+                                            return@CompanionCtaRow
+                                        }
+                                        onNavigate(Screen.VoiceCall.route)
+                                    }
                                 )
                             } else {
-                                // Once the chat is running the full card crowds the screen. The
-                                // strip keeps the pet, ความผูกพัน, and โทรคุย on screen in a
-                                // fraction of the height.
                                 CompanionStrip(
                                     mascot = mascot,
                                     emotion = emotion,
@@ -405,7 +491,13 @@ fun AIChatScreen(
                                     statusText = brief.headline,
                                     bondingLevel = bondingLevel,
                                     bondingPercent = bondingPercent,
-                                    onCall = { onNavigate(Screen.VoiceCall.route) }
+                                    onCall = {
+                                        if (isGuest) {
+                                            showGuestRequirementDialog = true
+                                            return@CompanionStrip
+                                        }
+                                        onNavigate(Screen.VoiceCall.route)
+                                    }
                                 )
                             }
                         }

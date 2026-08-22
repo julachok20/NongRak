@@ -86,6 +86,16 @@
                     android:host="auth" />
             </intent-filter>
 
+            <!-- LINE (and anything else) can jump straight to a screen: nongrak://open/<route>.
+                 Reuses the same pendingDeepLink path the home-screen widgets already use, so
+                 there is one route-jump mechanism rather than two that can disagree. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nongrak" android:host="open" />
+            </intent-filter>
+
             <!-- Health Connect permission rationale (required by HC policy) -->
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />

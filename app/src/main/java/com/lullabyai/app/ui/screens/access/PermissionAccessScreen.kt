@@ -13,9 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -23,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.localization.LocalStrings
@@ -52,7 +55,6 @@ fun PermissionAccessScreen(
     val iCanManage = AccessRoleLabels.isFullAccess(state.myRole)
     val isOwner = state.isOwner
     var confirmLeave by remember { mutableStateOf(false) }
-    var showTransferDialog by remember { mutableStateOf(false) }
 
     if (confirmLeave) {
         AlertDialog(
@@ -98,22 +100,6 @@ fun PermissionAccessScreen(
         )
     }
 
-    if (showTransferDialog) {
-        TransferOwnershipDialog(
-            childName = state.childName,
-            members = state.members,
-            myUserId = state.myUserId,
-            isThai = isThai,
-            isTransferring = state.transferring,
-            onDismiss = { showTransferDialog = false },
-            onConfirmTransfer = { targetUid ->
-                viewModel.transferOwnership(targetUid) { ok ->
-                    if (ok) showTransferDialog = false
-                }
-            }
-        )
-    }
-
     Scaffold(
         topBar = {
             LullabyTopBar(
@@ -135,54 +121,134 @@ fun PermissionAccessScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
+            // Hero Header Card
             Card(
                 Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(1.dp)
+                elevation = CardDefaults.cardElevation(1.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.15f))
             ) {
-                Row(Modifier.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(
-                        Modifier
-                            .size(48.dp)
-                            .background(Primary.copy(0.12f), RoundedCornerShape(14.dp)),
-                        contentAlignment = Alignment.Center
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    Primary.copy(alpha = 0.08f),
+                                    Color(0xFFEDE7F6).copy(alpha = 0.45f),
+                                    MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        )
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.MedicalInformation, null,
-                            tint = Primary, modifier = Modifier.size(26.dp)
-                        )
+                        Box(
+                            Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Primary.copy(0.14f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.LockPerson, null,
+                                tint = Primary, modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (isThai) "ศูนย์จัดการสิทธิ์การเข้าถึง" else "Access & Permissions Hub",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                if (isThai) "ข้อมูลของ: ${state.childName.ifBlank { "ลูกน้อย" }}"
+                                else "Profile: ${state.childName.ifBlank { "Child" }}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
-                    Column {
-                        Text(
-                            if (isThai) "ข้อมูลสุขภาพของ \"${state.childName.ifBlank { "ลูก" }}\""
-                            else "Health data for \"${state.childName.ifBlank { "your child" }}\"",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            if (isThai) "จัดการผู้ที่มีสิทธิ์เข้าถึงข้อมูลสุขภาพ บันทึกการเจริญเติบโต และข้อมูลทางการแพทย์ทั้งหมด"
-                            else "Manage who can reach the health data, growth records and every medical detail",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        if (isThai) "ควบคุมสิทธิ์สำหรับผู้ปกครอง ญาติ และผู้ช่วยดูแลเด็ก บันทึกการเจริญเติบโต และเวชระเบียนทั้งหมดอย่างปลอดภัย"
+                        else "Safely manage and control access permissions for parents, relatives, caregivers, and medical records.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 18.sp
+                    )
                 }
             }
 
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Quick Invite Actions Bar (3 equal-width Bento cards)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                QuickAccessActionTile(
+                    title = if (isThai) "เพิ่มบุคคล" else "Invite",
+                    subtitle = if (isThai) "อีเมล / ชื่อผู้ใช้" else "Email / name",
+                    icon = Icons.Filled.PersonAdd,
+                    iconTint = Color.White,
+                    iconBg = Primary,
+                    isPrimary = true,
+                    enabled = iCanManage,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate(Screen.AddUserAccessActivity.route) }
+                )
+                QuickAccessActionTile(
+                    title = if (isThai) "QR Code" else "QR Code",
+                    subtitle = if (isThai) "สแกนรับสิทธิ์" else "Nearby scan",
+                    icon = Icons.Filled.QrCode2,
+                    iconTint = Color(0xFF7B1FA2),
+                    iconBg = Color(0xFFF3E5F5),
+                    isPrimary = false,
+                    enabled = iCanManage,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate(Screen.ShareAccessQr.route) }
+                )
+                QuickAccessActionTile(
+                    title = if (isThai) "บทบาท" else "Roles",
+                    subtitle = if (isThai) "จัดการสิทธิ์" else "Custom roles",
+                    icon = Icons.Filled.Badge,
+                    iconTint = Color(0xFF00897B),
+                    iconBg = Color(0xFFE0F2F1),
+                    isPrimary = false,
+                    enabled = iCanManage,
+                    modifier = Modifier.weight(1f),
+                    onClick = { navController.navigate(Screen.RoleManagement.route) }
+                )
+            }
+
+            // People with access header
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     if (isThai) "ผู้ที่มีสิทธิ์เข้าถึง" else "People with access",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+                    fontWeight = FontWeight.Bold
                 )
-                Text(
-                    if (isThai) "${state.members.size} รายการ" else "${state.members.size} people",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    shape = RoundedCornerShape(100.dp),
+                    color = Primary.copy(alpha = 0.10f)
+                ) {
+                    Text(
+                        if (isThai) "${state.members.size} คน" else "${state.members.size} members",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                    )
+                }
             }
 
             if (state.loading) {
@@ -191,10 +257,6 @@ fun PermissionAccessScreen(
                 }
             } else {
                 state.members.forEach { m ->
-                    // Owners and co-owners already hold every permission, so their grid has
-                    // nothing to edit — "Owner/Co-Owner can do anything (so user cannot edit
-                    // their permission)". The caregiver tick stays live for them: that is not a
-                    // permission, it says who actually looks after the child.
                     val permissionsLocked = AccessRoleLabels.isFullAccess(m.role)
                     val (badge, isFull, canLog) = AccessRoleLabels.accessLevel(m, isThai)
                     val canManageThisMember = if (isOwner) m.userId != state.myUserId else (iCanManage && !permissionsLocked)
@@ -207,78 +269,122 @@ fun PermissionAccessScreen(
                             },
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(1.dp)
+                        elevation = CardDefaults.cardElevation(1.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                        )
                     ) {
-                        Column(Modifier.padding(16.dp)) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 AccessAvatar(m.avatarUrl, m.displayName)
-                                Column(Modifier.weight(1f)) {
-                                    Text(m.displayName, fontWeight = FontWeight.Bold)
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(
-                                            checked = m.isCaregiver,
-                                            onCheckedChange = { viewModel.setCaregiver(m.userId, it) },
-                                            enabled = iCanManage,
-                                            modifier = Modifier.size(22.dp),
-                                            colors = CheckboxDefaults.colors(checkedColor = Primary)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            if (isThai) "บุคคลที่ช่วยดูแลเด็ก" else "Helps care for this child",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        m.displayName,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                     Text(
                                         m.email ?: AccessRoleLabels.title(m.role, isThai),
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                if (canManageThisMember) {
+                                    FilledTonalIconButton(
+                                        onClick = {
+                                            navController.navigate(Screen.PermissionSettingsDetail.route(m.userId))
+                                        },
+                                        modifier = Modifier.size(36.dp),
+                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                            containerColor = Primary.copy(alpha = 0.1f),
+                                            contentColor = Primary
+                                        )
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Tune,
+                                            contentDescription = if (isThai) "ตั้งค่าสิทธิ์" else "Permission settings",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
 
-                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
 
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
                                 val badgeTint = when {
                                     isFull -> HealthGood
                                     canLog -> Color(0xFFF59E0B)
                                     else -> Primary
                                 }
-                                Row(
-                                    Modifier
-                                        .background(badgeTint.copy(0.14f), RoundedCornerShape(20.dp))
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                Surface(
+                                    shape = RoundedCornerShape(100.dp),
+                                    color = badgeTint.copy(alpha = 0.12f)
                                 ) {
-                                    Icon(
-                                        when {
-                                            isFull -> Icons.Filled.CheckCircle
-                                            canLog -> Icons.Filled.EditNote
-                                            else -> Icons.Filled.Visibility
-                                        },
-                                        null, tint = badgeTint, modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        badge,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = badgeTint
-                                    )
+                                    Row(
+                                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            when {
+                                                isFull -> Icons.Filled.CheckCircle
+                                                canLog -> Icons.Filled.EditNote
+                                                else -> Icons.Filled.Visibility
+                                            },
+                                            null, tint = badgeTint, modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            badge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = badgeTint,
+                                            fontSize = 11.sp
+                                        )
+                                    }
                                 }
-                                Spacer(Modifier.weight(1f))
-                                if (canManageThisMember) {
-                                    Icon(
-                                        Icons.Filled.Settings,
-                                        contentDescription = if (isThai) "ตั้งค่าสิทธิ์" else "Permission settings",
-                                        tint = if (iCanManage) Outline else Outline.copy(0.4f)
-                                    )
+
+                                Surface(
+                                    onClick = {
+                                        if (iCanManage) viewModel.setCaregiver(m.userId, !m.isCaregiver)
+                                    },
+                                    enabled = iCanManage,
+                                    shape = RoundedCornerShape(100.dp),
+                                    color = if (m.isCaregiver) Primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    border = if (m.isCaregiver) androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.3f)) else null
+                                ) {
+                                    Row(
+                                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            if (m.isCaregiver) Icons.Filled.VolunteerActivism else Icons.Filled.PersonOutline,
+                                            contentDescription = null,
+                                            tint = if (m.isCaregiver) Primary else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            if (m.isCaregiver) (if (isThai) "ผู้ช่วยดูแล" else "Caregiver")
+                                            else (if (isThai) "ไม่ใช่ผู้ช่วยดูแล" else "Not caregiver"),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (m.isCaregiver) Primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (m.isCaregiver) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 11.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -290,84 +396,27 @@ fun PermissionAccessScreen(
                 Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
             }
 
-            Spacer(Modifier.height(2.dp))
-
-            // Primary way in — a filled card rather than a FAB, so it sits in the flow of the page
-            // beside the two alternatives instead of floating over the member list.
-            Card(
-                onClick = { navController.navigate(Screen.AddUserAccessActivity.route) },
-                enabled = iCanManage,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Primary)
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        Modifier.size(44.dp).background(Color.White.copy(0.18f), RoundedCornerShape(22.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.PersonAdd, null, tint = Color.White, modifier = Modifier.size(24.dp))
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        if (isThai) "เพิ่มบุคคล" else "Add a person",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        if (isThai) "เชิญผ่านอีเมลหรือชื่อผู้ใช้" else "Invite by email or username",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(0.85f)
-                    )
-                }
-            }
-
-            DashedActionCard(
-                icon = Icons.Filled.QrCode2,
-                title = if (isThai) "สแกน QR Code" else "Scan QR code",
-                subtitle = if (isThai) "ให้บุคคลที่อยู่ใกล้สแกนเพื่อรับสิทธิ์ (หมดอายุ 10 นาที)"
-                else "Have someone nearby scan to receive access (expires in 10 minutes)",
-                enabled = iCanManage,
-                onClick = { navController.navigate(Screen.ShareAccessQr.route) }
+            // Advanced Administration & History Section
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (isThai) "ประวัติกิจกรรม" else "Activity history",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
             )
 
-            DashedActionCard(
-                icon = Icons.Filled.Badge,
-                title = if (isThai) "จัดการบทบาท" else "Manage roles",
-                subtitle = if (isThai) "สร้างหรือลบบทบาทที่กำหนดเอง" else "Create or remove custom roles",
-                enabled = iCanManage,
-                onClick = { navController.navigate(Screen.RoleManagement.route) }
-            )
-
-            if (isOwner) {
-                DashedActionCard(
-                    icon = Icons.Filled.SwapHoriz,
-                    title = if (isThai) "โอนความเป็นเจ้าของ" else "Transfer ownership",
-                    subtitle = if (isThai) "มอบสิทธิ์เจ้าของหลักของเด็กให้กับสมาชิกคนอื่นในครอบครัว"
-                    else "Grant primary child ownership to another family member",
-                    enabled = true,
-                    onClick = { showTransferDialog = true }
-                )
-            }
-
-            DashedActionCard(
+            AccessAdminBentoCard(
                 icon = Icons.Filled.Timeline,
-                title = if (isThai) "ประวัติกิจกรรม" else "Activity history",
-                subtitle = if (isThai) "ดูทุกบันทึกของลูก พร้อมชื่อผู้บันทึก"
-                else "Every record for this child, with who wrote it",
-                enabled = true,
+                title = if (isThai) "ประวัติกิจกรรมของลูก" else "Activity log",
+                subtitle = if (isThai) "ดูทุกบันทึก พร้อมชื่อผู้บันทึกและแก้ไข" else "Every record for this child, with author and audit info",
+                iconTint = Color(0xFF3949AB),
+                iconBg = Color(0xFFE8EAF6),
+                modifier = Modifier.fillMaxWidth(),
                 onClick = { navController.navigate(Screen.ActivityHistory.route) }
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
 
-            // Anyone who joined can leave. The owner cannot — a child with no owner has nobody who
-            // could grant access again, so an owner transfers or deletes instead. The server
-            // enforces the same rule; this only avoids offering a button that would be refused.
+            // Anyone who joined can leave. The owner cannot.
             val myId = state.myUserId
             if (myId != null && state.myRole != "owner") {
                 TextButton(onClick = { confirmLeave = true }, modifier = Modifier.fillMaxWidth()) {
@@ -419,250 +468,139 @@ fun PermissionAccessScreen(
     }
 }
 
-/** The dashed-outline secondary action from the design — present, but visibly not the main path. */
+/** 3-column top quick action tile for adding person, QR code, and roles. */
 @Composable
-private fun DashedActionCard(
-    icon: ImageVector,
+private fun QuickAccessActionTile(
     title: String,
     subtitle: String,
+    icon: ImageVector,
+    iconTint: Color,
+    iconBg: Color,
+    isPrimary: Boolean,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val stroke = if (enabled) Primary.copy(0.45f) else Outline.copy(0.35f)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                val r = 20.dp.toPx()
-                drawRoundRect(
-                    color = stroke,
-                    cornerRadius = CornerRadius(r, r),
-                    size = Size(size.width, size.height),
-                    style = Stroke(
-                        width = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(
-                            floatArrayOf(10.dp.toPx(), 7.dp.toPx())
-                        )
-                    )
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(108.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPrimary) Primary else MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isPrimary) 2.dp else 1.dp),
+        border = if (!isPrimary) androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        ) else null
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isPrimary) Color.White.copy(alpha = 0.22f) else iconBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = if (isPrimary) Color.White else iconTint,
+                    modifier = Modifier.size(20.dp)
                 )
             }
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 18.dp, horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            Modifier.size(40.dp).background(Primary.copy(0.10f), RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = if (enabled) Primary else Outline, modifier = Modifier.size(22.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isPrimary) Color.White else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isPrimary) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    fontSize = 10.sp
+                )
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (enabled) Primary else Outline
-        )
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
-/**
- * Dialog for transferring child ownership to another existing member.
- * Co-owners are prioritized and highlighted at the top as recommended candidates.
- */
+/** Clean Bento action card for admin actions like Transfer Ownership and Activity History. */
 @Composable
-private fun TransferOwnershipDialog(
-    childName: String,
-    members: List<com.lullabyai.app.data.model.ChildAccessMember>,
-    myUserId: String?,
-    isThai: Boolean,
-    isTransferring: Boolean,
-    onDismiss: () -> Unit,
-    onConfirmTransfer: (String) -> Unit
+private fun AccessAdminBentoCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    iconTint: Color,
+    iconBg: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
-    val candidates = members.filter { it.userId != myUserId && it.role != "owner" }
-    val coOwners = candidates.filter { it.role == "co_owner" || it.role == "member" }
-    val others = candidates.filter { it.role != "co_owner" && it.role != "member" }
-    var selectedUserId by remember { mutableStateOf(coOwners.firstOrNull()?.userId ?: others.firstOrNull()?.userId) }
-    var showConfirm by remember { mutableStateOf(false) }
-
-    if (showConfirm && selectedUserId != null) {
-        val target = candidates.find { it.userId == selectedUserId }
-        AlertDialog(
-            onDismissRequest = { if (!isTransferring) showConfirm = false },
-            title = {
-                Text(
-                    if (isThai) "ยืนยันการโอนความเป็นเจ้าของ" else "Confirm Ownership Transfer",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Text(
-                    if (isThai)
-                        "คุณแน่ใจหรือไม่ว่าต้องการโอนสิทธิ์ความเป็นเจ้าของของ \"${childName.ifBlank { "ลูก" }}\" ให้กับ \"${target?.displayName ?: ""}\"?\n\nเมื่อโอนแล้ว คุณจะถูกเปลี่ยนบทบาทเป็น \"ผู้ปกครองร่วม (Co-owner)\" และผู้ใช้ใหม่จะได้รับสิทธิ์เจ้าของหลักเต็มรูปแบบ"
-                    else
-                        "Are you sure you want to transfer ownership of \"${childName.ifBlank { "your child" }}\" to \"${target?.displayName ?: ""}\"?\n\nYou will become a Co-owner and they will receive full primary owner authority."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        selectedUserId?.let { onConfirmTransfer(it) }
-                    },
-                    enabled = !isTransferring
-                ) {
-                    if (isTransferring) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Primary)
-                    } else {
-                        Text(
-                            if (isThai) "ยืนยันโอนสิทธิ์" else "Transfer",
-                            color = Primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirm = false }, enabled = !isTransferring) {
-                    Text(if (isThai) "ยกเลิก" else "Cancel")
-                }
-            }
+    Card(
+        onClick = onClick,
+        modifier = modifier.height(98.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
-    }
-
-    AlertDialog(
-        onDismissRequest = { if (!isTransferring) onDismiss() },
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.SwapHoriz, null, tint = Primary)
-                Text(
-                    if (isThai) "โอนสิทธิ์ความเป็นเจ้าของ" else "Transfer Ownership",
-                    fontWeight = FontWeight.Bold
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(iconBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, tint = iconTint, modifier = Modifier.size(18.dp))
+                }
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    modifier = Modifier.size(16.dp)
                 )
             }
-        },
-        text = {
-            if (candidates.isEmpty()) {
+            Column {
                 Text(
-                    if (isThai) "ยังไม่มีสมาชิกอื่นในครอบครัว กรุณาเพิ่มผู้ช่วยดูแลหรือผู้ปกครองร่วมก่อนดำเนินการโอนสิทธิ์"
-                    else "There are no other members in the family. Please invite a co-parent or caregiver first."
+                    title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
                 )
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        if (isThai) "เลือกสมาชิกที่คุณต้องการโอนสิทธิ์เจ้าของให้:"
-                        else "Select a member to become the new primary owner:",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    if (coOwners.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.Star, null, tint = Primary, modifier = Modifier.size(16.dp))
-                            Text(
-                                if (isThai) "ผู้ปกครองร่วม (แนะนำ)" else "Co-owners (Recommended)",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Primary
-                            )
-                        }
-                        coOwners.forEach { m ->
-                            val isSelected = m.userId == selectedUserId
-                            Card(
-                                onClick = { selectedUserId = m.userId },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) Primary.copy(0.12f) else MaterialTheme.colorScheme.surface
-                                ),
-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, Primary) else null
-                            ) {
-                                Row(
-                                    Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    RadioButton(
-                                        selected = isSelected,
-                                        onClick = { selectedUserId = m.userId },
-                                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
-                                    )
-                                    AccessAvatar(m.avatarUrl, m.displayName)
-                                    Column(Modifier.weight(1f)) {
-                                        Text(m.displayName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                        Text(AccessRoleLabels.title(m.role, isThai), style = MaterialTheme.typography.labelSmall, color = Primary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (others.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            if (isThai) "สมาชิกอื่นๆ" else "Other Members",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        others.forEach { m ->
-                            val isSelected = m.userId == selectedUserId
-                            Card(
-                                onClick = { selectedUserId = m.userId },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) Primary.copy(0.12f) else MaterialTheme.colorScheme.surface
-                                ),
-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, Primary) else null
-                            ) {
-                                Row(
-                                    Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    RadioButton(
-                                        selected = isSelected,
-                                        onClick = { selectedUserId = m.userId },
-                                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
-                                    )
-                                    AccessAvatar(m.avatarUrl, m.displayName)
-                                    Column(Modifier.weight(1f)) {
-                                        Text(m.displayName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                        Text(AccessRoleLabels.title(m.role, isThai), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (candidates.isNotEmpty()) {
-                TextButton(
-                    onClick = { showConfirm = true },
-                    enabled = selectedUserId != null && !isTransferring
-                ) {
-                    Text(
-                        if (isThai) "ถัดไป" else "Next",
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isTransferring) {
-                Text(if (isThai) "ปิด" else "Close")
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    fontSize = 10.5.sp
+                )
             }
         }
-    )
+    }
 }

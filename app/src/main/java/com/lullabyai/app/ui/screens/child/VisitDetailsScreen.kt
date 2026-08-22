@@ -41,6 +41,7 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
     val state by childViewModel.uiState.collectAsState()
     val context = LocalContext.current
     val visit = state.doctorVisits.firstOrNull { it.id == state.openDoctorVisitId }
+    var viewingDocument by remember { mutableStateOf<com.lullabyai.app.ui.components.DocumentViewSource?>(null) }
 
     LaunchedEffect(visit?.id) { visit?.let { childViewModel.loadVisitDocuments(it.id) } }
 
@@ -187,7 +188,9 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
                         modifier = Modifier.height((((state.visitDocuments.size - 1) / 3 + 1) * 76).dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(state.visitDocuments, key = { it.id }) { doc -> DocThumb(doc, childViewModel, context) }
+                        items(state.visitDocuments, key = { it.id }) { doc ->
+                            DocThumb(doc, childViewModel) { viewingDocument = it }
+                        }
                     }
                 }
             }
@@ -232,6 +235,12 @@ fun VisitDetailsScreen(childViewModel: ChildViewModel, navController: NavControl
             Spacer(Modifier.height(16.dp))
         }
     }
+
+    com.lullabyai.app.ui.components.InAppDocumentViewerDialog(
+        source = viewingDocument,
+        onDismiss = { viewingDocument = null },
+        isThai = s.isThai
+    )
 }
 
 @Composable
@@ -265,14 +274,18 @@ private fun StatTile(label: String, value: String, unit: String, modifier: Modif
 }
 
 @Composable
-private fun DocThumb(doc: MedicalDocument, childViewModel: ChildViewModel, context: android.content.Context) {
+private fun DocThumb(
+    doc: MedicalDocument,
+    childViewModel: ChildViewModel,
+    onViewDoc: (com.lullabyai.app.ui.components.DocumentViewSource) -> Unit
+) {
     val isPdf = doc.mimeType?.contains("pdf") == true
     Box(
         Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background((if (isPdf) Error else Primary).copy(0.1f))
             .clickable {
                 childViewModel.signMedicalDocUrl(doc.filePath) { url ->
                     url ?: return@signMedicalDocUrl
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    onViewDoc(com.lullabyai.app.ui.components.DocumentViewSource.Doc(medicalDoc = doc, signedUrl = url))
                 }
             },
         contentAlignment = Alignment.Center

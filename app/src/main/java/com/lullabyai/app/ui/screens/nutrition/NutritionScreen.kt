@@ -2,8 +2,10 @@
 package com.lullabyai.app.ui.screens.nutrition
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -15,9 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.lullabyai.app.data.model.SuggestionItem
 import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.navigation.Screen
@@ -37,6 +42,7 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
     // AI-estimates today's macronutrients from the logged food names (loadMacros internally
     // caches by food-set so this is a no-op once already loaded for the current foods).
     LaunchedEffect(ui.foods, ui.todayMilkMl, lang) { vm.loadMacros(lang) }
+    LaunchedEffect(ui.child?.id, lang, ui.macros) { vm.ensureMenuRecommendations(lang) }
 
     val todayMilkMl = ui.todayMilkMl
     val milkTargetMl = 850 // rough reference; no per-child feeding target field exists yet
@@ -102,7 +108,7 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)
                             ) {
                                 Icon(Icons.Filled.Lightbulb, null); Spacer(Modifier.width(8.dp))
-                                Text(if (isThai) "รับคำแนะนำเมนูอาหาร" else "Get meal recommendations", fontWeight = FontWeight.Bold)
+                                Text(if (isThai) "รับคำแนะนำเมนูอาหารฉบับเต็ม" else "View All Meal Recommendations", fontWeight = FontWeight.Bold)
                             }
                             OutlinedButton(
                                 onClick = { navController.navigate(Screen.NutritionInsights.route) },
@@ -116,6 +122,117 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                                 else "AI estimate from today's logged foods (rough reference, not medical advice)",
                                 style = MaterialTheme.typography.labelSmall, color = Outline
                             )
+                        }
+                    }
+                }
+            }
+
+            // ==================== AI RECOMMENDED MEALS SECTION ====================
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Primary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(16.dp))
+                            }
+                            Text(
+                                if (isThai) "เมนูอาหารแนะนำจาก AI สำหรับน้อง" else "AI Recommended Meals",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(
+                            onClick = { navController.navigate(Screen.RecommendedFood.route) },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text(
+                                if (isThai) "ดูทั้งหมด" else "View all",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Text(
+                        if (isThai) "คัดสรรเมนูตามช่วงวัย เสริมสารอาหารที่ลูกต้องการ พร้อมตรวจเช็ควัตถุดิบในบ้าน"
+                        else "Tailored age-appropriate meals to boost target nutrients and match ingredients at home",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (ui.menuRecsLoading) {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            Modifier.padding(16.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Primary)
+                            Text(
+                                if (isThai) "AI กำลังคิดค้นเมนูที่เหมาะสมกับน้อง..." else "AI is generating customized recipes...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else if (ui.menuRecs.isNotEmpty()) {
+                items(ui.menuRecs.take(3), key = { it.title }) { rec ->
+                    DishRecommendationCard(
+                        rec = rec,
+                        isThai = isThai,
+                        onOpen = {
+                            vm.loadRecipe(rec.title, lang)
+                            navController.navigate(Screen.RecipeDetail.route)
+                        }
+                    )
+                }
+            } else {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.3f))
+                    ) {
+                        Column(
+                            Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                if (isThai) "แตะด้านล่างเพื่อรับคำแนะนำเมนูอาหารจาก AI" else "Tap below to get AI meal recommendations",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Outline
+                            )
+                            Button(
+                                onClick = { vm.ensureMenuRecommendations(lang) },
+                                shape = RoundedCornerShape(100.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                            ) {
+                                Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isThai) "สร้างเมนูแนะนำจาก AI" else "Generate Meal Ideas", style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
                 }
@@ -138,7 +255,7 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                     modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp)
                 ) {
                     Icon(Icons.Filled.Kitchen, null, tint = Primary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "ตู้เย็นอัจฉริยะ & สแกนวัตถุดิบ" else "Smart Refrigerator & Ingredients", fontWeight = FontWeight.Bold)
+                    Text(if (isThai) "ตู้เย็นอัจฉริยะ & สแกนวัตถุดิบ (${ui.fridgeIngredients.size})" else "Smart Refrigerator & Ingredients (${ui.fridgeIngredients.size})", fontWeight = FontWeight.Bold)
                 }
             }
             item {
@@ -260,6 +377,98 @@ private fun NutrientHeroCard(icon: ImageVector, label: String, current: Int, tar
     }
 }
 
+/**
+ * Modern Bento Dish Recommendation Card for the Nutrition Dashboard
+ */
+@Composable
+private fun DishRecommendationCard(rec: SuggestionItem, isThai: Boolean, onOpen: () -> Unit) {
+    val tags = nutrientTagSymbols(listOf(rec.subtitle) + rec.tags)
+    val timeTag = rec.tags.firstOrNull { it.contains("min", ignoreCase = true) || it.contains("นาที") }
+    val inFridgeTag = rec.tags.any { it.contains("มีวัตถุดิบ", ignoreCase = true) || it.contains("fridge", ignoreCase = true) || it.contains("ในบ้าน", ignoreCase = true) }
+
+    Card(
+        onClick = onOpen,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(120.dp).background(Primary.copy(0.08f))) {
+                AsyncImage(
+                    model = foodImageUrl(rec.title),
+                    contentDescription = rec.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                Row(
+                    modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (timeTag != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White.copy(0.92f)
+                        ) {
+                            Row(Modifier.padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Schedule, null, tint = Primary, modifier = Modifier.size(12.dp))
+                                Text(timeTag, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    if (inFridgeTag) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Primary
+                        ) {
+                            Row(Modifier.padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Kitchen, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                Text(if (isThai) "มีวัตถุดิบครบ" else "In Fridge", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(rec.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                if (rec.subtitle.isNotBlank()) {
+                    Text(rec.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        tags.take(4).forEach { t ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Primary.copy(0.1f)
+                            ) {
+                                Text(
+                                    t,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    fontWeight = FontWeight.Bold,
+                                    color = Primary
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            if (isThai) "ดูสูตรอาหาร" else "See Recipe",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Primary
+                        )
+                        Icon(Icons.Filled.ChevronRight, null, tint = Primary, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun SuggestionCard(item: SuggestionItem, onClick: () -> Unit) {
     Card(onClick = onClick, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -275,3 +484,4 @@ fun SuggestionCard(item: SuggestionItem, onClick: () -> Unit) {
         }
     }
 }
+

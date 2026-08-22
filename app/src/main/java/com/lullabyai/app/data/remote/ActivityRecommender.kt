@@ -38,6 +38,16 @@ data class ActivityRecommendation(
     val lat: Double? = null,
     val lng: Double? = null,
     @kotlinx.serialization.SerialName("cost_baht") val costBaht: Int? = null,
+    /** Real price & admission breakdown in Thai, e.g. "ผู้ใหญ่ 150 บาท / เด็กเล็กเข้าฟรี". */
+    @kotlinx.serialization.SerialName("price_detail") val priceDetail: String? = null,
+    /** Promotion, discount, or family privilege in Thai, e.g. "โปรโมชั่นครอบครัว: ซื้อ 2 ฟรี 1". */
+    @kotlinx.serialization.SerialName("promotion") val promotion: String? = null,
+    /** Rating from Google (e.g. 4.6). */
+    @kotlinx.serialization.SerialName("rating") val rating: Double? = null,
+    /** Google Maps link for navigation. */
+    @kotlinx.serialization.SerialName("maps_url") val mapsUrl: String? = null,
+    /** Official website or booking link if available. */
+    @kotlinx.serialization.SerialName("website_url") val websiteUrl: String? = null,
     /**
      * The hour the model thinks this suits, chosen inside the venue's opening hours — a meal out
      * lands in the evening and a park in the morning. Only a default for the picker: the parent
@@ -46,7 +56,9 @@ data class ActivityRecommendation(
     @kotlinx.serialization.SerialName("start_hour") val startHour: Int? = null,
     @kotlinx.serialization.SerialName("duration_hours") val durationHours: Int? = null,
     /** Today's opening hours, verbatim from Google, so the suggested time can be judged. */
-    @kotlinx.serialization.SerialName("hours_today") val hoursToday: String? = null
+    @kotlinx.serialization.SerialName("hours_today") val hoursToday: String? = null,
+    /** Distance in kilometres from the user's location. */
+    @kotlinx.serialization.SerialName("distance_km") val distanceKm: Double? = null
 ) {
     val isPlace: Boolean get() = kind == KIND_PLACE
 
@@ -130,15 +142,14 @@ object ActivityRecommender {
                 "botanical_garden", "playground", "water_park", "wildlife_park"
             ),
             safeTypes = listOf("park"),
-            // A beach or a national park is worth a longer drive than lunch, so this reaches out
-            // far enough to actually find one.
-            radiusMetres = 40_000.0
+            // Focused within 15-30 km radius from the user's location.
+            radiusMetres = 30_000.0
         ),
         PlaceGroup(
             label = "ห้างสรรพสินค้าและร้านอาหาร",
             types = listOf("shopping_mall", "restaurant", "cafe", "market", "movie_theater"),
             safeTypes = listOf("shopping_mall", "restaurant", "cafe"),
-            radiusMetres = 15_000.0
+            radiusMetres = 20_000.0
         ),
         PlaceGroup(
             label = "เรียนรู้และเที่ยวชม",
@@ -149,6 +160,20 @@ object ActivityRecommender {
             radiusMetres = 30_000.0
         )
     )
+
+    /**
+     * Calculates distance between two coordinates in kilometres (Haversine formula).
+     */
+    fun calculateDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371.0 // Earth radius in km
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return Math.round(r * c * 10.0) / 10.0
+    }
 
     /**
      * Real venues near the family, kept in their groups.
@@ -184,22 +209,24 @@ You suggest activities for a parent and their young child, in Thai.
 
 Two kinds of item:
 - "home"  — something to do at home. Invent freely. No place_id.
-- "place" — going out somewhere together: a park, a mall, a meal out, a museum. You MUST choose one
+- "place" — going out somewhere together: a park, a mall, a meal out, a museum, playground, aquarium, zoo. You MUST choose one
             of the NEARBY PLACES given to you and copy its id into place_id exactly. Never name a
             venue that is not in that list. Never invent an address. If no NEARBY PLACES are given,
             produce no "place" items at all.
 
 Rules:
+- Recommend places that are around 15–30 km (15-30 กม.) from where the user lives.
 - Respect the budget. If little is left, prefer free or cheap options and say so in the reason.
 - Lean toward what the child already enjoys, given as activity counts.
-- reason: one short Thai sentence, concrete, about why it suits THIS child. No greetings, no fluff.
-- cost_baht: rough per-visit cost for the family, 0 for free. Omit if genuinely unknown.
-- start_hour: the hour (0-23) this outing suits best, and it MUST fall inside the opening hours
-  shown for that place. A meal out belongs in the evening, a park or a beach in the morning.
+- reason: one short Thai sentence, concrete, about why it suits THIS child and mention proximity if helpful.
+- cost_baht: realistic rough per-visit cost for the family (0 for free parks, 150-600 for dining/museums, 500-1500 for water parks/theme parks).
+- price_detail: realistic price and admission details in Thai (e.g. "ผู้ใหญ่ 150 บาท / เด็กเล็กต่ำกว่า 100 ซม. เข้าฟรี", "ไม่มีค่าเข้าชม (มีค่าเครื่องเล่นบางชนิด ~30-60 บ.)", "บัตรผ่านประตู 250 บาท/ท่าน").
+- promotion: family/kids promotion, seasonal discount, or special privilege in Thai (e.g. "โปรโมชั่นครอบครัว: ซื้อตั๋วผู้ใหญ่ 2 ใบ ฟรีเด็ก 1 คน", "ส่วนลดบัตรสมาชิกหรือ AIS/True 10-15%", "โปรโมชั่นบัตร All-Day Pass วันธรรมดาลด 20%", "สิทธิ์เด็กอายุต่ำกว่า 3 ขวบเข้าฟรีทุกวัน"). For "home" activities, provide a fun tip or leave empty.
+- start_hour: the hour (0-23) this outing suits best, and it MUST fall inside the opening hours shown for that place. A meal out belongs in the evening, a park or a beach in the morning.
 - duration_hours: how long the family would realistically stay, 1-8.
 
 Return ONLY JSON: {"items":[{"kind":"home"|"place","title":"...","reason":"...","place_id":"...",
-"cost_baht":0,"start_hour":10,"duration_hours":2}]}
+"cost_baht":0,"price_detail":"...","promotion":"...","start_hour":10,"duration_hours":2}]}
 
 Between 5 and 7 items. Favour going out: when NEARBY PLACES are given, at least four items must be
 "place".
@@ -247,9 +274,15 @@ Keep one or two "home" items for a day nobody wants to leave the house.
             .joinToString("\n\n") { (label, places) ->
                 val rows = places.joinToString("\n") { p ->
                     val cost = p.roughCostBaht?.let { " ~$it บาท" } ?: ""
+                    // Distance calculation from user location
+                    val distKm = if (lat != null && lng != null && p.lat != null && p.lng != null) {
+                        calculateDistanceKm(lat, lng, p.lat, p.lng)
+                    } else null
+                    val distText = distKm?.let { " | ระยะทาง: ~$it กม." } ?: ""
+                    val ratingText = p.rating?.let { " | คะแนน: ⭐$it" } ?: ""
                     // The hours are given so start_hour lands while the place is actually open.
                     val hours = p.hoursToday?.let { " | เวลาเปิดวันนี้: $it" } ?: ""
-                    "- id=${p.id} | ${p.name}$cost$hours"
+                    "- id=${p.id} | ${p.name}$cost$distText$ratingText$hours"
                 }
                 "[$label]\n$rows"
             }
@@ -259,6 +292,7 @@ Keep one or two "home" items for a day nobody wants to leave the house.
             appendLine("ชื่อลูก: $childName")
             appendLine("กิจกรรมที่ลูกทำบ่อย: $likedText")
             appendLine(budgetText)
+            appendLine("เกณฑ์ระยะทางสถานที่แนะนำ: ประมาณ 15-30 กิโลเมตรจากที่พักอาศัย")
             appendLine()
             appendLine("NEARBY PLACES:")
             append(placesText)
@@ -267,12 +301,12 @@ Keep one or two "home" items for a day nobody wants to leave the house.
         val result = AiProxyClient.generate(
             prompt = prompt,
             useSearch = false,
-            maxTokens = 900,
+            maxTokens = 1000,
             system = SYSTEM.trim(),
             jsonMode = true
         )
         val text = result.text ?: return Result.failure(IllegalStateException("ai_no_response"))
-        return Result.success(parse(text, nearby))
+        return Result.success(parse(text, nearby, lat, lng))
     }
 
     /**
@@ -280,7 +314,12 @@ Keep one or two "home" items for a day nobody wants to leave the house.
      * model invented is dropped rather than shown — that is the whole safeguard, so it happens here
      * and not in the UI.
      */
-    private fun parse(raw: String, nearby: List<PlaceSuggestion>): List<ActivityRecommendation> {
+    private fun parse(
+        raw: String,
+        nearby: List<PlaceSuggestion>,
+        userLat: Double? = null,
+        userLng: Double? = null
+    ): List<ActivityRecommendation> {
         val obj = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull()
             ?: return emptyList()
         val items = obj["items"]?.jsonArray ?: return emptyList()
@@ -293,6 +332,8 @@ Keep one or two "home" items for a day nobody wants to leave the house.
             val reason = o["reason"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val kind = o["kind"]?.jsonPrimitive?.contentOrNull
             val cost = o["cost_baht"]?.jsonPrimitive?.intOrNull
+            val priceDetail = o["price_detail"]?.jsonPrimitive?.contentOrNull
+            val promotion = o["promotion"]?.jsonPrimitive?.contentOrNull
             // Kept in range here rather than trusted: a 25 or a -3 would prefill a picker with a
             // time that cannot exist.
             val startHour = o["start_hour"]?.jsonPrimitive?.intOrNull?.takeIf { it in 0..23 }
@@ -303,6 +344,23 @@ Keep one or two "home" items for a day nobody wants to leave the house.
                     val placeId = o["place_id"]?.jsonPrimitive?.contentOrNull
                     // An invented venue is dropped: only ids that came from Places survive.
                     val place = byId[placeId] ?: return@mapNotNull null
+                    val dist = if (userLat != null && userLng != null && place.lat != null && place.lng != null) {
+                        calculateDistanceKm(userLat, userLng, place.lat, place.lng)
+                    } else null
+
+                    val fallbackPriceDetail = priceDetail ?: when (place.priceLevel) {
+                        "PRICE_LEVEL_FREE" -> "เข้าชมฟรี ไม่มีค่าใช้จ่าย"
+                        "PRICE_LEVEL_INEXPENSIVE" -> "ราคาประหยัด ประมาณ 50-150 บาท/ท่าน"
+                        "PRICE_LEVEL_MODERATE" -> "ราคาปานกลาง ประมาณ 200-450 บาท/ท่าน"
+                        "PRICE_LEVEL_EXPENSIVE" -> "ราคาประมาณ 500-900 บาท/ท่าน"
+                        else -> null
+                    }
+                    val fallbackPromotion = promotion ?: if (place.priceLevel == "PRICE_LEVEL_FREE") {
+                        "เข้าฟรีสำหรับเด็กเล็กและทุกคนในครอบครัว"
+                    } else {
+                        "โปรโมชั่นครอบครัว: ตรวจสอบสิทธิพิเศษและส่วนลด ณ จุดจำหน่ายตั๋ว"
+                    }
+
                     ActivityRecommendation(
                         // The venue's real name wins over whatever the model typed.
                         title = place.name,
@@ -313,17 +371,25 @@ Keep one or two "home" items for a day nobody wants to leave the house.
                         lat = place.lat,
                         lng = place.lng,
                         costBaht = cost ?: place.roughCostBaht,
+                        priceDetail = fallbackPriceDetail,
+                        promotion = fallbackPromotion,
+                        rating = place.rating,
+                        mapsUrl = place.googleMapsUri,
+                        websiteUrl = place.websiteUri,
                         startHour = startHour,
                         durationHours = durationHours,
                         // Google's own wording wins here too — the model is not asked to retype it.
-                        hoursToday = place.hoursToday
+                        hoursToday = place.hoursToday,
+                        distanceKm = dist
                     )
                 }
                 else -> ActivityRecommendation(
                     title = title,
                     reason = reason,
                     kind = ActivityRecommendation.KIND_HOME,
-                    costBaht = cost,
+                    costBaht = cost ?: 0,
+                    priceDetail = priceDetail ?: "ไม่มีค่าใช้จ่าย (กิจกรรมสนุกที่บ้าน)",
+                    promotion = promotion,
                     startHour = startHour,
                     durationHours = durationHours
                 )

@@ -25,6 +25,9 @@ data class OnboardingUiState(
     val religion: String = "",
     val allergies: String = "",
     val notes: String = "",
+    val childAvatarUri: String? = null,
+    val childAvatarBytes: ByteArray? = null,
+    val relationship: String = "mother",   // mother | father | guardian | other
     // Step 2
     val heightCm: String = "",
     val weightKg: String = "",
@@ -42,11 +45,11 @@ data class OnboardingUiState(
     val pendingDocs: List<PendingDoc> = emptyList(),         // medical docs picked, uploaded after child is created
     // Last Setup
     val username: String = "",
-    val relationship: String = "mother",   // mother | father | guardian | other
     val profilePhotoUri: String? = null,
     // True when adding another child to an existing account (vs first-time signup). In add mode we
     // skip the username/LastSetup step and back does NOT cancel/delete the account.
-    val addMode: Boolean = false
+    val addMode: Boolean = false,
+    val existingChildId: String? = null
 )
 
 data class AllergyEntry(val name: String, val symptoms: String)
@@ -60,14 +63,39 @@ class OnboardingViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState
 
+    fun initFromChild(child: Child) {
+        _uiState.value = _uiState.value.copy(
+            childName = child.name,
+            birthdate = child.birthdate,
+            gender = child.gender,
+            nationality = child.nationality ?: "",
+            ethnicity = child.ethnicity ?: "",
+            religion = child.religion ?: "",
+            allergies = child.allergies ?: "",
+            notes = child.notes ?: "",
+            heightCm = child.heightCm?.toString() ?: "",
+            weightKg = child.weightKg?.toString() ?: "",
+            sleepHours = child.sleepHours?.toFloat() ?: 14f,
+            activityLevel = child.activityLevel,
+            bloodGroup = child.bloodGroup ?: "",
+            noKnownAllergies = child.noKnownAllergies,
+            existingChildId = child.id,
+            addMode = true
+        )
+    }
+
     fun updateStep1(
-        name: String, birthdate: String, gender: String, allergies: String, notes: String,
-        nationality: String = "", ethnicity: String = "", religion: String = ""
+        name: String, birthdate: String, gender: String, allergies: String = "", notes: String = "",
+        nationality: String = "", ethnicity: String = "", religion: String = "",
+        relationship: String = "mother", avatarUri: String? = null, avatarBytes: ByteArray? = null
     ) {
         _uiState.value = _uiState.value.copy(
             childName = name, birthdate = birthdate, gender = gender,
             allergies = allergies, notes = notes,
-            nationality = nationality, ethnicity = ethnicity, religion = religion
+            nationality = nationality, ethnicity = ethnicity, religion = religion,
+            relationship = relationship,
+            childAvatarUri = avatarUri ?: _uiState.value.childAvatarUri,
+            childAvatarBytes = avatarBytes ?: _uiState.value.childAvatarBytes
         )
     }
 
@@ -129,34 +157,67 @@ class OnboardingViewModel : ViewModel() {
                 val combinedNotes = listOf(state.notes, state.additionalNotes)
                     .filter { it.isNotBlank() }.joinToString("\n")
 
-                val child = Child(
-                    userId = userId,
-                    name = state.childName,
-                    birthdate = state.birthdate,
-                    gender = state.gender,
-                    allergies = allergySummary.ifBlank { null },
-                    notes = combinedNotes.ifBlank { null },
-                    heightCm = state.heightCm.toDoubleOrNull(),
-                    weightKg = state.weightKg.toDoubleOrNull(),
-                    sleepHours = state.sleepHours.toDouble(),
-                    activityLevel = state.activityLevel,
-                    bloodGroup = state.bloodGroup.ifBlank { null },
-                    nationality = state.nationality.ifBlank { null },
-                    ethnicity = state.ethnicity.ifBlank { null },
-                    religion = state.religion.ifBlank { null }
-                )
-                val savedChild = childRepo.createChild(child).getOrThrow()
-                // Make the newly-created child the active one (covers both first signup and "add child").
-                com.lullabyai.app.data.settings.ChildSelection.set(savedChild.id)
+                val targetChildId: String = if (state.existingChildId != null) {
+                    val childId = state.existingChildId
+                    val updates = buildMap<String, Any?> {
+                        if (state.childName.isNotBlank()) put("name", state.childName)
+                        if (state.birthdate.isNotBlank()) put("birthdate", state.birthdate)
+                        if (state.gender.isNotBlank()) put("gender", state.gender)
+                        if (allergySummary.isNotBlank()) put("allergies", allergySummary)
+                        if (combinedNotes.isNotBlank()) put("notes", combinedNotes)
+                        state.heightCm.toDoubleOrNull()?.let { put("height_cm", it) }
+                        state.weightKg.toDoubleOrNull()?.let { put("weight_kg", it) }
+                        put("sleep_hours", state.sleepHours.toDouble())
+                        put("activity_level", state.activityLevel)
+                        if (state.bloodGroup.isNotBlank()) put("blood_group", state.bloodGroup)
+                        if (state.nationality.isNotBlank()) put("nationality", state.nationality)
+                        if (state.ethnicity.isNotBlank()) put("ethnicity", state.ethnicity)
+                        if (state.religion.isNotBlank()) put("religion", state.religion)
+                        put("no_known_allergies", state.noKnownAllergies)
+                    }
+                    childRepo.updateChild(childId, updates)
+                    childId
+                } else {
+                    val child = Child(
+                        userId = userId,
+                        name = state.childName,
+                        birthdate = state.birthdate,
+                        gender = state.gender,
+                        allergies = allergySummary.ifBlank { null },
+                        notes = combinedNotes.ifBlank { null },
+                        heightCm = state.heightCm.toDoubleOrNull(),
+                        weightKg = state.weightKg.toDoubleOrNull(),
+                        sleepHours = state.sleepHours.toDouble(),
+                        activityLevel = state.activityLevel,
+                        bloodGroup = state.bloodGroup.ifBlank { null },
+                        nationality = state.nationality.ifBlank { null },
+                        ethnicity = state.ethnicity.ifBlank { null },
+                        religion = state.religion.ifBlank { null }
+                    )
+                    val savedChild = childRepo.createChild(child).getOrThrow()
+                    com.lullabyai.app.data.settings.ChildSelection.set(savedChild.id)
 
-                // Seed growth_records from Step 2 vitals so Growth History / WHO charts aren't empty
-                // while Summary already shows the child's weight/height from the children row.
-                if (savedChild.weightKg != null || savedChild.heightCm != null) {
+                    val ageMonths = calculateAgeMonths(state.birthdate)
+                    childRepo.insertDefaultMilestones(savedChild.id, ageMonths)
+                    healthRepo.insertDefaultVaccines(savedChild.id, state.birthdate)
+
+                    savedChild.id
+                }
+
+                // Upload child avatar if provided
+                state.childAvatarBytes?.let { bytes ->
+                    runCatching { childRepo.uploadChildAvatar(targetChildId, bytes) }
+                }
+
+                // Seed growth_records from Step 2 vitals
+                val h = state.heightCm.toDoubleOrNull()
+                val w = state.weightKg.toDoubleOrNull()
+                if (w != null || h != null) {
                     healthRepo.addGrowthRecord(
                         GrowthRecord(
-                            childId = savedChild.id,
-                            weightKg = savedChild.weightKg,
-                            heightCm = savedChild.heightCm,
+                            childId = targetChildId,
+                            weightKg = w,
+                            heightCm = h,
                             recordedAt = java.time.LocalDate.now().toString(),
                             recordType = "onboarding"
                         )
@@ -164,21 +225,21 @@ class OnboardingViewModel : ViewModel() {
                 }
 
                 // Structured allergy list → allergies table.
-                // (addAllergy also rebuilds children.allergies summary — matches the string we just wrote.)
                 state.allergyEntries.forEach { a ->
-                    healthRepo.addAllergy(savedChild.id, a.name, "อื่นๆ", "ไม่ระบุ", a.symptoms.ifBlank { null })
+                    healthRepo.addAllergy(targetChildId, a.name, "อื่นๆ", "ไม่ระบุ", a.symptoms.ifBlank { null })
                 }
                 if (state.noKnownAllergies) {
-                    childRepo.setNoKnownAllergies(savedChild.id, true)
+                    childRepo.setNoKnownAllergies(targetChildId, true)
                 }
+
                 // Uploaded medical documents → private bucket + metadata.
                 state.pendingDocs.forEach { d ->
                     val category = if (d.name.contains("vaccine_book", ignoreCase = true)) "certs" else "other"
-                    childRepo.uploadMedicalDocument(savedChild.id, d.name, d.mime, d.bytes, category = category)
+                    childRepo.uploadMedicalDocument(targetChildId, d.name, d.mime, d.bytes, category = category)
                 }
 
                 val history = MedicalHistory(
-                    childId = savedChild.id,
+                    childId = targetChildId,
                     hasTakenMedication = state.hasTakenMedication,
                     medicationDetails = state.medicationDetails.ifBlank { null },
                     vaccinesGiven = state.selectedVaccines,
@@ -186,28 +247,23 @@ class OnboardingViewModel : ViewModel() {
                 )
                 childRepo.saveMedicalHistory(history)
 
-                // Sync free-text "underlying conditions" into the structured chronic_conditions
-                // table too, so it actually shows up on the Health Hub / Child Info chronic-
-                // conditions cards instead of sitting only in this freetext field nobody reads.
                 val noConditionMarkers = setOf("none", "no", "ไม่มี", "ไม่มีค่ะ", "ไม่มีครับ", "-")
                 state.underlyingConditions.split(",", "\n")
                     .map { it.trim() }
                     .filter { it.isNotBlank() && it.lowercase() !in noConditionMarkers }
-                    .forEach { name -> healthRepo.addChronicCondition(savedChild.id, name, null) }
+                    .forEach { name -> healthRepo.addChronicCondition(targetChildId, name, null) }
 
-                val ageMonths = calculateAgeMonths(state.birthdate)
-                childRepo.insertDefaultMilestones(savedChild.id, ageMonths)
-                healthRepo.insertDefaultVaccines(savedChild.id, state.birthdate)
                 val customVaccines = state.selectedVaccines.filter {
                     com.lullabyai.app.data.VaccineSetupCatalog.normalizeSelection(it) == null
                 }
-                healthRepo.applyOnboardingVaccineSelections(savedChild.id, state.selectedVaccines, customVaccines)
+                if (state.selectedVaccines.isNotEmpty() || customVaccines.isNotEmpty()) {
+                    healthRepo.applyOnboardingVaccineSelections(targetChildId, state.selectedVaccines, customVaccines)
+                }
 
                 if (!state.addMode) {
                     authRepo.updateProfile(null, null, null, state.relationship)
                 }
 
-                // Create initial notifications
                 val notif = com.lullabyai.app.data.repository.NotificationRepository()
                 notif.notify(
                     com.lullabyai.app.data.repository.NotifCategory.NORMAL,

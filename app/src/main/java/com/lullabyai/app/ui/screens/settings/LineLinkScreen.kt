@@ -1,0 +1,267 @@
+package com.lullabyai.app.ui.screens.settings
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.lullabyai.app.data.repository.LineLink
+import com.lullabyai.app.data.repository.LineRepository
+import com.lullabyai.app.ui.components.LullabyTopBar
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/**
+ * Pairing this account with the NongRak LINE OA.
+ *
+ * The app asks the server for a code, the parent sends that code to the OA, and the webhook
+ * writes the link. Deliberately not LINE Login: the parent is already signed in here, so the
+ * only missing fact is which LINE account is theirs — and the only party who can prove that is
+ * LINE itself, talking to our webhook.
+ */
+@Composable
+fun LineLinkScreen(
+    navController: androidx.navigation.NavController,
+    onBack: () -> Unit
+) {
+    val s = com.lullabyai.app.ui.localization.LocalStrings.current
+    val isThai = s.isThai
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var link by remember { mutableStateOf<LineLink?>(null) }
+    var code by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    suspend fun refresh() {
+        link = LineRepository.status().getOrNull()
+        loading = false
+    }
+    LaunchedEffect(Unit) { refresh() }
+
+    // While a code is on screen the parent is over in LINE sending it. Poll so that coming back
+    // to the app simply shows "connected" — asking them to press refresh after they already did
+    // the thing is the kind of small friction that makes a feature feel broken.
+    LaunchedEffect(code) {
+        if (code == null) return@LaunchedEffect
+        while (link == null) {
+            delay(3_000)
+            link = LineRepository.status().getOrNull()
+        }
+        code = null
+    }
+
+    Scaffold(
+        topBar = {
+            LullabyTopBar(
+                title = if (isThai) "เชื่อมต่อ LINE" else "Connect LINE",
+                onBack = onBack,
+                navController = navController
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            when {
+                loading -> CircularProgressIndicator(Modifier.padding(top = 48.dp))
+
+                link != null -> {
+                    val l = link!!
+                    Icon(
+                        Icons.Filled.CheckCircle, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (isThai) "เชื่อมต่อแล้ว" else "Connected",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    l.displayName?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(24.dp))
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (isThai) "รับการแจ้งเตือนทาง LINE" else "Notifications via LINE",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    if (isThai) "ปิดได้โดยไม่ต้องยกเลิกการเชื่อมต่อ" else "Turn off without unlinking",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = l.notifyEnabled,
+                                enabled = !busy,
+                                onCheckedChange = { on ->
+                                    scope.launch {
+                                        busy = true
+                                        // Optimistic: the switch answers instantly, and a failed
+                                        // write is corrected by the refresh below.
+                                        link = l.copy(notifyEnabled = on)
+                                        LineRepository.setNotifyEnabled(on)
+                                        refresh()
+                                        busy = false
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(
+                        enabled = !busy,
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                LineRepository.unlink()
+                                refresh()
+                                busy = false
+                            }
+                        }
+                    ) {
+                        Text(
+                            if (isThai) "ยกเลิกการเชื่อมต่อ" else "Unlink",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                code != null -> {
+                    Text(
+                        if (isThai) "ส่งรหัสนี้ให้น้องรักใน LINE" else "Send this code to NongRak on LINE",
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Card(shape = RoundedCornerShape(16.dp)) {
+                        Text(
+                            code!!,
+                            modifier = Modifier.padding(horizontal = 28.dp, vertical = 18.dp),
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 6.sp
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (isThai) "รหัสหมดอายุใน 10 นาที" else "Code expires in 10 minutes",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            // Opens the OA chat with the code already typed — the parent only
+                            // has to press send.
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(LineRepository.pairDeepLink(code!!)))
+                                )
+                            }.onFailure {
+                                message = if (isThai)
+                                    "เปิด LINE ไม่ได้ กรุณาพิมพ์รหัสเองในแชทน้องรัก"
+                                else
+                                    "Could not open LINE — send the code in the NongRak chat instead"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Filled.Chat, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (isThai) "เปิด LINE แล้วส่งรหัส" else "Open LINE and send")
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (isThai) "กำลังรอการเชื่อมต่อ..." else "Waiting for the link...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                else -> {
+                    Icon(
+                        Icons.Filled.Chat, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (isThai) "รับการแจ้งเตือนทาง LINE" else "Get notifications on LINE",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (isThai)
+                            "เชื่อมบัญชีน้องรักกับ LINE แล้วรับแจ้งเตือนตารางกิจกรรม วัคซีน และเรื่องสำคัญของลูก แม้ไม่ได้เปิดแอป"
+                        else
+                            "Link your NongRak account to LINE and get schedule, vaccine and other important reminders even when the app is closed.",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(28.dp))
+                    Button(
+                        enabled = !busy,
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                LineRepository.issuePairCode()
+                                    .onSuccess { code = it }
+                                    .onFailure {
+                                        message = if (isThai)
+                                            "ขอรหัสไม่สำเร็จ กรุณาลองใหม่"
+                                        else
+                                            "Could not get a code — please try again"
+                                    }
+                                busy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text(if (isThai) "ขอรหัสเชื่อมต่อ" else "Get a linking code") }
+                }
+            }
+
+            message?.let {
+                Spacer(Modifier.height(16.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}

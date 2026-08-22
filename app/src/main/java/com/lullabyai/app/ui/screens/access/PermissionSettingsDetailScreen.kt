@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ fun PermissionSettingsDetailScreen(
     }
 
     var confirmRemove by remember { mutableStateOf(false) }
+    var showTransferConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -152,6 +154,26 @@ fun PermissionSettingsDetailScreen(
                 isLoading = state.saving
             )
 
+            val isCurrentOwner = state.isOwner || state.myRole == "owner"
+            val canTransferToThisMember = isCurrentOwner && d.userId != state.myUserId && d.role != "owner"
+
+            if (canTransferToThisMember) {
+                OutlinedButton(
+                    onClick = { showTransferConfirm = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE65100)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE65100).copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Filled.SwapHoriz, null, tint = Color(0xFFE65100), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (isThai) "โอนสิทธิ์เจ้าของหลักให้ผู้ใช้นี้" else "Transfer primary ownership",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             val canRemoveThisMember = AccessRoleLabels.canRemove(
                 myRole = state.myRole,
                 targetRole = d.role,
@@ -173,6 +195,58 @@ fun PermissionSettingsDetailScreen(
                 Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+
+    if (showTransferConfirm) {
+        val targetName = draft?.displayName ?: ""
+        AlertDialog(
+            onDismissRequest = { if (!state.transferring) showTransferConfirm = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.SwapHoriz, null, tint = Primary)
+                    Text(
+                        if (isThai) "โอนสิทธิ์ความเป็นเจ้าของ" else "Transfer Ownership",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Text(
+                    if (isThai)
+                        "คุณแน่ใจหรือไม่ว่าต้องการโอนสิทธิ์ความเป็นเจ้าของของ \"${state.childName.ifBlank { "ลูก" }}\" ให้กับ \"$targetName\"?\n\nเมื่อโอนแล้ว คุณจะถูกเปลี่ยนบทบาทเป็น \"ผู้ปกครองร่วม (Co-owner)\" และผู้ใช้ใหม่จะได้รับสิทธิ์เจ้าของหลักเต็มรูปแบบ"
+                    else
+                        "Are you sure you want to transfer ownership of \"${state.childName.ifBlank { "your child" }}\" to \"$targetName\"?\n\nYou will become a Co-owner and they will receive full primary owner authority."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.transferOwnership(userId) { ok ->
+                            if (ok) {
+                                showTransferConfirm = false
+                                onBack()
+                            }
+                        }
+                    },
+                    enabled = !state.transferring
+                ) {
+                    if (state.transferring) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Primary)
+                    } else {
+                        Text(
+                            if (isThai) "ยืนยันโอนสิทธิ์" else "Transfer",
+                            color = Primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTransferConfirm = false }, enabled = !state.transferring) {
+                    Text(if (isThai) "ยกเลิก" else "Cancel")
+                }
+            }
+        )
     }
 
     if (confirmRemove) {

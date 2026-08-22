@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -156,40 +158,80 @@ fun AudioReplayCard(
 
 /**
  * Inline video preview with the platform scrub controls, so the parent can replay
- * a picked clip before saving it.
+ * a picked clip before saving it, with official NongRak logo watermark and Magic FX studio button.
  */
 @Composable
 fun VideoReplayCard(
     uri: Uri,
     isThai: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onEditStudio: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow)
     ) {
-        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            // key(uri) forces a fresh VideoView when the pick changes — reusing the old one
-            // via an update block would restart playback on every recomposition.
-            key(uri) {
-                AndroidView(
-                    factory = { ctx ->
-                        VideoView(ctx).apply {
-                            setVideoURI(uri)
-                            setMediaController(MediaController(ctx).also { it.setAnchorView(this) })
-                            // Show frame 1 instead of a black box before the user hits play.
-                            seekTo(1)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(200.dp)
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(14.dp))
+            ) {
+                // key(uri) forces a fresh VideoView when the pick changes
+                key(uri) {
+                    AndroidView(
+                        factory = { ctx ->
+                            VideoView(ctx).apply {
+                                setVideoURI(uri)
+                                setMediaController(MediaController(ctx).also { it.setAnchorView(this) })
+                                seekTo(1)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Official NongRak Watermark Badge at Bottom-Right
+                com.lullabyai.app.ui.screens.diary.NongRakWatermarkBadge(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(10.dp)
                 )
+
             }
-            Text(
-                if (isThai) "แตะวิดีโอเพื่อเล่นซ้ำ" else "Tap the video to replay",
-                style = MaterialTheme.typography.labelSmall,
-                color = Outline
-            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (isThai) "แตะวิดีโอเพื่อเล่นซ้ำ" else "Tap the video to replay",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Outline
+                )
+
+                if (onEditStudio != null) {
+                    FilledTonalButton(
+                        onClick = onEditStudio,
+                        shape = RoundedCornerShape(100.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = Primary.copy(0.1f))
+                    ) {
+                        Icon(androidx.compose.material.icons.Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (isThai) "สตูดิโอ & เอฟเฟกต์" else "Studio & FX",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
     }
 }
+

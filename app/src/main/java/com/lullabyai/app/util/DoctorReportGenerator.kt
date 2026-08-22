@@ -102,7 +102,13 @@ object DoctorReportGenerator {
      *  gates which sections render (§7 summary/recommendations always renders; "ai" only gates
      *  whether the AI-generated paragraph appears within it). detailed=false skips the free-text
      *  observation/notes boxes but keeps all tables and headline fields. */
-    fun generate(context: Context, data: ChildData, categories: Set<String> = ALL_CATEGORIES, detailed: Boolean = true): File {
+    fun generate(
+        context: Context,
+        data: ChildData,
+        categories: Set<String> = ALL_CATEGORIES,
+        detailed: Boolean = true,
+        isDemo: Boolean = false
+    ): File {
         val titleP = p(23f, WHITE, true)
         val subP = p(9f, Color.rgb(220, 228, 245))
         val metaP = p(9f, Color.rgb(220, 228, 245))
@@ -351,17 +357,48 @@ object DoctorReportGenerator {
             val c = page.canvas
             // header band
             c.drawRect(RectF(0f, 0f, PAGE_W, BAND_H), bandFill)
-            c.drawText("ข้อมูลเด็ก", MARGIN, 44f, titleP)
+            val headerTitle = if (isDemo) "ข้อมูลเด็ก [บัญชีทดลอง]" else "ข้อมูลเด็ก"
+            c.drawText(headerTitle, MARGIN, 44f, titleP)
             c.drawText("เอกสารข้อมูลเด็กสำหรับบันทึกสุขภาพ พัฒนาการ โภชนาการ การนอน และวัคซีน", MARGIN, 66f, subP)
             val pageStr = "หน้า ${idx + 1} / $total"
             c.drawText(pageStr, PAGE_W - MARGIN - metaP.measureText(pageStr), 44f, metaP)
             val refStr = "เลขที่เอกสาร: ${data.documentRef}"
             c.drawText(refStr, PAGE_W - MARGIN - metaP.measureText(refStr), 66f, metaP)
+
             // content
             pageBlocks.forEach { (top, b) -> b.draw(c, top) }
+
+            // Demo watermark across the page content
+            if (isDemo) {
+                val watermarkPaint = Paint().apply {
+                    color = Color.argb(45, 200, 30, 30) // Semi-transparent watermark
+                    textSize = 40f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    isAntiAlias = true
+                    textAlign = Paint.Align.CENTER
+                }
+                val subWatermarkPaint = Paint().apply {
+                    color = Color.argb(40, 200, 30, 30)
+                    textSize = 18f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    isAntiAlias = true
+                    textAlign = Paint.Align.CENTER
+                }
+                c.save()
+                c.rotate(-32f, PAGE_W / 2f, PAGE_H / 2f)
+                c.drawText("บัญชีทดลอง (DEMO ACCOUNT)", PAGE_W / 2f, PAGE_H / 2f - 16f, watermarkPaint)
+                c.drawText("สำหรับทดลองใช้งานเท่านั้น — ห้ามใช้อ้างอิงทางการแพทย์", PAGE_W / 2f, PAGE_H / 2f + 20f, subWatermarkPaint)
+                c.restore()
+            }
+
             // footer
             c.drawLine(MARGIN, CONTENT_BOTTOM + 16f, PAGE_W - MARGIN, CONTENT_BOTTOM + 16f, footLine)
-            c.drawText("ข้อมูลนี้เป็นข้อมูลส่วนบุคคล ควรเก็บรักษาอย่างปลอดภัย", MARGIN, CONTENT_BOTTOM + 30f, footP)
+            val footNote = if (isDemo) {
+                "เอกสารตัวอย่างจากบัญชีทดลอง (Demo) — ห้ามใช้อ้างอิงทางการแพทย์"
+            } else {
+                "ข้อมูลนี้เป็นข้อมูลส่วนบุคคล ควรเก็บรักษาอย่างปลอดภัย"
+            }
+            c.drawText(footNote, MARGIN, CONTENT_BOTTOM + 30f, footP)
             val rd = "วันที่บันทึก: ${data.recordDate}"
             c.drawText(rd, PAGE_W - MARGIN - footP.measureText(rd), CONTENT_BOTTOM + 30f, footP)
             doc.finishPage(page)

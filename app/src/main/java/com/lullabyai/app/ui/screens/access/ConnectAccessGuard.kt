@@ -23,6 +23,18 @@ fun ConnectAccessGuard(
     screenTitle: String? = null,
     content: @Composable () -> Unit
 ) {
+    if (childViewModel.isGuest()) {
+        com.lullabyai.app.ui.components.GuestLockGuard(
+            childViewModel = childViewModel,
+            navController = navController,
+            onBack = onBack,
+            title = screenTitle
+        ) {
+            content()
+        }
+        return
+    }
+
     val selectedChildId by ChildSelection.id.collectAsState()
     var allowed by remember { mutableStateOf<Boolean?>(null) }
 

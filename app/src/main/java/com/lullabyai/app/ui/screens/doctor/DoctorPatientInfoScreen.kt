@@ -66,6 +66,7 @@ fun DoctorPatientInfoScreen(childId: String, navController: NavController) {
     var showEditDialog by remember { mutableStateOf(false) }
     var editHn by remember(state.hn) { mutableStateOf(state.hn) }
     var editNote by remember(state.clinicNote) { mutableStateOf(state.clinicNote) }
+    var viewingDocument by remember { mutableStateOf<com.lullabyai.app.ui.components.DocumentViewSource?>(null) }
 
     if (showEditDialog && child != null) {
         AlertDialog(
@@ -343,26 +344,16 @@ fun DoctorPatientInfoScreen(childId: String, navController: NavController) {
                                 categories = setOf("basic", "vaccine", "health"),
                                 detailed = true
                             )
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                context, "${context.packageName}.fileprovider", file
-                            )
-                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "application/pdf"
-                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                clipData = android.content.ClipData.newRawUri("report", uri)
-                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(
-                                android.content.Intent.createChooser(
-                                    send,
-                                    if (s.isThai) "พิมพ์ประวัติคนไข้" else "Print patient record"
-                                )
+                            viewingDocument = com.lullabyai.app.ui.components.DocumentViewSource.Local(
+                                file = file,
+                                displayTitle = if (s.isThai) "ประวัติคนไข้ - ${child.name}" else "Patient Record - ${child.name}",
+                                mime = "application/pdf"
                             )
                         },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         shape = RoundedCornerShape(100.dp)
                     ) {
-                        Icon(Icons.Filled.Print, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.PictureAsPdf, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
                             if (s.isThai) "พิมพ์ประวัติคนไข้ (PDF)" else "Print patient record (PDF)",
@@ -462,6 +453,12 @@ fun DoctorPatientInfoScreen(childId: String, navController: NavController) {
             }
         }
     }
+
+    com.lullabyai.app.ui.components.InAppDocumentViewerDialog(
+        source = viewingDocument,
+        onDismiss = { viewingDocument = null },
+        isThai = s.isThai
+    )
 
     state.selectedDriveRecord?.let { rec ->
         AlertDialog(

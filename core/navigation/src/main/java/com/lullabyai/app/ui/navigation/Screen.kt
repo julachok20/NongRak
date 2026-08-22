@@ -41,6 +41,7 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings")
     object EditProfile : Screen("edit_profile")
     object HelpFaq : Screen("help_faq")
+    object Feedback : Screen("feedback")
     object ChangePassword : Screen("change_password")
     object Notifications : Screen("notifications")
     object WidgetsIntro : Screen("widgets_intro")
@@ -94,13 +95,13 @@ sealed class Screen(val route: String) {
     object AddGrowthRecord : Screen("add_growth_record")
     object MentalHealthAssessment : Screen("mental_health_assessment")
     object MentalHealthResult : Screen("mental_health_result")
-    object PostpartumCheckIn : Screen("postpartum_checkin")
-    object PostpartumResult : Screen("postpartum_result")
     object ChildAiSummary : Screen("child_ai_summary")
     object WasteRecord : Screen("waste_record")
     object MedicalDataVault : Screen("medical_data_vault")
     /** AI retention / transparency (former MedicalDataVault contents). Append-only 2026-07-25. */
     object AiDataRetention : Screen("ai_data_retention")
+    /** Pair this account with the NongRak LINE OA for notifications. Added 2026-08-21. */
+    object LineLink : Screen("line_link")
     object MilkRecord : Screen("milk_record")
     object NutritionInsights : Screen("nutrition_insights")
     object SleepActivityInsights : Screen("sleep_activity_insights")
@@ -195,6 +196,8 @@ sealed class Screen(val route: String) {
     object RewindMemory : Screen("rewind_memory")
     object SpecialMemoriesGallery : Screen("special_memories_gallery")
     object AddMemory : Screen("add_memory")
+    object ChildRecognitionSetup : Screen("child_recognition_setup")
+    object GalleryAiSettings : Screen("gallery_ai_settings")
 
     // --- Access / permissions suite (#5 C, 2026-07-25) — append-only unique names ---
     object PermissionAccess : Screen("permission_access")
@@ -239,4 +242,8 @@ sealed class Screen(val route: String) {
 
     // --- Smart Refrigerator & Ingredient Scanner ---
     object RefrigeratorScanner : Screen("refrigerator_scanner")
+
+    // --- Compare Memories / Growth Transformation ---
+    object CompareMemories : Screen("compare_memories")
 }
+

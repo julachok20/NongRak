@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,14 +17,22 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.NearMe
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Park
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Insights
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Park
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -118,6 +127,11 @@ fun ActivityScheduleScreen(
 
     /** The suggestion whose time window is being picked, or null when the dialog is closed. */
     var scheduling by remember {
+        mutableStateOf<com.lullabyai.app.data.remote.ActivityRecommendation?>(null)
+    }
+
+    /** The suggestion being viewed in the detailed pop-up, or null when closed. */
+    var viewingDetail by remember {
         mutableStateOf<com.lullabyai.app.data.remote.ActivityRecommendation?>(null)
     }
 
@@ -224,6 +238,7 @@ fun ActivityScheduleScreen(
                     },
                     // Deliberately skips the cache; the button above does not.
                     onRefresh = { viewModel.ensureRecommendations(context, force = true) },
+                    onViewDetail = { viewingDetail = it },
                     // Never saved straight from the card: the parent sets when they are going.
                     onSchedule = { scheduling = it }
                 )
@@ -286,6 +301,18 @@ fun ActivityScheduleScreen(
         }
     }
 
+    viewingDetail?.let { rec ->
+        PlaceDetailDialog(
+            rec = rec,
+            isThai = isThai,
+            onDismiss = { viewingDetail = null },
+            onSchedule = { target ->
+                viewingDetail = null
+                scheduling = target
+            }
+        )
+    }
+
     scheduling?.let { rec ->
         ScheduleRecommendationDialog(
             rec = rec,
@@ -318,6 +345,7 @@ private fun ScheduleRecommendationDialog(
     onDismiss: () -> Unit,
     onConfirm: (LocalTime, LocalTime) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val zone = remember { ZoneId.systemDefault() }
     val suggested = remember(rec, date) {
         com.lullabyai.app.viewmodel.recommendedWindow(
@@ -352,6 +380,43 @@ private fun ScheduleRecommendationDialog(
                         fontSize = 12.sp,
                         color = SchOutline
                     )
+                }
+                rec.distanceKm?.takeIf { it > 0 }?.let { dist ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.NearMe, null,
+                            tint = SchPrimary, modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            (if (isThai) "ระยะทางประมาณ " else "Distance: ~") + "$dist " + (if (isThai) "กม. จากที่พัก" else "km away"),
+                            fontSize = 12.sp,
+                            color = SchPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                if (rec.isPlace) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SchPrimary.copy(0.06f))
+                            .clickable { openGoogleMaps(context, rec) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Map, null, tint = SchPrimary, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (isThai) "ดูตำแหน่งใน Google Maps" else "View on Google Maps",
+                            fontSize = 12.sp,
+                            color = SchPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.Filled.OpenInNew, null, tint = SchPrimary, modifier = Modifier.size(12.dp))
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     TimeField(
@@ -764,6 +829,351 @@ private fun UpcomingSummary(
  * Nothing is fetched until asked for: it costs a Places call and a model call, and a rail nobody
  * looks at should not spend either.
  */
+private fun openGoogleMaps(context: android.content.Context, rec: com.lullabyai.app.data.remote.ActivityRecommendation) {
+    val mapsUrl = rec.mapsUrl?.takeIf { it.isNotBlank() }
+        ?: if (rec.lat != null && rec.lng != null) {
+            "https://www.google.com/maps/search/?api=1&query=${rec.lat},${rec.lng}&query_place_id=${rec.placeId.orEmpty()}"
+        } else {
+            "https://www.google.com/maps/search/?api=1&query=" + android.net.Uri.encode(rec.title + " " + rec.address.orEmpty())
+        }
+
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(mapsUrl)).apply {
+        setPackage("com.google.android.apps.maps")
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(mapsUrl)).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(browserIntent)
+    }
+}
+
+/**
+ * Detailed Pop-up for a recommended place or activity showing real prices, promotions, Google Maps link, etc.
+ */
+@Composable
+private fun PlaceDetailDialog(
+    rec: com.lullabyai.app.data.remote.ActivityRecommendation,
+    isThai: Boolean,
+    onDismiss: () -> Unit,
+    onSchedule: (com.lullabyai.app.data.remote.ActivityRecommendation) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SchSurface,
+        title = null,
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header row with category badge & close button
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = if (rec.isPlace) SchPrimary.copy(alpha = 0.12f) else SchPrimary.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (rec.isPlace) (if (isThai) "สถานที่ท่องเที่ยว • นอกบ้าน" else "Outing Venue")
+                            else (if (isThai) "กิจกรรมสร้างสรรค์ • ที่บ้าน" else "At Home Activity"),
+                            color = SchPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = SchOnSurfaceVariant)
+                    }
+                }
+
+                // Title
+                Text(
+                    text = rec.title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SchOnSurface
+                )
+
+                // Rating & distance line
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rec.rating?.let { rate ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(Color(0xFFFFF8E1), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Filled.Star, null, tint = Color(0xFFFFA000), modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = "$rate",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE65100)
+                            )
+                        }
+                    }
+                    rec.distanceKm?.takeIf { it > 0 }?.let { dist ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(SchPrimary.copy(0.08f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Filled.NearMe, null, tint = SchPrimary, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = (if (isThai) "ระยะทาง ~" else "~") + "$dist " + (if (isThai) "กม. จากที่พัก" else "km away"),
+                                fontSize = 12.sp,
+                                color = SchPrimary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                // Address
+                rec.address?.takeIf { it.isNotBlank() }?.let { addr ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(SchSurfaceLow, RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(Icons.Filled.LocationOn, null, tint = SchPrimary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = addr,
+                            fontSize = 12.sp,
+                            color = SchOnSurfaceVariant
+                        )
+                    }
+                }
+
+                // Opening hours
+                rec.hoursToday?.takeIf { it.isNotBlank() }?.let { hours ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(SchSurfaceLow, RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Schedule, null, tint = SchOutline, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = if (isThai) "เวลาเปิด-ปิดวันนี้" else "Hours Today",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = SchOnSurface
+                            )
+                            Text(
+                                text = hours,
+                                fontSize = 12.sp,
+                                color = SchOnSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Real Price details
+                val hasPrice = rec.costBaht != null || !rec.priceDetail.isNullOrBlank()
+                if (hasPrice) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFE8F5E9),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC8E6C9)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Payments,
+                                        contentDescription = null,
+                                        tint = Color(0xFF2E7D32),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isThai) "ราคาและค่าบริการ" else "Admission Price",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1B5E20)
+                                    )
+                                }
+                                rec.costBaht?.let { cost ->
+                                    Surface(
+                                        color = Color(0xFF2E7D32),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = if (cost <= 0) (if (isThai) "เข้าชมฟรี" else "Free")
+                                            else "%,d ฿".format(cost),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            rec.priceDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                                Text(
+                                    text = detail,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF1B5E20),
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Promotions & Special Offers
+                rec.promotion?.takeIf { it.isNotBlank() }?.let { promo ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFFF3E0),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFE0B2)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.LocalOffer, null, tint = Color(0xFFE65100), modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (isThai) "โปรโมชั่นและสิทธิพิเศษ" else "Promotions & Offers",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFE65100)
+                                )
+                            }
+                            Text(
+                                text = promo,
+                                fontSize = 12.sp,
+                                color = Color(0xFFBF360C),
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+
+                // AI Reason
+                if (rec.reason.isNotBlank()) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SchSurfaceContainer)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.AutoAwesome, null, tint = SchPrimary, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (isThai) "คำแนะนำสำหรับเด็ก" else "Why it suits your child",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SchPrimary
+                            )
+                        }
+                        Text(
+                            text = rec.reason,
+                            fontSize = 12.sp,
+                            color = SchOnSurfaceVariant,
+                            lineHeight = 17.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (rec.isPlace) {
+                    OutlinedButton(
+                        onClick = { openGoogleMaps(context, rec) },
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SchPrimary),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SchPrimary),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Filled.Map, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Google Maps",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                }
+                Button(
+                    onClick = {
+                        onDismiss()
+                        onSchedule(rec)
+                    },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SchPrimary),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Filled.Schedule, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (isThai) "เพิ่มลงปฏิทิน" else "Add to schedule",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        },
+        dismissButton = null
+    )
+}
+
+/**
+ * "AI แนะนำกิจกรรมและที่เที่ยว" — the design's horizontal card rail.
+ *
+ * Nothing is fetched until asked for: it costs a Places call and a model call, and a rail nobody
+ * looks at should not spend either.
+ */
 @Composable
 private fun RecommendationRail(
     items: List<com.lullabyai.app.data.remote.ActivityRecommendation>,
@@ -773,6 +1183,7 @@ private fun RecommendationRail(
     isThai: Boolean,
     onAsk: () -> Unit,
     onRefresh: () -> Unit,
+    onViewDetail: (com.lullabyai.app.data.remote.ActivityRecommendation) -> Unit,
     onSchedule: (com.lullabyai.app.data.remote.ActivityRecommendation) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -851,7 +1262,14 @@ private fun RecommendationRail(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items.forEach { rec -> RecommendationCard(rec, isThai, onSchedule) }
+                    items.forEach { rec ->
+                        RecommendationCard(
+                            rec = rec,
+                            isThai = isThai,
+                            onViewDetail = onViewDetail,
+                            onSchedule = onSchedule
+                        )
+                    }
                     AddIdeaCard(isThai, onRefresh)
                 }
             }
@@ -894,19 +1312,21 @@ private fun AskCard(isThai: Boolean, onAsk: () -> Unit) {
 private fun RecommendationCard(
     rec: com.lullabyai.app.data.remote.ActivityRecommendation,
     isThai: Boolean,
+    onViewDetail: (com.lullabyai.app.data.remote.ActivityRecommendation) -> Unit,
     onSchedule: (com.lullabyai.app.data.remote.ActivityRecommendation) -> Unit
 ) {
     Column(
         Modifier
-            .width(220.dp)
+            .width(230.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(SchSurface)
             .border(1.dp, SchOutlineVariant.copy(0.4f), RoundedCornerShape(14.dp))
+            .clickable { onViewDetail(rec) }
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(72.dp)
+                .height(76.dp)
                 .background(if (rec.isPlace) SchSurfaceContainer else SchPrimary.copy(0.08f)),
             contentAlignment = Alignment.Center
         ) {
@@ -914,17 +1334,48 @@ private fun RecommendationCard(
                 if (rec.isPlace) Icons.Filled.Place else Icons.Filled.Home,
                 null,
                 tint = SchPrimary,
-                modifier = Modifier.size(30.dp)
+                modifier = Modifier.size(32.dp)
             )
+            if (rec.isPlace && rec.rating != null) {
+                Row(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .background(Color(0xFFFFF8E1), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Star, null, tint = Color(0xFFFFA000), modifier = Modifier.size(10.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text(
+                        "${rec.rating}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE65100)
+                    )
+                }
+            }
         }
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                if (rec.isPlace) (if (isThai) "นอกบ้าน" else "GOING OUT")
-                else (if (isThai) "ที่บ้าน" else "AT HOME"),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                color = SchPrimary
-            )
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (rec.isPlace) (if (isThai) "นอกบ้าน" else "GOING OUT")
+                    else (if (isThai) "ที่บ้าน" else "AT HOME"),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SchPrimary
+                )
+                Text(
+                    if (isThai) "ดูรายละเอียด >" else "Details >",
+                    fontSize = 10.sp,
+                    color = SchPrimary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
             Text(
                 rec.title,
                 fontSize = 13.sp,
@@ -938,28 +1389,48 @@ private fun RecommendationCard(
                     rec.reason,
                     fontSize = 11.sp,
                     color = SchOnSurfaceVariant,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            // Opening hours as Google phrases them: an outing card that does not say when the
-            // place is open is asking the parent to go and look it up anyway.
-            rec.hoursToday?.takeIf { it.isNotBlank() }?.let {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Schedule, null,
-                        tint = SchOutline, modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
+            // Promotion Tag
+            rec.promotion?.takeIf { it.isNotBlank() }?.let { promo ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFFF3E0), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.LocalOffer, null, tint = Color(0xFFE65100), modifier = Modifier.size(10.dp))
+                    Spacer(Modifier.width(3.dp))
                     Text(
-                        it,
+                        promo,
                         fontSize = 10.sp,
-                        color = SchOnSurfaceVariant,
+                        color = Color(0xFFE65100),
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
+            // Distance
+            rec.distanceKm?.takeIf { it > 0 }?.let { dist ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.NearMe, null,
+                        tint = SchPrimary, modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        (if (isThai) "~" else "~") + "$dist " + (if (isThai) "กม." else "km"),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = SchPrimary
+                    )
+                }
+            }
+            // Real price
             rec.costBaht?.let {
                 Text(
                     if (it <= 0) (if (isThai) "ฟรี" else "Free")
@@ -970,13 +1441,19 @@ private fun RecommendationCard(
                 )
             }
             Spacer(Modifier.height(2.dp))
-            Text(
-                if (isThai) "+ เพิ่มลงปฏิทิน" else "+ Add to calendar",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = SchPrimary,
-                modifier = Modifier.clickable { onSchedule(rec) }
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (isThai) "+ เพิ่มลงปฏิทิน" else "+ Add to calendar",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SchPrimary,
+                    modifier = Modifier.clickable { onSchedule(rec) }
+                )
+            }
         }
     }
 }

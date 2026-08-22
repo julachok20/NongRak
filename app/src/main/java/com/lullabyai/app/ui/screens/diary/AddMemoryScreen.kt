@@ -1,10 +1,14 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.diary
 
+import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,32 +22,43 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.lullabyai.app.ui.components.AudioReplayCard
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.components.VideoReplayCard
 import com.lullabyai.app.ui.components.supportedFormatHint
+import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.ImageUtils
 import com.lullabyai.app.viewmodel.DiaryViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-/** Stitch: Add Memory (เพิ่มความทรงจำ). */
+/**
+ * Stitch 49.Diary: Add Memory (เพิ่มความทรงจำ)
+ * Upgraded with media selector cards, attachment dropzone, milestone chips, social sharing, and validation.
+ */
 @Composable
 fun AddMemoryScreen(
     navController: NavController,
     onBack: () -> Unit,
     vm: DiaryViewModel = viewModel()
 ) {
-    val s = com.lullabyai.app.ui.localization.LocalStrings.current
+    val s = LocalStrings.current
     val isThai = s.isThai
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
@@ -53,15 +68,17 @@ fun AddMemoryScreen(
     var title by remember { mutableStateOf("") }
     var memoryDate by remember { mutableStateOf(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)) }
     var milestoneTag by remember { mutableStateOf<String?>(null) }
+    var customTagInput by remember { mutableStateOf("") }
+    var showCustomTagDialog by remember { mutableStateOf(false) }
+
     var pendingBytes by remember { mutableStateOf<ByteArray?>(null) }
     var pendingName by remember { mutableStateOf<String?>(null) }
     var pendingMime by remember { mutableStateOf<String?>(null) }
-    // Kept alongside the bytes purely so the replay cards can hand a playable source to
-    // MediaPlayer/VideoView — uploads still go through pendingBytes.
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var formError by remember { mutableStateOf<String?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
+    var showVideoStudio by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.load() }
 
@@ -72,9 +89,8 @@ fun AddMemoryScreen(
         pendingUri = null
     }
 
-    // True once the parent has typed or attached something worth warning about before discarding.
     val hasUnsavedWork = pendingBytes != null || description.isNotBlank() ||
-        title.isNotBlank() || milestoneTag != null
+            title.isNotBlank() || milestoneTag != null
 
     fun ingestUri(uri: Uri, asImage: Boolean) {
         val bytes = if (asImage) ImageUtils.downscaleToJpeg(context, uri)
@@ -119,271 +135,331 @@ fun AddMemoryScreen(
                 mime.startsWith("image/") -> { mediaType = "photo"; ingestUri(uri, asImage = true) }
                 mime.startsWith("video/") -> { mediaType = "video"; ingestUri(uri, asImage = false) }
                 mime.startsWith("audio/") -> { mediaType = "audio"; ingestUri(uri, asImage = false) }
-                else -> {
-                    // PDF / other attach — store as note with attachment path via photo bucket mime
-                    mediaType = if (pendingBytes == null && description.isBlank()) "note" else mediaType
-                    ingestUri(uri, asImage = false)
-                }
+                else -> { mediaType = "document"; ingestUri(uri, asImage = false) }
             }
         }
     }
 
-    if (showDiscardConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDiscardConfirm = false },
-            icon = { Icon(Icons.Filled.WarningAmber, null, tint = Error) },
-            title = { Text(if (isThai) "ยกเลิกการบันทึก?" else "Discard this memory?") },
-            text = {
-                Text(
-                    if (isThai) "สิ่งที่คุณกรอกและไฟล์ที่แนบไว้จะไม่ถูกบันทึก"
-                    else "What you've written and the attached file won't be saved."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDiscardConfirm = false
-                    clearAttachment()
-                    onBack()
-                }) { Text(if (isThai) "ยกเลิกและออก" else "Discard", color = Error, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDiscardConfirm = false }) {
-                    Text(if (isThai) "กรอกต่อ" else "Keep editing")
-                }
-            }
-        )
-    }
-
-    if (showDatePicker) {
-        val initial = remember {
-            runCatching {
-                java.time.LocalDate.parse(memoryDate).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-            }.getOrElse { System.currentTimeMillis() }
-        }
-        val dateState = rememberDatePickerState(initialSelectedDateMillis = initial)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    dateState.selectedDateMillis?.let { ms ->
-                        memoryDate = java.time.Instant.ofEpochMilli(ms)
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toLocalDate()
-                            .format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    }
-                    showDatePicker = false
-                }) { Text(if (isThai) "ตกลง" else "OK") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text(if (isThai) "ยกเลิก" else "Cancel") }
-            }
-        ) { DatePicker(state = dateState) }
-    }
 
     Scaffold(
         topBar = {
             LullabyTopBar(
                 title = if (isThai) "เพิ่มความทรงจำ" else "Add Memory",
-                onBack = onBack,
+                onBack = { if (hasUnsavedWork) showDiscardConfirm = true else onBack() },
                 navController = navController
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
-            Modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (isThai) "เลือกสื่อความประทับใจ" else "Choose media",
-                style = MaterialTheme.typography.labelMedium,
-                color = OnSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MediaTypeCard(
-                    Icons.Filled.PhotoCamera,
-                    if (isThai) "รูปภาพ" else "Photo",
-                    selected = mediaType == "photo",
-                    Modifier.weight(1f)
+            // Media Selection Section
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = if (isThai) "เลือกสื่อความประทับใจ" else "Select Media Type",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurfaceVariant,
+                    letterSpacing = 0.5.sp
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    mediaType = "photo"
-                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }
-                MediaTypeCard(
-                    Icons.Filled.Videocam,
-                    if (isThai) "วิดีโอ" else "Video",
-                    selected = mediaType == "video",
-                    Modifier.weight(1f)
-                ) {
-                    mediaType = "video"
-                    videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                }
-                MediaTypeCard(
-                    Icons.Filled.Mic,
-                    if (isThai) "บันทึกเสียง" else "Audio",
-                    selected = mediaType == "audio",
-                    Modifier.weight(1f)
-                ) {
-                    mediaType = "audio"
-                    audioPicker.launch("audio/*")
+                    MediaTypeChoiceCard(
+                        icon = Icons.Filled.PhotoCamera,
+                        label = if (isThai) "รูปภาพ" else "Photo",
+                        selected = mediaType == "photo",
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        mediaType = "photo"
+                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+
+                    MediaTypeChoiceCard(
+                        icon = Icons.Filled.Videocam,
+                        label = if (isThai) "วิดีโอ" else "Video",
+                        selected = mediaType == "video",
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        mediaType = "video"
+                        videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                    }
+
+                    MediaTypeChoiceCard(
+                        icon = Icons.Filled.Mic,
+                        label = if (isThai) "บันทึกเสียง" else "Audio",
+                        selected = mediaType == "audio",
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        mediaType = "audio"
+                        audioPicker.launch("audio/*")
+                    }
                 }
             }
 
-            // Which formats the currently-selected type actually accepts. Shown even before a
-            // pick so the parent knows what to look for in the picker.
-            Text(
-                supportedFormatHint(mediaType, isThai),
-                style = MaterialTheme.typography.labelSmall,
-                color = Outline
-            )
+            // Attachment / Dropzone Card
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = if (isThai) "แนบเอกสาร / ไฟล์ (Attach Files)" else "Attach Files",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurfaceVariant,
+                    letterSpacing = 0.5.sp
+                )
 
-            // Replay the picked clip before committing it. Photos already preview via the
-            // filename row, so only audio/video get a player.
-            pendingUri?.let { uri ->
-                when (mediaType) {
-                    "audio" -> AudioReplayCard(uri = uri, fileName = pendingName, isThai = isThai)
-                    "video" -> VideoReplayCard(uri = uri, isThai = isThai)
-                    else -> Unit
-                }
-            }
+                if (pendingBytes != null) {
+                    // Preview Card
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(0.3f)),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        when (mediaType) {
+                                            "video" -> Icons.Filled.Videocam
+                                            "audio" -> Icons.Filled.Mic
+                                            "document" -> Icons.Filled.Description
+                                            else -> Icons.Filled.Image
+                                        },
+                                        null,
+                                        tint = Primary
+                                    )
+                                    Text(
+                                        pendingName ?: "attached_file",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Primary,
+                                        maxLines = 1
+                                    )
+                                }
+                                IconButton(onClick = { clearAttachment() }) {
+                                    Icon(Icons.Filled.Close, null, tint = Error)
+                                }
+                            }
 
-            Text(
-                if (isThai) "แนบเอกสาร (Attach Files)" else "Attach files",
-                style = MaterialTheme.typography.labelMedium,
-                color = OnSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
-            Card(
-                onClick = { filePicker.launch("*/*") },
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(2.dp, OutlineVariant, RoundedCornerShape(18.dp))
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Filled.CloudUpload, null, tint = Primary, modifier = Modifier.size(48.dp))
-                    Text(
-                        if (pendingName != null)
-                            (if (isThai) "เลือกแล้ว: " else "Selected: ") + pendingName
-                        else if (isThai) "แตะเพื่ออัปโหลดไฟล์ (PDF, JPG, PNG)"
-                        else "Tap to upload (PDF, JPG, PNG)",
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(supportedFormatHint("file", isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
-                    // Explicit Cancel for a picked-but-not-yet-saved attachment — user asked for
-                    // a real button to back out of the attach step rather than just re-picking.
-                    if (pendingName != null) {
-                        TextButton(onClick = { clearAttachment() }) {
-                            Icon(Icons.Filled.Close, null, tint = Error, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (isThai) "ยกเลิกไฟล์นี้" else "Cancel attachment", color = Error, fontWeight = FontWeight.Bold)
+                            if (mediaType == "photo" && pendingUri != null) {
+                                AsyncImage(
+                                    model = pendingUri,
+                                    contentDescription = "Uploaded Photo",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(14.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else if (mediaType == "video" && pendingUri != null) {
+                                VideoReplayCard(
+                                    uri = pendingUri!!,
+                                    isThai = isThai,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onEditStudio = { showVideoStudio = true }
+                                )
+                            } else if (mediaType == "audio" && pendingUri != null) {
+                                AudioReplayCard(
+                                    uri = pendingUri!!,
+                                    fileName = pendingName,
+                                    isThai = isThai,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Card(
+                        onClick = { filePicker.launch("*/*") },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow.copy(alpha = 0.5f)),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Primary.copy(0.25f)),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Filled.CloudUpload, null, tint = Primary, modifier = Modifier.size(44.dp))
+                            Text(
+                                if (isThai) "แตะเพื่ออัปโหลดไฟล์ (PDF, JPG, PNG, MP4)" else "Tap to upload file (PDF, JPG, PNG, MP4)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = OnSurface
+                            )
+                            Text(
+                                if (isThai) "ขนาดสูงสุด 10MB" else "Max size 10MB",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Outline
+                            )
                         }
                     }
                 }
             }
 
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (isThai) "หัวข้อ (ไม่บังคับ)" else "Title (optional)") },
-                shape = RoundedCornerShape(14.dp)
-            )
-
-            OutlinedTextField(
-                value = formatMemoryDate(memoryDate, isThai),
-                onValueChange = {},
-                readOnly = true,
-                modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true },
-                label = { Text(if (isThai) "วันที่บันทึก" else "Memory date") },
-                leadingIcon = { Icon(Icons.Filled.CalendarToday, null, tint = Primary) },
-                trailingIcon = {
-                    IconButton(onClick = { showDatePicker = true }) {
-                        Icon(Icons.Filled.EditCalendar, null)
-                    }
-                },
-                shape = RoundedCornerShape(14.dp)
-            )
-
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
-                label = { Text(if (isThai) "เล่าเรื่องราวความประทับใจ..." else "Tell the story...") },
-                placeholder = {
-                    Text(
-                        if (isThai) "วันนี้ลูกน้อยทำอะไรที่ทำให้คุณยิ้มได้บ้าง?"
-                        else "What made you smile today?"
-                    )
-                },
-                shape = RoundedCornerShape(14.dp)
-            )
-
-            Text(
-                if (isThai) "แท็กเหตุการณ์สำคัญ (Milestone)" else "Milestone tags",
-                style = MaterialTheme.typography.labelMedium,
-                color = OnSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
-            val tags = listOf(
-                "first_step" to (if (isThai) "ก้าวแรก" else "First steps"),
-                "first_word" to (if (isThai) "คำแรก" else "First words"),
-                "first_smile" to (if (isThai) "ยิ้มแรก" else "First smile"),
-                "first_tooth" to (if (isThai) "ฟันซี่แรก" else "First tooth")
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // wrap via Flow-like rows
-            }
+            // Date Selection
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    tags.take(2).forEach { (key, label) ->
+                Text(
+                    text = if (isThai) "วันที่บันทึก (Memory Date)" else "Memory Date",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = formatMemoryDate(memoryDate, isThai),
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDatePicker = true },
+                    trailingIcon = {
+                        IconButton(onClick = { showDatePicker = true }) {
+                            Icon(Icons.Filled.CalendarToday, null, tint = Primary)
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedBorderColor = OutlineVariant
+                    )
+                )
+            }
+
+            // Story Description
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (isThai) "เล่าเรื่องราวความประทับใจ..." else "Story & Description",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(if (isThai) "วันนี้ลูกน้อยทำอะไรที่ทำให้คุณยิ้มได้บ้าง?" else "What made you smile today?")
+                    },
+                    minLines = 4,
+                    maxLines = 8,
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedBorderColor = OutlineVariant
+                    )
+                )
+            }
+
+            // Milestone Chips Section
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC107), modifier = Modifier.size(18.dp))
+                    Text(
+                        text = if (isThai) "แท็กเหตุการณ์สำคัญ (Milestone)" else "Milestone Tag",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = OnSurfaceVariant
+                    )
+                }
+
+                val standardTags = listOf(
+                    "first_step" to (if (isThai) "ก้าวแรก" else "First Step"),
+                    "first_word" to (if (isThai) "คำแรก" else "First Word"),
+                    "first_smile" to (if (isThai) "ยิ้มแรก" else "First Smile"),
+                    "first_tooth" to (if (isThai) "ฟันซี่แรก" else "First Tooth")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    standardTags.forEach { (tagKey, tagLabel) ->
+                        val isSelected = milestoneTag == tagKey
                         FilterChip(
-                            selected = milestoneTag == key,
-                            onClick = { milestoneTag = if (milestoneTag == key) null else key },
-                            label = { Text(label) },
-                            leadingIcon = if (milestoneTag == key) {
-                                { Icon(Icons.Filled.Star, null, Modifier.size(16.dp)) }
-                            } else null
+                            selected = isSelected,
+                            onClick = { milestoneTag = if (isSelected) null else tagKey },
+                            label = { Text(tagLabel, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            shape = RoundedCornerShape(100.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SecondaryContainer,
+                                selectedLabelColor = Primary,
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                labelColor = OnSurfaceVariant
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = if (isSelected) Primary else OutlineVariant
+                            )
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    tags.drop(2).forEach { (key, label) ->
-                        FilterChip(
-                            selected = milestoneTag == key,
-                            onClick = { milestoneTag = if (milestoneTag == key) null else key },
-                            label = { Text(label) }
-                        )
-                    }
+
+                // Custom Tag Button
+                OutlinedButton(
+                    onClick = { showCustomTagDialog = true },
+                    shape = RoundedCornerShape(100.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, OutlineVariant)
+                ) {
+                    Icon(Icons.Filled.Add, null, modifier = Modifier.size(16.dp), tint = Primary)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (milestoneTag != null && standardTags.none { it.first == milestoneTag }) milestoneTag!!
+                        else (if (isThai) "เพิ่มแท็กอื่นๆ" else "Add Custom Tag"),
+                        color = Primary,
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
 
+            // Atmosphere Quote
             Column(
-                Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(Icons.Filled.AutoAwesome, null, tint = Primary.copy(0.35f), modifier = Modifier.size(40.dp))
-                Spacer(Modifier.height(6.dp))
+                Icon(Icons.Filled.AutoAwesome, null, tint = Primary.copy(alpha = 0.35f), modifier = Modifier.size(36.dp))
                 Text(
-                    if (isThai) "ทุกเสี้ยววินาทีคือสิ่งล้ำค่า เราช่วยรักษาไว้ให้คุณ"
-                    else "Every moment is precious — we help you keep it",
+                    text = if (isThai) "ทุกเสี้ยววินาทีคือสิ่งล้ำค่า เราช่วยรักษาไว้ให้คุณ" else "Every moment is precious — we help keep it safe",
                     style = MaterialTheme.typography.labelSmall,
                     color = Outline,
                     textAlign = TextAlign.Center
                 )
             }
+
+            // Export to Social Section (TikTok, Instagram, YouTube Shorts with NongRak License)
+            SocialExportSection(
+                title = title.ifBlank { null },
+                description = description.ifBlank { null },
+                date = memoryDate,
+                mediaUri = pendingUri,
+                mimeType = pendingMime,
+                isThai = isThai
+            )
+
 
             formError?.let {
                 Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
@@ -392,11 +468,11 @@ fun AddMemoryScreen(
                 Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
             }
 
+            // Save Memory Button
             Button(
                 onClick = {
                     if (pendingBytes == null && description.isBlank()) {
-                        formError = if (isThai) "กรุณาเพิ่มรูป/ไฟล์ หรือเขียนเรื่องราว"
-                        else "Add a photo/file or write a story"
+                        formError = if (isThai) "กรุณาเพิ่มรูป/ไฟล์ หรือเขียนเรื่องราว" else "Add a photo/file or write a story"
                         return@Button
                     }
                     val type = when {
@@ -414,44 +490,171 @@ fun AddMemoryScreen(
                         milestoneTag = milestoneTag,
                         isMilestone = milestoneTag != null
                     ) { ok ->
-                        if (ok) onBack()
-                        else formError = if (isThai) "บันทึกไม่สำเร็จ" else "Save failed"
+                        if (ok) {
+                            Toast.makeText(
+                                context,
+                                if (isThai) "บันทึกความทรงจำเรียบร้อยแล้ว ✨" else "Memory saved ✨",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            onBack()
+                        } else {
+                            formError = if (isThai) "บันทึกไม่สำเร็จ" else "Save failed"
+                        }
                     }
                 },
                 enabled = !state.isSaving,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .shadow(6.dp, RoundedCornerShape(18.dp), spotColor = Primary),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Primary)
             ) {
                 if (state.isSaving) {
-                    CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Filled.Save, null)
+                    Icon(Icons.Filled.Save, null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "บันทึกความทรงจำ" else "Save memory", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isThai) "บันทึกความทรงจำ" else "Save Memory",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 }
             }
 
-            // Screen-level escape hatch. Confirms only when there is something to lose, so an
-            // accidental entry into this screen backs out in one tap.
+            // Cancel Button
             OutlinedButton(
                 onClick = { if (hasUnsavedWork) showDiscardConfirm = true else onBack() },
-                enabled = !state.isSaving,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(18.dp),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, OutlineVariant)
+                border = androidx.compose.foundation.BorderStroke(1.dp, OutlineVariant)
             ) {
-                Icon(Icons.Filled.Close, null, tint = OnSurfaceVariant, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (isThai) "ยกเลิก" else "Cancel", color = OnSurfaceVariant, fontWeight = FontWeight.Bold)
+                Text(if (isThai) "ยกเลิก" else "Cancel", color = OnSurfaceVariant, fontWeight = FontWeight.SemiBold)
             }
+
             Spacer(Modifier.height(32.dp))
         }
     }
+
+    // Custom Tag Dialog
+    if (showCustomTagDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomTagDialog = false },
+            title = { Text(if (isThai) "เพิ่มแท็กเหตุการณ์สำคัญ" else "Add Milestone Tag") },
+            text = {
+                OutlinedTextField(
+                    value = customTagInput,
+                    onValueChange = { customTagInput = it },
+                    placeholder = { Text(if (isThai) "เช่น คลานครั้งแรก, ว่ายน้ำ..." else "e.g. First swim...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (customTagInput.isNotBlank()) {
+                            milestoneTag = customTagInput.trim()
+                        }
+                        showCustomTagDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) {
+                    Text(if (isThai) "บันทึกแท็ก" else "Save Tag")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomTagDialog = false }) {
+                    Text(if (isThai) "ยกเลิก" else "Cancel")
+                }
+            }
+        )
+    }
+
+    // Discard Confirmation Dialog
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text(if (isThai) "ยกเลิกการบันทึก?" else "Discard changes?") },
+            text = {
+                Text(
+                    if (isThai) "คุณมีข้อมูลที่ยังไม่ได้บันทึก หากออกตอนนี้ข้อมูลจะสูญหาย"
+                    else "You have unsaved changes. Are you sure you want to discard them?"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDiscardConfirm = false
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Error)
+                ) {
+                    Text(if (isThai) "ละทิ้งข้อมูล" else "Discard")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirm = false }) {
+                    Text(if (isThai) "แก้ไขต่อ" else "Keep editing")
+                }
+            }
+        )
+    }
+
+    // Date Picker Dialog
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val localDate = java.time.Instant.ofEpochMilli(millis)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate()
+                        memoryDate = localDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    }
+                    showDatePicker = false
+                }) {
+                    Text(if (isThai) "เลือก" else "Select")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(if (isThai) "ยกเลิก" else "Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    // Video Studio & Magic FX Dialog
+    if (showVideoStudio && pendingUri != null) {
+
+        NongRakVideoStudioDialog(
+            videoUri = pendingUri!!,
+            title = title.ifBlank { null },
+            description = description.ifBlank { null },
+            memoryDate = memoryDate,
+            isThai = isThai,
+            onDismiss = { showVideoStudio = false },
+            onApply = { effect, music, intro ->
+                Toast.makeText(
+                    context,
+                    if (isThai) "นำเอฟเฟกต์ '${effect.titleTh}' และ '${music.titleTh}' มาใช้แล้ว ✨"
+                    else "Applied '${effect.titleEn}' and '${music.titleEn}' ✨",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+    }
 }
 
+
 @Composable
-private fun MediaTypeCard(
+private fun MediaTypeChoiceCard(
     icon: ImageVector,
     label: String,
     selected: Boolean,
@@ -461,22 +664,41 @@ private fun MediaTypeCard(
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) Color(0xFFDBE1FF) else MaterialTheme.colorScheme.surface
         ),
-        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, Primary) else null,
-        elevation = CardDefaults.cardElevation(1.dp)
+        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, Primary) else androidx.compose.foundation.BorderStroke(1.dp, OutlineVariant),
+        elevation = CardDefaults.cardElevation(if (selected) 3.dp else 1.dp)
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(vertical = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp, horizontal = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Surface(shape = CircleShape, color = Primary.copy(0.1f)) {
-                Icon(icon, null, tint = Primary, modifier = Modifier.padding(10.dp))
+            Surface(
+                shape = CircleShape,
+                color = if (selected) Primary else Primary.copy(0.1f),
+                modifier = Modifier.size(46.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        icon,
+                        null,
+                        tint = if (selected) Color.White else Primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
-            Text(label, color = Primary, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
+            Text(
+                label,
+                color = Primary,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelMedium
+            )
         }
     }
 }
+

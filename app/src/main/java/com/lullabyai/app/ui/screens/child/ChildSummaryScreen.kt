@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -29,7 +30,6 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.ui.components.NoChildDataCard
 import com.lullabyai.app.ui.navigation.Screen
-import com.lullabyai.app.ui.screens.onboarding.ParentTourSteps
 import com.lullabyai.app.ui.screens.onboarding.tourAnchor
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ChatViewModel
@@ -68,7 +68,6 @@ fun ChildSummaryScreen(
     navController: NavController,
     onboardingViewModel: OnboardingViewModel,
     onBack: () -> Unit,
-    parentTourStep: Int? = null,
     isTourMode: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
@@ -135,20 +134,15 @@ fun ChildSummaryScreen(
             com.lullabyai.app.ui.components.ChildLoadErrorCard(s.isThai) { childViewModel.loadChild() }
         }
         } else if (!tourPreview && childState.children.isEmpty() && !childState.isLoading) {
-        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            NoChildDataCard(s.isThai) { navController.navigate(Screen.AddChildChoice.route) }
-        }
-        } else {
-        val scrollState = rememberScrollState()
-        LaunchedEffect(parentTourStep) {
-            when (parentTourStep) {
-                ParentTourSteps.STEP_CHILD_SWITCH -> scrollState.animateScrollTo(0)
-                ParentTourSteps.STEP_CHILD_ACTIONS -> {
-                    kotlinx.coroutines.delay(350)
-                    scrollState.animateScrollTo(scrollState.maxValue)
+            NoChildDataCard(s.isThai) {
+                if (childViewModel.isGuest()) {
+                    childViewModel.promptRegistration(if (s.isThai) "ต้องสมัครสมาชิกก่อนเพิ่มข้อมูลลูก" else "Registration required to add a child")
+                } else {
+                    navController.navigate(Screen.AddChildChoice.route)
                 }
             }
-        }
+        } else {
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -291,8 +285,22 @@ fun ChildSummaryScreen(
                                 childAvatarSignedUrl = childState.childAvatarSignedUrl,
                                 ownedChildIds = childState.ownedChildIds,
                                 onSelect = { c -> showSwitcherSheet = false; childViewModel.selectChild(c.id) },
-                                onDelete = { c -> showSwitcherSheet = false; childToDelete = c },
-                                onAddChild = { showSwitcherSheet = false; navController.navigate(Screen.AddChildChoice.route) },
+                                onDelete = { c ->
+                                    showSwitcherSheet = false
+                                    if (childViewModel.isGuest()) {
+                                        childViewModel.promptRegistration(if (s.isThai) "บัญชีทดลองไม่สามารถลบโปรไฟล์ได้" else "Cannot delete profile in demo mode")
+                                    } else {
+                                        childToDelete = c
+                                    }
+                                },
+                                onAddChild = {
+                                    showSwitcherSheet = false
+                                    if (childViewModel.isGuest()) {
+                                        childViewModel.promptRegistration(if (s.isThai) "ต้องสมัครสมาชิกก่อนเพิ่มข้อมูลลูก" else "Registration required to add a child")
+                                    } else {
+                                        navController.navigate(Screen.AddChildChoice.route)
+                                    }
+                                },
                                 onDismiss = { showSwitcherSheet = false }
                             )
                         }
@@ -353,24 +361,100 @@ fun ChildSummaryScreen(
                 ) { navController.navigate(Screen.GrowthHistory.route) }
             }
 
-            // Stitch "Child Summary with Suggestion Button" — the suggestion CTA sits between the
-            // growth indicators and the AI Analysis card, and opens AI Suggestions & Guidance (#11).
+            // Unique standout AI Guidance ("คำแนะนำ AI") button linking to full AI Guidance & Daily Brief
             Card(
                 onClick = { navController.navigate(AI_GUIDANCE_ROUTE) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Primary),
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    Text(
-                        if (s.isThai) "ดูคำแนะนำจาก AI" else "View AI suggestions",
-                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                        color = Color.White, modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFF8E24AA).copy(alpha = 0.5f),
+                            Color(0xFF673AB7).copy(alpha = 0.6f),
+                            Color(0xFF3949AB).copy(alpha = 0.5f)
+                        )
                     )
-                    Icon(Icons.Filled.ChevronRight, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(20.dp))
+                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFF5E35B1),
+                                    Color(0xFF4527A0),
+                                    Color(0xFF283593)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color(0xFFFFD54F),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    if (s.isThai) "คำแนะนำ AI" else "AI Guidance",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(100.dp),
+                                    color = Color(0xFFFFD54F).copy(alpha = 0.22f)
+                                ) {
+                                    Text(
+                                        if (s.isThai) "✨ เจาะลึกรายวัน" else "✨ Daily Focus",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFFFFE082),
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                            Text(
+                                if (s.isThai) "คำแนะนำพัฒนาการและกิจวัตรประจำวันเฉพาะสำหรับลูกน้อย"
+                                else "Personalized developmental & daily guidance for your baby",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp,
+                                maxLines = 1
+                            )
+                        }
+                        Icon(
+                            Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
 
@@ -507,41 +591,134 @@ fun ChildSummaryScreen(
                 // groups — things you record, then things you export or administer. The old flat
                 // run of tiles gave "บันทึกสุขภาพ" and "สิทธิ์การเข้าถึง" identical weight, which
                 // is why the screen read as a wall.
+                val isGuestUser = childViewModel.isGuest()
                 ChildActionGroup(
-                    title = if (s.isThai) "สุขภาพและบันทึก" else "Health & records",
-                    tiles = listOf(
-                        ChildTile(Icons.Filled.AddCircle,
-                            if (s.isThai) "บันทึกสุขภาพ" else "Health log", Screen.HealthLog.route),
-                        ChildTile(Icons.Filled.Analytics,
-                            if (s.isThai) "ดูสถิติ" else "Stats", Screen.StatisticsInsights.route),
-                        ChildTile(Icons.Filled.EventNote,
-                            if (s.isThai) "สมุดความจำ" else "Memory book", Screen.ChildDiary.route),
-                        ChildTile(Icons.Filled.Bolt,
-                            if (s.isThai) "บันทึกด่วน" else "Quick log", Screen.QuickLogHub.route),
-                        ChildTile(Icons.Filled.Payments,
-                            if (s.isThai) "ค่าใช้จ่าย" else "Expenses", Screen.Expenses.route),
-                        // The design's sixth tile: now a real calendar, so it carries the design's
-                        // own name again rather than the appointment record it stood in for.
-                        ChildTile(Icons.Filled.CalendarMonth,
-                            if (s.isThai) "ปฏิทิน" else "Calendar", Screen.ActivitySchedule.route)
-                    ),
+                    title = if (s.isThai) "สุขภาพและบันทึก" else "Health & Records",
+                    tiles = if (isGuestUser) {
+                        listOf(
+                            ChildTile(
+                                icon = Icons.Filled.AddCircle,
+                                label = if (s.isThai) "บันทึกสุขภาพ" else "Health log",
+                                route = Screen.HealthLog.route,
+                                iconTint = Color(0xFF00897B),
+                                iconBg = Color(0xFFE0F2F1)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Analytics,
+                                label = if (s.isThai) "ดูสถิติ" else "Stats",
+                                route = Screen.StatisticsInsights.route,
+                                iconTint = Color(0xFF3949AB),
+                                iconBg = Color(0xFFE8EAF6)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Bolt,
+                                label = if (s.isThai) "บันทึกด่วน" else "Quick log",
+                                route = Screen.QuickLogHub.route,
+                                iconTint = Color(0xFF7B1FA2),
+                                iconBg = Color(0xFFF3E5F5)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Payments,
+                                label = if (s.isThai) "ค่าใช้จ่าย" else "Expenses",
+                                route = Screen.Expenses.route,
+                                iconTint = Color(0xFF2E7D32),
+                                iconBg = Color(0xFFE8F5E9)
+                            )
+                        )
+                    } else {
+                        listOf(
+                            ChildTile(
+                                icon = Icons.Filled.AddCircle,
+                                label = if (s.isThai) "บันทึกสุขภาพ" else "Health log",
+                                route = Screen.HealthLog.route,
+                                iconTint = Color(0xFF00897B),
+                                iconBg = Color(0xFFE0F2F1)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Analytics,
+                                label = if (s.isThai) "ดูสถิติ" else "Stats",
+                                route = Screen.StatisticsInsights.route,
+                                iconTint = Color(0xFF3949AB),
+                                iconBg = Color(0xFFE8EAF6)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.EventNote,
+                                label = if (s.isThai) "สมุดความจำ" else "Memory book",
+                                route = Screen.ChildDiary.route,
+                                iconTint = Color(0xFFE65100),
+                                iconBg = Color(0xFFFFF3E0)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Bolt,
+                                label = if (s.isThai) "บันทึกด่วน" else "Quick log",
+                                route = Screen.QuickLogHub.route,
+                                iconTint = Color(0xFF7B1FA2),
+                                iconBg = Color(0xFFF3E5F5)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Payments,
+                                label = if (s.isThai) "ค่าใช้จ่าย" else "Expenses",
+                                route = Screen.Expenses.route,
+                                iconTint = Color(0xFF2E7D32),
+                                iconBg = Color(0xFFE8F5E9)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.Schedule,
+                                label = if (s.isThai) "ปฏิทินกิจกรรม" else "Activities",
+                                route = Screen.ActivitySchedule.route,
+                                iconTint = Color(0xFF0288D1),
+                                iconBg = Color(0xFFE1F5FE)
+                            )
+                        )
+                    },
                     onNavigate = { navController.navigate(it) }
                 )
 
                 ChildActionGroup(
-                    title = if (s.isThai) "รายงานและการจัดการ" else "Reports & management",
-                    tiles = listOf(
-                        ChildTile(Icons.Filled.PictureAsPdf,
-                            if (s.isThai) "ส่งออก PDF" else "Export PDF", Screen.PdfExport.route),
-                        ChildTile(Icons.Filled.FolderOpen,
-                            if (s.isThai) "คลังเอกสาร" else "Document vault", Screen.MedicalDataVault.route),
-                        ChildTile(Icons.Filled.LockPerson,
-                            if (s.isThai) "สิทธิ์การเข้าถึง" else "Access", Screen.PermissionAccess.route),
-                        // Every role with access to this child gets a way to reach the parents —
-                        // a doctor or grandparent needs it as much as the nanny does.
-                        ChildTile(Icons.Filled.ChatBubble,
-                            if (s.isThai) "แชทกับผู้ดูแล" else "Chat", Screen.CareCircle.route)
-                    ),
+                    title = if (s.isThai) "รายงานและการจัดการ" else "Reports & Management",
+                    tiles = if (isGuestUser) {
+                        listOf(
+                            ChildTile(
+                                icon = Icons.Filled.PictureAsPdf,
+                                label = if (s.isThai) "ส่งออก PDF" else "Export PDF",
+                                route = Screen.PdfExport.route,
+                                iconTint = Color(0xFFC62828),
+                                iconBg = Color(0xFFFFEBEE),
+                                badge = if (s.isThai) "ทดลอง" else "Demo"
+                            )
+                        )
+                    } else {
+                        listOf(
+                            ChildTile(
+                                icon = Icons.Filled.PictureAsPdf,
+                                label = if (s.isThai) "ส่งออก PDF" else "Export PDF",
+                                route = Screen.PdfExport.route,
+                                iconTint = Color(0xFFC62828),
+                                iconBg = Color(0xFFFFEBEE)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.FolderOpen,
+                                label = if (s.isThai) "คลังเอกสาร" else "Document vault",
+                                route = Screen.MedicalDataVault.route,
+                                iconTint = Color(0xFF0097A7),
+                                iconBg = Color(0xFFE0F7FA)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.LockPerson,
+                                label = if (s.isThai) "สิทธิ์การเข้าถึง" else "Access & roles",
+                                route = Screen.PermissionAccess.route,
+                                iconTint = Color(0xFF5E35B1),
+                                iconBg = Color(0xFFEDE7F6)
+                            ),
+                            ChildTile(
+                                icon = Icons.Filled.ChatBubble,
+                                label = if (s.isThai) "แชทกับผู้ดูแล" else "Care chat",
+                                route = Screen.CareCircle.route,
+                                iconTint = Color(0xFF1565C0),
+                                iconBg = Color(0xFFE3F2FD)
+                            )
+                        )
+                    },
                     onNavigate = { navController.navigate(it) }
                 )
             }
@@ -629,12 +806,18 @@ private fun ChildSwitcherSheet(
     }
 }
 
-/** One tile in a Child-info action group. */
-private data class ChildTile(val icon: ImageVector, val label: String, val route: String)
+/** One tile in a Child-info Bento action group. */
+private data class ChildTile(
+    val icon: ImageVector,
+    val label: String,
+    val route: String,
+    val iconTint: Color = Primary,
+    val iconBg: Color = PrimaryContainer.copy(0.45f),
+    val badge: String? = null
+)
 
 /**
- * A named group of action tiles, two per row — the Stitch Child-info arrangement. The heading is
- * what does the work: it tells you which half of the screen you are in before you read any label.
+ * Modern Bento-grid action group with responsive 2-column layout and vibrant icon containers.
  */
 @Composable
 private fun ChildActionGroup(
@@ -642,42 +825,78 @@ private fun ChildActionGroup(
     tiles: List<ChildTile>,
     onNavigate: (String) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             title,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
         )
         tiles.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 pair.forEach { t ->
                     Card(
                         onClick = { onNavigate(t.route) },
-                        modifier = Modifier.weight(1f).height(118.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(96.dp),
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(1.dp)
+                        elevation = CardDefaults.cardElevation(1.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                        )
                     ) {
                         Column(
-                            Modifier.fillMaxSize().padding(14.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
-                                Modifier
-                                    .size(48.dp)
-                                    .background(PrimaryContainer.copy(0.45f), RoundedCornerShape(16.dp)),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(t.icon, null, tint = Primary, modifier = Modifier.size(24.dp))
+                                Box(
+                                    Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(t.iconBg),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(t.icon, null, tint = t.iconTint, modifier = Modifier.size(20.dp))
+                                }
+                                if (t.badge != null) {
+                                    Surface(
+                                        shape = RoundedCornerShape(100.dp),
+                                        color = t.iconTint.copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            text = t.badge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = t.iconTint,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        Icons.Filled.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
-                            Spacer(Modifier.height(10.dp))
                             Text(
-                                t.label,
+                                text = t.label,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                maxLines = 2,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }

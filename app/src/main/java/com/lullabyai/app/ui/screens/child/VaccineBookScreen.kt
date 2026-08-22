@@ -92,6 +92,7 @@ fun VaccineBookScreen(
     var certTarget by remember { mutableStateOf<VaccineRecord?>(null) }
     var certUploading by remember { mutableStateOf(false) }
     var certError by remember { mutableStateOf<String?>(null) }
+    var viewingDocument by remember { mutableStateOf<com.lullabyai.app.ui.components.DocumentViewSource?>(null) }
 
     fun viewCertificate(record: VaccineRecord) {
         val path = record.certificateUrl ?: return
@@ -100,15 +101,11 @@ fun VaccineBookScreen(
                 certError = if (s.isThai) "เปิดใบรับรองไม่สำเร็จ" else "Could not open certificate"
                 return@openVaccineCertificate
             }
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                )
-            }.onFailure {
-                certError = if (s.isThai) "ไม่พบแอปเปิดไฟล์ PDF" else "No app to open the file"
-            }
+            viewingDocument = com.lullabyai.app.ui.components.DocumentViewSource.Remote(
+                url = url,
+                displayTitle = if (s.isThai) "ใบรับรองวัคซีน - ${record.vaccineName}" else "Vaccine Certificate - ${record.vaccineName}",
+                mime = "application/pdf"
+            )
         }
     }
 
@@ -420,6 +417,12 @@ fun VaccineBookScreen(
             }
         }
     }
+
+    com.lullabyai.app.ui.components.InAppDocumentViewerDialog(
+        source = viewingDocument,
+        onDismiss = { viewingDocument = null },
+        isThai = s.isThai
+    )
 
     if (showAdd) {
         AddVaccineDialog(

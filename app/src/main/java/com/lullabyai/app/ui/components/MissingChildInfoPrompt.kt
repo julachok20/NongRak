@@ -57,7 +57,19 @@ fun MissingChildInfoPrompt(
                 missingFields.forEach { field -> Text("• $field", style = MaterialTheme.typography.bodyMedium) }
             }
         },
-        confirmButton = { TextButton(onClick = onFillIn) { Text(if (isThai) "กรอกข้อมูล" else "Fill in") } },
-        dismissButton = { TextButton(onClick = onSkip) { Text(if (isThai) "ข้าม" else "Skip") } }
+        confirmButton = {
+            androidx.compose.material3.Button(
+                onClick = onFillIn,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text(if (isThai) "กรอกข้อมูลเพิ่มเติม" else "Fill in info", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onSkip) {
+                Text(if (isThai) "ไว้ทีหลัง" else "Later", color = MaterialTheme.colorScheme.outline)
+            }
+        }
     )
 }

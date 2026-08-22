@@ -126,15 +126,16 @@ class ChatRepository {
         imageMime: String? = null,
         relationship: String? = null,
         /** The chosen companion's voice. Null keeps the neutral house tone. */
-        persona: String? = null
+        persona: String? = null,
+        isThai: Boolean = true
     ): Result<String> = runCatching {
         // Retrieve prior history (memory) BEFORE adding the new message
         val history = runCatching { getMessages(sessionId).getOrDefault(emptyList()) }.getOrDefault(emptyList())
 
-        val childContext = buildChildContext(child, relationship)
+        val childContext = buildChildContext(child, relationship, isThai)
 
         val conversation = history.joinToString("\n") { msg ->
-            val who = if (msg.role == "user") "ผู้ใช้" else "ผู้ช่วย"
+            val who = if (msg.role == "user") (if (isThai) "ผู้ใช้" else "User") else (if (isThai) "ผู้ช่วย" else "Assistant")
             "$who: ${msg.content}"
         }
 
@@ -148,33 +149,34 @@ class ChatRepository {
         val prompt = buildString {
             if (childContext.isNotEmpty()) { appendLine(childContext); appendLine() }
             if (ragChunks.isNotEmpty()) {
-                appendLine("ความรู้อ้างอิงจากคู่มือและงานวิจัยสุขภาพเด็ก (ใช้ประกอบการตอบเมื่อเกี่ยวข้อง อย่าแต่งข้อมูลเกินจากนี้):")
-                ragChunks.forEach { appendLine("- ${it.content} (ที่มา: ${it.source})") }
+                appendLine(
+                    if (isThai) "ความรู้อ้างอิงจากคู่มือและงานวิจัยสุขภาพเด็ก (ใช้ประกอบการตอบเมื่อเกี่ยวข้อง อย่าแต่งข้อมูลเกินจากนี้):"
+                    else "Reference knowledge from guidelines and pediatric research (use when relevant, do not hallucinate):"
+                )
+                ragChunks.forEach { appendLine("- ${it.content} (Source: ${it.source})") }
                 appendLine()
             }
             if (conversation.isNotEmpty()) {
-                appendLine("ประวัติการสนทนา (จดจำบริบททั้งหมด):")
+                appendLine(if (isThai) "ประวัติการสนทนา (จดจำบริบททั้งหมด):" else "Conversation history (remember full context):")
                 appendLine(conversation)
                 appendLine()
             }
-            appendLine("ตอบข้อความล่าสุดของผู้ใช้ต่อไปนี้อย่างเป็นธรรมชาติ โดยใช้บริบทข้างต้น:")
+            appendLine(
+                if (isThai) "ตอบข้อความล่าสุดของผู้ใช้ต่อไปนี้อย่างเป็นธรรมชาติ โดยใช้บริบทข้างต้น:"
+                else "Respond naturally to the user's latest message in English using the above context:"
+            )
             append(userMessage)
         }
 
         // Persist the user's message FIRST so it survives even if the AI call fails
         // (no response caching for chat — every message is its own conversation turn).
-        runCatching { saveMessage(sessionId, "user", userMessage.ifBlank { if (imageBytes != null) "[ส่งรูปภาพ]" else "" }) }
+        runCatching { saveMessage(sessionId, "user", userMessage.ifBlank { if (imageBytes != null) (if (isThai) "[ส่งรูปภาพ]" else "[Sent an image]") else "" }) }
 
         // Encode an attached image (downscaled by the caller) for the vision-capable AI path.
         val imageB64 = imageBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
 
-        // Call the AI (useSearch=false for chat: the system prompt already has the knowledge base).
-        // maxTokens 4096: Thai is token-heavy, so a smaller limit truncates answers mid-sentence.
-        val aiText = ClaudeClient.generateContent(
-            prompt, useSearch = false, maxTokens = 4096,
-            // The model has no clock. Without this it answers "เมื่อครู่" with a placeholder such
-            // as "[current_time - 3 minutes]" instead of a real HH:mm, and the action then fails.
-            system = RelationshipLabels.chatSystemPrompt(relationship) +
+        val systemPrompt = if (isThai) {
+            RelationshipLabels.chatSystemPrompt(relationship, isThai = true) +
                 persona.orEmpty() +
                 "\n\nเวลาปัจจุบันของผู้ใช้: " +
                 java.time.LocalDateTime.now()
@@ -182,7 +184,24 @@ class ChatRepository {
                 " (เขตเวลา " + java.time.ZoneId.systemDefault() + ")" +
                 "\nเมื่อผู้ใช้พูดถึงเวลาแบบสัมพัทธ์ เช่น \"เมื่อครู่\" \"เมื่อกี้\" \"ครึ่งชั่วโมงที่แล้ว\" " +
                 "ให้คำนวณเป็นเวลาจริงในรูปแบบ HH:mm จากเวลาปัจจุบันข้างต้นเสมอ " +
-                "ห้ามใส่ข้อความแทนค่า เช่น [current_time] ลงใน params เด็ดขาด",
+                "ห้ามใส่ข้อความแทนค่า เช่น [current_time] ลงใน params เด็ดขาด"
+        } else {
+            RelationshipLabels.chatSystemPrompt(relationship, isThai = false) +
+                persona.orEmpty() +
+                "\n\nCurrent user time: " +
+                java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) +
+                " (Timezone: " + java.time.ZoneId.systemDefault() + ")" +
+                "\nWhen the user mentions relative times like 'just now', 'a while ago', 'half an hour ago', " +
+                "always calculate the real time in HH:mm format from the current time above. " +
+                "Never put placeholders like [current_time] in params."
+        }
+
+        // Call the AI (useSearch=false for chat: the system prompt already has the knowledge base).
+        // maxTokens 4096: Thai is token-heavy, so a smaller limit truncates answers mid-sentence.
+        val aiText = ClaudeClient.generateContent(
+            prompt, useSearch = false, maxTokens = 4096,
+            system = systemPrompt,
             jsonMode = false,
             imageBase64 = imageB64, imageMimeType = imageMime ?: "image/jpeg"
         )
@@ -205,17 +224,25 @@ class ChatRepository {
     }
 
     /** Builds a rich context string from the child profile + medical history (synced from onboarding). */
-    private suspend fun buildChildContext(child: Child?, relationship: String? = null): String {
+    private suspend fun buildChildContext(child: Child?, relationship: String? = null, isThai: Boolean = true): String {
         if (child == null) {
             if (relationship.isNullOrBlank()) return ""
             return buildString {
-                append("ข้อมูลผู้ใช้:\n")
-                append("- ความสัมพันธ์กับเด็ก: ${RelationshipLabels.thaiRelationshipLabel(relationship)}\n")
-                append("- ให้เรียกผู้ใช้ว่า \"${RelationshipLabels.thaiAddress(relationship)}\"\n")
+                if (isThai) {
+                    append("ข้อมูลผู้ใช้:\n")
+                    append("- ความสัมพันธ์กับเด็ก: ${RelationshipLabels.thaiRelationshipLabel(relationship)}\n")
+                    append("- ให้เรียกผู้ใช้ว่า \"${RelationshipLabels.thaiAddress(relationship)}\"\n")
+                } else {
+                    append("User Profile:\n")
+                    append("- Relationship: ${RelationshipLabels.englishAddress(relationship)}\n")
+                    append("- Address user as: \"${RelationshipLabels.englishAddress(relationship)}\"\n")
+                }
             }
         }
         val activity = when (child.activityLevel) {
-            "low" -> "น้อย"; "high" -> "มาก"; else -> "ปานกลาง"
+            "low" -> if (isThai) "น้อย" else "Low"
+            "high" -> if (isThai) "มาก" else "High"
+            else -> if (isThai) "ปานกลาง" else "Moderate"
         }
         val medical = runCatching {
             supabase.from("medical_history").select {
@@ -250,28 +277,53 @@ class ChatRepository {
         val statsBlock = runCatching { buildStatsSummary(child.id) }.getOrNull().orEmpty()
 
         return buildString {
-            append("ข้อมูลผู้ใช้และเด็ก (ใช้ข้อมูลนี้ในการวิเคราะห์และให้คำแนะนำ):\n")
-            if (!relationship.isNullOrBlank()) {
-                append("- ผู้ใช้: ${RelationshipLabels.thaiAddress(relationship)} (${RelationshipLabels.thaiRelationshipLabel(relationship)})\n")
-            }
-            append("- ชื่อเด็ก: ${child.name}\n")
-            append("- อายุ: ${calculateAge(child.birthdate)} (วันเกิด ${child.birthdate})\n")
-            append("- เพศ: ${if (child.gender == "male") "ชาย" else if (child.gender == "female") "หญิง" else "ไม่ระบุ"}\n")
-            weightKg?.let { append("- น้ำหนัก: $it กก.\n") }
-            heightCm?.let { append("- ส่วนสูง: $it ซม.\n") }
-            child.sleepHours?.let { append("- นอนหลับเฉลี่ย: ${it.toInt()} ชม./วัน\n") }
-            append("- ระดับกิจกรรม: $activity\n")
-            if (!allergyText.isNullOrBlank()) append("- ประวัติแพ้: $allergyText\n")
-            if (child.notes?.isNotBlank() == true) append("- หมายเหตุ: ${child.notes}\n")
-            medical?.let { m ->
-                if (m.hasTakenMedication) append("- เคยได้รับยา: ${m.medicationDetails ?: "เคย"}\n")
-                if (!m.vaccinesGiven.isNullOrEmpty()) {
-                    val vaccines = m.vaccinesGiven.orEmpty()
-                    append("- วัคซีนที่ได้รับ (ตอนตั้งค่า): ${vaccines.joinToString(", ")}\n")
+            if (isThai) {
+                append("ข้อมูลผู้ใช้และเด็ก (ใช้ข้อมูลนี้ในการวิเคราะห์และให้คำแนะนำ):\n")
+                if (!relationship.isNullOrBlank()) {
+                    append("- ผู้ใช้: ${RelationshipLabels.thaiAddress(relationship)} (${RelationshipLabels.thaiRelationshipLabel(relationship)})\n")
                 }
+                append("- ชื่อเด็ก: ${child.name}\n")
+                append("- อายุ: ${calculateAge(child.birthdate)} (วันเกิด ${child.birthdate})\n")
+                append("- เพศ: ${if (child.gender == "male") "ชาย" else if (child.gender == "female") "หญิง" else "ไม่ระบุ"}\n")
+                weightKg?.let { append("- น้ำหนัก: $it กก.\n") }
+                heightCm?.let { append("- ส่วนสูง: $it ซม.\n") }
+                child.sleepHours?.let { append("- นอนหลับเฉลี่ย: ${it.toInt()} ชม./วัน\n") }
+                append("- ระดับกิจกรรม: $activity\n")
+                if (!allergyText.isNullOrBlank()) append("- ประวัติแพ้: $allergyText\n")
+                if (child.notes?.isNotBlank() == true) append("- หมายเหตุ: ${child.notes}\n")
+                medical?.let { m ->
+                    if (m.hasTakenMedication) append("- เคยได้รับยา: ${m.medicationDetails ?: "เคย"}\n")
+                    if (!m.vaccinesGiven.isNullOrEmpty()) {
+                        val vaccines = m.vaccinesGiven.orEmpty()
+                        append("- วัคซีนที่ได้รับ (ตอนตั้งค่า): ${vaccines.joinToString(", ")}\n")
+                    }
+                }
+                if (!chronicText.isNullOrBlank()) append("- โรคประจำตัว: $chronicText\n")
+                if (statsBlock.isNotBlank()) append(statsBlock)
+            } else {
+                append("User and Child Context (Use this to guide personalized advice in English):\n")
+                if (!relationship.isNullOrBlank()) {
+                    append("- User: ${RelationshipLabels.englishAddress(relationship)}\n")
+                }
+                append("- Child's Name: ${child.name}\n")
+                append("- Age: ${calculateAge(child.birthdate)} (Birthdate: ${child.birthdate})\n")
+                append("- Gender: ${if (child.gender == "male") "Male" else if (child.gender == "female") "Female" else "Unspecified"}\n")
+                weightKg?.let { append("- Weight: $it kg\n") }
+                heightCm?.let { append("- Height: $it cm\n") }
+                child.sleepHours?.let { append("- Average sleep: ${it.toInt()} hrs/day\n") }
+                append("- Activity Level: $activity\n")
+                if (!allergyText.isNullOrBlank()) append("- Allergies: $allergyText\n")
+                if (child.notes?.isNotBlank() == true) append("- Notes: ${child.notes}\n")
+                medical?.let { m ->
+                    if (m.hasTakenMedication) append("- Medications taken: ${m.medicationDetails ?: "Yes"}\n")
+                    if (!m.vaccinesGiven.isNullOrEmpty()) {
+                        val vaccines = m.vaccinesGiven.orEmpty()
+                        append("- Vaccines received: ${vaccines.joinToString(", ")}\n")
+                    }
+                }
+                if (!chronicText.isNullOrBlank()) append("- Chronic Conditions: $chronicText\n")
+                if (statsBlock.isNotBlank()) append(statsBlock)
             }
-            if (!chronicText.isNullOrBlank()) append("- โรคประจำตัว: $chronicText\n")
-            if (statsBlock.isNotBlank()) append(statsBlock)
             // Wearables / IoT device metrics (Health Connect + child devices) when present.
             val deviceBlock = runCatching {
                 WearableRepository().recentSummaryForAi(child.id)

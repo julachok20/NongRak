@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.compose.AsyncImage
+import com.lullabyai.app.ui.screens.onboarding.tourAnchor
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -77,6 +78,15 @@ private fun tabRootRoute(tab: BottomTab): String = when (tab) {
  * Welcome/Login — popping to that would throw the user out of the signed-in area.
  */
 private fun NavController.switchToTab(tab: BottomTab, isReselect: Boolean) {
+    if (tab == BottomTab.HOME) {
+        navigate(Screen.Dashboard.route) {
+            popUpTo(Screen.Dashboard.route) {
+                inclusive = false
+            }
+            launchSingleTop = true
+        }
+        return
+    }
     navigate(tabRootRoute(tab)) {
         popUpTo(Screen.Dashboard.route) {
             saveState = true
@@ -261,6 +271,7 @@ fun AppBottomNav(
             containerColor = Primary,
             contentColor = Color.White,
             modifier = Modifier
+                .tourAnchor("nav_ai_fab")
                 .align(Alignment.TopCenter)
                 .offset(y = (-22).dp)
         ) {
@@ -274,6 +285,7 @@ private fun RowScope.BottomNavBarItem(tab: BottomTab, selected: BottomTab, icon:
     val isSelected = tab == selected
     NavigationBarItem(
         selected = isSelected,
+        modifier = Modifier.tourAnchor("nav_" + tab.name),
         // Fires even when already selected — re-tapping the active tab is how the user gets
         // back to that section's main page (#6).
         onClick = onClick,
@@ -629,15 +641,25 @@ fun PrimaryButton(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .defaultMinSize(minHeight = 52.dp),
         shape = RoundedCornerShape(100.dp),
         enabled = enabled && !isLoading,
-        colors = ButtonDefaults.buttonColors(containerColor = Primary)
+        colors = ButtonDefaults.buttonColors(containerColor = Primary),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
     ) {
         if (isLoading) {
             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         } else {
-            Text(text, style = MaterialTheme.typography.labelLarge, color = Color.White, fontSize = 16.sp)
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
     }
 }

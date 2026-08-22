@@ -20,7 +20,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lullabyai.app.data.repository.NutritionRepository
+import com.lullabyai.app.ui.screens.onboarding.tourAnchor
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.RelationshipLabels
 import com.lullabyai.app.util.TimeUtils
@@ -51,11 +53,12 @@ fun DashboardScreen(
     onNavigateToSleep: () -> Unit = {},
     onNavigateToAddChild: () -> Unit = {},
     onNavigateToMentalHealth: () -> Unit = {},
-    onNavigateToPostpartum: () -> Unit = {},
     onNavigateToQuickLog: () -> Unit = {},
     onNavigateToWidgets: () -> Unit = {},
     onNavigateHome: () -> Unit = {},
     onNavigateToConnect: () -> Unit = {},
+    onNavigateToSignUp: () -> Unit = {},
+    onNavigateToHealthSurvey: () -> Unit = onNavigateToVaccine,
     isTourActive: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
@@ -63,16 +66,20 @@ fun DashboardScreen(
     val childState by childViewModel.uiState.collectAsState()
     val authState by authViewModel.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val isGuest = authViewModel.getCurrentUserId() == null || childState.child?.userId == "guest"
+    val hasCompletedVaccines = remember(childState.vaccines) {
+        childState.vaccines.any { it.status == "completed" }
+    }
 
     // Childless accounts are no longer blocked at startup — nudge them here instead, but rate-limited
     // to once per 4 hours (persisted) rather than every screen visit, which was too naggy.
     // error != null means the children fetch actually failed (network/auth blip) rather than the
     // account genuinely having zero children — don't nag to "add a child" they may already have.
     var showAddChildPopup by remember { mutableStateOf(false) }
-    LaunchedEffect(childState.isLoading, childState.children.size, childState.error, isTourActive) {
-        // Suppressed during the guided tour — its own overlay already covers the childless case,
+    LaunchedEffect(childState.isLoading, childState.children.size, childState.error, isTourActive, isGuest) {
+        // Suppressed during the guided tour or guest mode — its own overlay already covers the childless case,
         // and this AlertDialog would otherwise compete with the tour card for attention.
-        if (!isTourActive && !childState.isLoading && childState.children.isEmpty() && childState.error == null) {
+        if (!isGuest && !isTourActive && !childState.isLoading && childState.children.isEmpty() && childState.error == null) {
             val sm = com.lullabyai.app.data.settings.SettingsManager(context)
             if (sm.shouldShowAddChildPrompt()) {
                 sm.recordAddChildPromptShown()
@@ -107,8 +114,8 @@ fun DashboardScreen(
     // has had its turn so the two don't compete for attention on the same visit.
     var showWidgetPromo by remember { mutableStateOf(false) }
     val widgetPromoScope = rememberCoroutineScope()
-    LaunchedEffect(childState.isLoading, childState.children.size, isTourActive, showAddChildPopup) {
-        if (!isTourActive && !showAddChildPopup && !childState.isLoading && childState.children.isNotEmpty()) {
+    LaunchedEffect(childState.isLoading, childState.children.size, isTourActive, showAddChildPopup, isGuest) {
+        if (!isGuest && !isTourActive && !showAddChildPopup && !childState.isLoading && childState.children.isNotEmpty()) {
             val sm = com.lullabyai.app.data.settings.SettingsManager(context)
             if (!sm.hasSeenWidgetPromo.first()) {
                 showWidgetPromo = true
@@ -161,10 +168,10 @@ fun DashboardScreen(
         ?: authState.profile?.fullName?.takeIf { it.isNotBlank() }
     val relationship = authState.profile?.relationship
 
-    LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile(); childViewModel.loadPendingSyncRequests(); authViewModel.loadMentalHealthHistory(); authViewModel.loadPostpartumHistory() }
+    LaunchedEffect(Unit) { childViewModel.loadChild(); authViewModel.loadProfile(); childViewModel.loadPendingSyncRequests(); authViewModel.loadMentalHealthHistory() }
 
     LaunchedEffect(childState.children.size, childState.isLoading) {
-        if (!childState.isLoading && childState.children.isNotEmpty()) {
+        if (!childState.isLoading && childState.children.isNotEmpty() && !isGuest) {
             childViewModel.loadDoctorVaccineInbox(context)
         }
     }
@@ -249,26 +256,6 @@ fun DashboardScreen(
     val needsMentalHealthCheckin = remember(authState.mentalHealthHistory) {
         val latest = authState.mentalHealthHistory.firstOrNull()?.createdAt
         latest == null || !latest.take(7).equals(LocalDate.now().toString().take(7))
-    }
-
-    // Same monthly-nudge logic, separate axis (physical postpartum recovery, not mood) — but ONLY
-    // for accounts with a very young child (postpartum recovery is a first-few-months thing, not
-    // relevant to a parent of a toddler the way the mental-health check-in stays relevant indefinitely).
-    val youngestChildAgeMonths = remember(childState.children) {
-        childState.children.minOfOrNull { c ->
-            runCatching {
-                val parts = c.birthdate.split("-")
-                val by = parts[0].toInt(); val bm = parts[1].toInt()
-                val now = LocalDate.now()
-                (now.year - by) * 12 + (now.monthValue - bm)
-            }.getOrDefault(Int.MAX_VALUE)
-        } ?: Int.MAX_VALUE
-    }
-    val needsPostpartumCheckin = remember(authState.postpartumHistory, youngestChildAgeMonths) {
-        if (youngestChildAgeMonths > 3) false else {
-            val latest = authState.postpartumHistory.firstOrNull()?.createdAt
-            latest == null || !latest.take(7).equals(LocalDate.now().toString().take(7))
-        }
     }
 
     // AI "what do you want to know more" popup — open-ended question, capped 3/day (see
@@ -414,7 +401,9 @@ fun DashboardScreen(
                     Column {
                         Text("NONGRAK AI", style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
                         Text(
-                            if (username != null) {
+                            if (isGuest) {
+                                if (isThai) "สวัสดีค่ะ คุณ Test (บัญชีทดลอง)" else "Hello, Test (Test Account)"
+                            } else if (username != null) {
                                 if (isThai) "สวัสดีค่ะ คุณ$username" else "Hello, $username"
                             } else if (isThai) {
                                 "สวัสดีค่ะ ${RelationshipLabels.thaiAddress(relationship)}"
@@ -432,6 +421,16 @@ fun DashboardScreen(
             }
 
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                // Guest mode banner (for 2am instant usage before sign up)
+                if (isGuest) {
+                    GuestModeBannerCard(isThai = isThai, onSignUp = onNavigateToSignUp)
+                }
+
+                // Add Vaccine & Health History (2 mins) prompt card for better AI analysis
+                if (!hasCompletedVaccines && hasActiveChild) {
+                    AddVaccineHistoryPromptCard(isThai = isThai, onClick = onNavigateToHealthSurvey)
+                }
 
                 // Welcome card
                 Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
@@ -560,38 +559,6 @@ fun DashboardScreen(
                     }
                 }
 
-                // Monthly postpartum physical-recovery check-in banner — separate axis from mental
-                // health above (bleeding/pain/fever, not mood), only shown for a very young child.
-                if (needsPostpartumCheckin) {
-                    Card(
-                        Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(0.2f))
-                    ) {
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Box(Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(0.15f)), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Filled.Favorite, null, tint = Primary)
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        if (isThai) "ประเมินการฟื้นตัวหลังคลอด" else "Postpartum recovery check-in",
-                                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        if (isThai) "แบบประเมินสั้นๆ รายเดือน" else "A short monthly check-in",
-                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Button(
-                                onClick = onNavigateToPostpartum, modifier = Modifier.fillMaxWidth().height(44.dp),
-                                shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                            ) { Text(if (isThai) "เริ่มทำแบบประเมิน" else "Start check-in", fontWeight = FontWeight.Bold) }
-                        }
-                    }
-                }
 
                 // AI daily question — banner nudge, tapping it opens the actual question dialog
                 // (declared near the top of this composable) rather than popping up unprompted.
@@ -627,7 +594,7 @@ fun DashboardScreen(
                 // icon + add button), not just the FAB below; same destination (onNavigateToQuickLog)
                 // as the FAB, just a second, discoverable entry point matching the design.
                 Card(
-                    Modifier.fillMaxWidth().clickableCard(onNavigateToQuickLog),
+                    Modifier.fillMaxWidth().tourAnchor("parent_quick_action").clickableCard(onNavigateToQuickLog),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(1.dp)
@@ -744,3 +711,107 @@ private fun streakMotivation(streak: Int, isThai: Boolean): String = when {
     streak >= 3 -> if (isThai) "กำลังไปได้ดี บันทึกวันนี้เพื่อรักษาสถิติต่อไป" else "You're on a roll — log something today to keep it going"
     else -> if (isThai) "เริ่มต้นได้ดี! บันทึกต่อเนื่องเพื่อสร้างนิสัยที่ดี" else "Great start! Keep logging to build the habit"
 }
+
+@Composable
+private fun GuestModeBannerCard(isThai: Boolean, onSignUp: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Primary.copy(alpha = 0.08f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Lock, null, tint = Primary, modifier = Modifier.size(22.dp))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    if (isThai) "บัญชีทดลองใช้งาน (Test Account)" else "Test Account (View-Only)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Primary
+                )
+                Text(
+                    if (isThai) "ดูตัวอย่างข้อมูลได้เท่านั้น • บันทึกข้อมูลและใช้งาน AI ต้องสมัครสมาชิก"
+                    else "View-only preview • Recording data and using AI require registration",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = onSignUp,
+                shape = RoundedCornerShape(100.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(if (isThai) "สมัครสมาชิก" else "Sign up", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddVaccineHistoryPromptCard(isThai: Boolean, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickableCard(onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.25f)),
+        elevation = CardDefaults.cardElevation(1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(22.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isThai) "กรอกข้อมูลลูกน้อยเพิ่มเติม" else "Add More Child Info",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(100.dp),
+                        color = Primary.copy(alpha = 0.10f),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = if (isThai) "ใช้เวลา 2 นาที • เพื่อ AI ที่แม่นยำ" else "2 mins • For Better AI",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+                Icon(Icons.Filled.ChevronRight, null, tint = Primary)
+            }
+            Text(
+                text = if (isThai) "บันทึกประวัติวัคซีน ยาประจำ โรคประจำตัว และการแพ้ เพื่อให้ AI วิเคราะห์อย่างแม่นยำ"
+                else "Record vaccines, medication, conditions, and allergies for accurate AI insights",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+

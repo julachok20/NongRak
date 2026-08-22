@@ -2,7 +2,8 @@ package com.lullabyai.app.ui.screens.onboarding
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 
 enum class CardAnchor { START, CENTER, END }
 
@@ -72,13 +74,30 @@ fun GuidedTourOverlay(
 
     BackHandler(enabled = true) { if (step > 0) onBack() else onSkip() }
 
+    // A step is finished by doing the thing, not by pressing Next: tapping the spotlit control
+    // navigates away from the step's route, and that is the signal. `arrived` guards against the
+    // tour's own navigation above counting as the user's action.
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    var arrived by remember(step) { mutableStateOf(false) }
+    LaunchedEffect(currentRoute, step) {
+        if (currentRoute == info.route) arrived = true
+        else if (arrived) { if (isLast) onFinish() else onNext() }
+    }
+
     var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
     val spotlightRect = info.targetKey?.let { TourTargetRegistry.targets[it] }?.translate(-overlayOrigin.x, -overlayOrigin.y)
 
     Box(
         Modifier.fillMaxSize()
             .onGloballyPositioned { overlayOrigin = it.positionInWindow() }
-            .pointerInput(Unit) { detectTapGestures { } }
+            // Swallow taps on the dimmed area only. Leaving the spotlit control tappable is the
+            // whole point — the card asks her to tap it, so eating that tap would make the tour lie.
+            .pointerInput(spotlightRect) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (spotlightRect?.contains(down.position) != true) down.consume()
+                }
+            }
     ) {
         Canvas(
             Modifier.fillMaxSize().graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)

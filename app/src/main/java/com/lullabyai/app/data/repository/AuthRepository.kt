@@ -195,6 +195,41 @@ class AuthRepository {
         ensureProfile(fullName = null, accountType = accountType)
     }
 
+    /**
+     * Completes LINE auth after [LineAuthHelper] returns an id_token.
+     *
+     * Unlike Google there is no Supabase provider to hand this to — signInWith(IDToken) only
+     * accepts Google/Apple/Azure/Facebook/Kakao — so the session is minted by the `line-auth`
+     * edge function and imported here.
+     */
+    suspend fun signInWithLineIdToken(
+        idToken: String,
+        accountType: String = "parent"
+    ): Result<Unit> = runCatching {
+        require(idToken.isNotBlank()) { "missing_id_token" }
+        val (access, refresh) = LineRepository.exchangeIdToken(
+            idToken = idToken,
+            nonce = com.lullabyai.app.util.LineAuthHelper.nonce,
+            accountType = accountType
+        ).getOrThrow()
+        com.lullabyai.app.util.LineAuthHelper.clearNonce()
+        supabase.auth.importAuthToken(access, refresh)
+        ensureProfile(fullName = null, accountType = accountType)
+    }
+
+    /**
+     * Providers linked to the signed-in account, e.g. {"email", "google"}.
+     *
+     * Read from the Supabase identity list rather than remembered locally, so the Settings rows
+     * show what the server actually believes — a locally cached "linked" flag is exactly how a
+     * revoked Google grant keeps showing as connected.
+     */
+    fun linkedProviders(): Set<String> = runCatching {
+        supabase.auth.currentUserOrNull()?.identities.orEmpty()
+            .mapNotNull { it.provider.lowercase().takeIf(String::isNotBlank) }
+            .toSet()
+    }.getOrDefault(emptySet())
+
     enum class AuthPortal { PARENT, DOCTOR }
 
     fun portalRejectionMessage(portal: AuthPortal, isThai: Boolean): String = when (portal) {
@@ -390,28 +425,6 @@ class AuthRepository {
         supabase.from("parent_mental_health_assessments").select {
             order("created_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
         }.decodeList<MentalHealthAssessment>()
-    }
-
-    /** Submits the monthly parent postpartum physical-recovery self-assessment (see
-     *  PostpartumCatalog). Separate table/axis from mental health — bleeding/pain/fever, not mood. */
-    suspend fun submitPostpartumCheckIn(answers: List<Int>): Result<com.lullabyai.app.data.model.PostpartumCheckIn> = runCatching {
-        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
-        val totalScore = answers.sum()
-        val tier = com.lullabyai.app.data.PostpartumCatalog.riskTier(totalScore)
-        val flaggedUrgent = com.lullabyai.app.data.PostpartumCatalog.URGENT_FLAG_INDICES.any { i -> answers.getOrNull(i) == 3 }
-        supabase.from("postpartum_checkins").insert(buildJsonObject {
-            put("user_id", JsonPrimitive(userId))
-            put("answers", JsonArray(answers.map { JsonPrimitive(it) }))
-            put("total_score", JsonPrimitive(totalScore))
-            put("risk_tier", JsonPrimitive(tier))
-            put("flagged_urgent", JsonPrimitive(flaggedUrgent))
-        }) { select() }.decodeSingle<com.lullabyai.app.data.model.PostpartumCheckIn>()
-    }
-
-    suspend fun getPostpartumHistory(): Result<List<com.lullabyai.app.data.model.PostpartumCheckIn>> = runCatching {
-        supabase.from("postpartum_checkins").select {
-            order("created_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-        }.decodeList<com.lullabyai.app.data.model.PostpartumCheckIn>()
     }
 
     suspend fun setAiTrainingConsent(value: Boolean): Result<Unit> = runCatching {

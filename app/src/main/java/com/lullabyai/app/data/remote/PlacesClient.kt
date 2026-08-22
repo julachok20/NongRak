@@ -22,6 +22,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -45,7 +46,10 @@ data class PlaceSuggestion(
      * "open 24 hours" cases Google has already handled.
      */
     val hoursToday: String? = null,
-    val openNow: Boolean? = null
+    val openNow: Boolean? = null,
+    val googleMapsUri: String? = null,
+    val websiteUri: String? = null,
+    val userRatingCount: Int? = null
 ) {
     /** A rough per-person cost in baht for the estimate field. Null when Google says nothing. */
     val roughCostBaht: Int?
@@ -92,7 +96,7 @@ object PlacesClient {
      */
     private const val FIELDS =
         "places.id,places.displayName,places.formattedAddress,places.location," +
-            "places.priceLevel,places.rating,places.regularOpeningHours"
+            "places.priceLevel,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri"
 
     /** Free-text lookup for the place field — "สวนน้ำ", "พิพิธภัณฑ์เด็ก". */
     suspend fun searchText(
@@ -189,6 +193,8 @@ object PlacesClient {
                 ?: return@mapNotNull null
             val loc = o["location"]?.jsonObject
             val hours = o["regularOpeningHours"]?.jsonObject
+            val mapsUri = o["googleMapsUri"]?.jsonPrimitive?.contentOrNull
+                ?: "https://www.google.com/maps/search/?api=1&query=${java.net.URLEncoder.encode(name, "UTF-8")}&query_place_id=$id"
             PlaceSuggestion(
                 id = id,
                 name = name,
@@ -197,9 +203,12 @@ object PlacesClient {
                 lng = loc?.get("longitude")?.jsonPrimitive?.doubleOrNull,
                 priceLevel = o["priceLevel"]?.jsonPrimitive?.contentOrNull,
                 rating = o["rating"]?.jsonPrimitive?.doubleOrNull,
+                userRatingCount = o["userRatingCount"]?.jsonPrimitive?.intOrNull,
                 hoursToday = hours?.get("weekdayDescriptions")?.jsonArray
                     ?.getOrNull(todayIndex)?.jsonPrimitive?.contentOrNull,
-                openNow = hours?.get("openNow")?.jsonPrimitive?.booleanOrNull
+                openNow = hours?.get("openNow")?.jsonPrimitive?.booleanOrNull,
+                googleMapsUri = mapsUri,
+                websiteUri = o["websiteUri"]?.jsonPrimitive?.contentOrNull
             )
         }
     }

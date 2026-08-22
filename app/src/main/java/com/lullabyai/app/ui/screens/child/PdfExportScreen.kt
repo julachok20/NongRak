@@ -50,6 +50,7 @@ fun PdfExportScreen(childViewModel: ChildViewModel, navController: NavController
     var periodMonths by remember { mutableStateOf<Int?>(3) }   // null = custom/all-time
     var selectedCategories by remember { mutableStateOf(CATEGORY_OPTIONS.filter { it.defaultOn }.map { it.key }.toSet()) }
     var detailed by remember { mutableStateOf(true) }
+    var viewingDocument by remember { mutableStateOf<com.lullabyai.app.ui.components.DocumentViewSource?>(null) }
 
     fun share(file: java.io.File) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -70,9 +71,11 @@ fun PdfExportScreen(childViewModel: ChildViewModel, navController: NavController
             if (file == null) {
                 Toast.makeText(context, (if (s.isThai) "สร้าง PDF ไม่สำเร็จ" else "Couldn't create PDF") + (err?.let { ": $it" } ?: ""), Toast.LENGTH_LONG).show()
             } else {
-                runCatching { share(file) }.onFailure {
-                    Toast.makeText(context, (if (s.isThai) "แชร์ไม่สำเร็จ: " else "Share failed: ") + it.message, Toast.LENGTH_LONG).show()
-                }
+                viewingDocument = com.lullabyai.app.ui.components.DocumentViewSource.Local(
+                    file = file,
+                    displayTitle = if (s.isThai) "รายงานสุขภาพ - ${child?.name.orEmpty()}" else "Health Report - ${child?.name.orEmpty()}",
+                    mime = "application/pdf"
+                )
             }
         }
     }
@@ -202,4 +205,10 @@ fun PdfExportScreen(childViewModel: ChildViewModel, navController: NavController
             Spacer(Modifier.height(8.dp))
         }
     }
+
+    com.lullabyai.app.ui.components.InAppDocumentViewerDialog(
+        source = viewingDocument,
+        onDismiss = { viewingDocument = null },
+        isThai = s.isThai
+    )
 }

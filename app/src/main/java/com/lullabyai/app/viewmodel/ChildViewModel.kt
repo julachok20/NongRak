@@ -110,6 +110,7 @@ data class ChildUiState(
     val ownedChildIds: Set<String> = emptySet(),
     /** Child eligible for ownership reclaim on re-registration/login. */
     val reclaimableChild: com.lullabyai.app.data.model.ReclaimableChild? = null,
+    val requireRegistrationPrompt: String? = null,
     val error: String? = null
 )
 
@@ -160,7 +161,85 @@ class ChildViewModel : ViewModel() {
 
     init { loadChild() }
 
+    fun isGuest(): Boolean = _uiState.value.child?.userId == "guest" || _uiState.value.child?.id == "guest_child_local"
+
+    fun promptRegistration(message: String? = null) {
+        _uiState.value = _uiState.value.copy(
+            requireRegistrationPrompt = message ?: "กรุณาสมัครสมาชิกหรือเข้าสู่ระบบเพื่อบันทึกข้อมูลและใช้งานฟีเจอร์นี้"
+        )
+    }
+
+    fun dismissRegistrationPrompt() {
+        _uiState.value = _uiState.value.copy(requireRegistrationPrompt = null)
+    }
+
+    fun initGuestChild() {
+        val today = java.time.LocalDate.now()
+        val birthDate = today.minusMonths(3).toString()
+        val guestChild = Child(
+            id = "guest_child_local",
+            userId = "guest",
+            name = "Test",
+            birthdate = birthDate,
+            gender = "unspecified",
+            noKnownAllergies = true,
+            allergies = "ไม่มีประวัติการแพ้"
+        )
+        val guestOwnerFlags = setOf(guestChild.id)
+        val sampleMilestones = childRepo.defaultMilestones(guestChild.id)
+        val birth = today.minusMonths(3)
+        val sampleVaccines = com.lullabyai.app.data.VaccineSetupCatalog.SCHEDULE.map { dose ->
+            val due = birth.plusMonths(dose.ageMonths.toLong())
+            val status = when {
+                due.isBefore(today) -> "overdue"
+                due.isBefore(today.plusMonths(2)) -> "appointment"
+                else -> "upcoming"
+            }
+            VaccineRecord(
+                id = "guest_vac_${dose.dbName}_${dose.ageMonths}",
+                childId = guestChild.id,
+                vaccineName = dose.dbName,
+                description = dose.description,
+                ageGroup = dose.ageGroup,
+                ageOrder = dose.ageMonths,
+                scheduledDate = due.toString(),
+                dateGiven = null,
+                status = status
+            )
+        }
+
+        _uiState.value = _uiState.value.copy(
+            children = listOf(guestChild),
+            child = guestChild,
+            childAvatarSignedUrl = null,
+            isLoading = false,
+            error = null,
+            ownedChildIds = guestOwnerFlags,
+            isChildOwner = true,
+            vaccines = sampleVaccines,
+            growthRecords = emptyList(),
+            healthRecords = emptyList(),
+            symptomActivityByRecord = emptyMap(),
+            symptomUpdateByRecord = emptyMap(),
+            allergies = emptyList(),
+            chronicConditions = emptyList(),
+            milestones = sampleMilestones,
+            medicalDocuments = emptyList(),
+            sleepLogs = emptyList(),
+            sleepSchedules = emptyList(),
+            doctorVisits = emptyList(),
+            dailyQuestion = null,
+            pendingSyncRequests = emptyList(),
+            doctorVaccineInboxPopup = null
+        )
+        com.lullabyai.app.data.settings.ChildSelection.set(guestChild.id)
+    }
+
     fun loadChild() {
+        if (_uiState.value.child?.userId == "guest" && supabase.auth.currentUserOrNull() == null) {
+            _uiState.value = _uiState.value.copy(isLoading = false, error = null)
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             val childrenResult = childRepo.getChildren()
@@ -170,6 +249,10 @@ class ChildViewModel : ViewModel() {
             // who already had one, on every screen re-visit. Keep whatever children list we already
             // had and surface the real error instead of wiping it to empty.
             if (childrenResult.isFailure) {
+                if (_uiState.value.child?.userId == "guest") {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = null)
+                    return@launch
+                }
                 _uiState.value = _uiState.value.copy(isLoading = false, error = childrenResult.exceptionOrNull()?.message)
                 return@launch
             }
@@ -678,7 +761,8 @@ class ChildViewModel : ViewModel() {
                     // §8 — filename + upload date only (the files themselves aren't embedded).
                     medicalDocs = st.medicalDocuments.map { DoctorReportGenerator.MedDoc(it.fileName, d10(it.createdAt)) }
                 )
-                DoctorReportGenerator.generate(context, formData, categories, detailed)
+                val isDemoUser = isGuest() || child.userId == "guest" || child.id == "guest_child_local"
+                DoctorReportGenerator.generate(context, formData, categories, detailed, isDemo = isDemoUser)
             }
             result.exceptionOrNull()?.let { android.util.Log.e("DoctorReport", "export failed", it) }
             _uiState.value = _uiState.value.copy(reportLoading = false)
@@ -730,6 +814,7 @@ class ChildViewModel : ViewModel() {
     }
 
     private fun loadAllData(childId: String) {
+        if (isGuest() || childId == "guest_child_local") return
         viewModelScope.launch {
             // Recompute statuses against today's date first so the recommended vaccine stays current
             healthRepo.refreshVaccineStatuses(childId)
@@ -855,13 +940,10 @@ class ChildViewModel : ViewModel() {
     /** Confirms (or un-confirms) "no known allergies" for the active child — distinct from simply
      *  having zero allergy rows, so the missing-info nudge stops re-asking once this is set true. */
     fun setNoKnownAllergies(value: Boolean) {
+        if (isGuest()) { promptRegistration(); return }
         val childId = _uiState.value.child?.id ?: return
         viewModelScope.launch {
             childRepo.setNoKnownAllergies(childId, value).onSuccess {
-                // Also patch the `children` list, not just the singular `child` — Dashboard's
-                // missing-info nudge reads from `children` (per-child cards), so leaving only
-                // `child` updated meant the nudge kept showing after confirming "no allergies"
-                // until the next full reload.
                 _uiState.value = _uiState.value.let { s ->
                     s.copy(
                         child = s.child?.copy(noKnownAllergies = value),
@@ -873,12 +955,14 @@ class ChildViewModel : ViewModel() {
     }
 
     fun updateAllergy(id: String, name: String, type: String, severity: String, symptoms: String?) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             healthRepo.updateAllergy(id, name, type, severity, symptoms).onSuccess { reloadAllergies() }
         }
     }
 
     fun deleteAllergy(id: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             if (!ensureChildOwner()) return@launch
             healthRepo.deleteAllergy(id).onSuccess { reloadAllergies() }
@@ -886,6 +970,7 @@ class ChildViewModel : ViewModel() {
     }
 
     private fun reloadChronicConditions() {
+        if (isGuest()) return
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             healthRepo.getChronicConditions(childId).onSuccess { _uiState.value = _uiState.value.copy(chronicConditions = it) }
@@ -896,6 +981,7 @@ class ChildViewModel : ViewModel() {
     fun refreshChronicConditionsFromRegistry() = reloadChronicConditions()
 
     fun addChronicCondition(name: String, notes: String?) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             healthRepo.addChronicCondition(childId, name, notes).onSuccess { reloadChronicConditions() }
@@ -903,6 +989,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun deleteChronicCondition(id: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             if (!ensureChildOwner()) return@launch
             healthRepo.deleteChronicCondition(id).onSuccess { reloadChronicConditions() }
@@ -911,6 +998,7 @@ class ChildViewModel : ViewModel() {
 
     /** Sync AI daily tasks: daily refresh, 5h-after-complete replacement, refill to 4. */
     fun loadTasks(child: Child) {
+        if (isGuest()) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(tasksLoading = true)
             // Ground the AI activities in the child's not-yet-achieved, age-appropriate official milestones.
@@ -926,6 +1014,7 @@ class ChildViewModel : ViewModel() {
 
     /** Toggle a task's done status (select / deselect). */
     fun toggleTask(taskId: String, currentlyCompleted: Boolean) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             if (currentlyCompleted) aiRepo.uncompleteTask(taskId) else aiRepo.completeTask(taskId)
             val childId = _uiState.value.child?.id ?: return@launch
@@ -935,6 +1024,7 @@ class ChildViewModel : ViewModel() {
 
     /** "Not available" button — delete the task and generate a replacement. */
     fun notAvailableTask(taskId: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val child = _uiState.value.child ?: return@launch
             val ageM = getAgeMonths()
@@ -948,6 +1038,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun loadTaskHistory(onLoaded: (List<AiTask>) -> Unit) {
+        if (isGuest()) { onLoaded(emptyList()); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             onLoaded(aiRepo.getHistoryTasks(childId))
@@ -956,12 +1047,12 @@ class ChildViewModel : ViewModel() {
 
     /** Upload a new child photo (raw image bytes), then update the child in state. */
     fun uploadChildAvatar(bytes: ByteArray) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val current = _uiState.value.child ?: return@launch
             _uiState.value = _uiState.value.copy(avatarUploading = true, error = null)
             childRepo.uploadChildAvatar(current.id, bytes)
                 .onSuccess { signedUrl ->
-                    // repo returns a fresh signed URL — display it immediately
                     _uiState.value = _uiState.value.copy(
                         childAvatarSignedUrl = signedUrl,
                         avatarUploading = false
@@ -980,6 +1071,7 @@ class ChildViewModel : ViewModel() {
         name: String, birthdate: String, weightKg: Double?, heightCm: Double?, notes: String?,
         onDone: () -> Unit
     ) {
+        if (isGuest()) { promptRegistration(); onDone(); return }
         viewModelScope.launch {
             val current = _uiState.value.child ?: return@launch
             val vitalsChanged = weightKg != current.weightKg || heightCm != current.heightCm
@@ -993,8 +1085,6 @@ class ChildViewModel : ViewModel() {
             childRepo.updateChild(updated)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(child = updated)
-                    // Edit Child is another vitals entry point — mirror into growth_records so
-                    // Growth History / WHO charts / doctor-visit sync stay single-source.
                     if (vitalsChanged && (weightKg != null || heightCm != null)) {
                         addGrowthRecord(
                             GrowthRecord(
@@ -1017,15 +1107,15 @@ class ChildViewModel : ViewModel() {
     }
 
     fun updateMilestone(milestone: DevelopmentMilestone) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             childRepo.updateMilestone(milestone).onSuccess { loadChild() }
         }
     }
 
-    // Tops up the milestone checklist once per child per session (existing children seeded with the
-    // older sparse list pick up the full 0–3y set). Idempotent on the repo side; flag avoids re-runs.
     private var milestonesEnsuredChildId: String? = null
     fun ensureDefaultMilestones() {
+        if (isGuest()) return
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             if (milestonesEnsuredChildId == childId) return@launch
@@ -1037,6 +1127,7 @@ class ChildViewModel : ViewModel() {
 
     /** Toggle a milestone achieved/not, then refresh the list. */
     fun setMilestoneAchieved(id: String, achieved: Boolean) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             childRepo.setMilestoneAchieved(id, achieved)
             val childId = _uiState.value.child?.id ?: return@launch
@@ -1046,6 +1137,7 @@ class ChildViewModel : ViewModel() {
 
     /** Save (or clear) the reason a milestone is skipped, then refresh the list. */
     fun setMilestoneSkipReason(id: String, reason: String?) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             childRepo.setMilestoneSkipReason(id, reason)
             val childId = _uiState.value.child?.id ?: return@launch
@@ -1055,6 +1147,7 @@ class ChildViewModel : ViewModel() {
 
     /** Load the current child's uploaded medical documents (for the Edit Child screen). */
     fun loadMedicalDocuments() {
+        if (isGuest()) return
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             childRepo.getMedicalDocuments(childId).onSuccess {
@@ -1180,9 +1273,7 @@ class ChildViewModel : ViewModel() {
 
     /** One-tap sleep tracking: starts a session if none is active, otherwise ends the active one. */
     fun toggleSleepSession(sleepType: String = "main", mood: String? = null) {
-        // Guard against a double-tap firing two inserts: startSession/endSession are both async,
-        // so without this a second tap before loadSleep() refreshes state would still see the old
-        // activeSleepSession and repeat the same action (e.g. two "start" calls → two open sessions).
+        if (isGuest()) { promptRegistration(); return }
         if (_uiState.value.sleepSaving) return
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
@@ -1196,6 +1287,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun addManualSleepLog(sleepType: String, start: String, end: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             _uiState.value = _uiState.value.copy(sleepSaving = true)
@@ -1206,6 +1298,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun deleteSleepLog(id: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             if (!ensureChildOwner()) return@launch
             sleepRepo.deleteLog(id)
@@ -1214,13 +1307,12 @@ class ChildViewModel : ViewModel() {
     }
 
     fun addSleepSchedule(label: String, sleepType: String, startTime: String, endTime: String, daysOfWeek: String, onDone: () -> Unit = {}) {
+        if (isGuest()) { promptRegistration(); onDone(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             _uiState.value = _uiState.value.copy(sleepSaving = true)
             sleepRepo.createSchedule(childId, label, sleepType, startTime, endTime, daysOfWeek)
             loadSleep()
-            // createSchedule() doesn't return the new row, so pick the just-created one back out
-            // by recency to arm its reminder — "notification only, manual start" per product decision.
             _uiState.value.sleepSchedules.maxByOrNull { it.createdAt ?: "" }
                 ?.let { com.lullabyai.app.util.SleepReminderScheduler.scheduleNext(it) }
             _uiState.value = _uiState.value.copy(sleepSaving = false)
@@ -1229,11 +1321,11 @@ class ChildViewModel : ViewModel() {
     }
 
     fun updateSleepSchedule(id: String, label: String, sleepType: String, startTime: String, endTime: String, daysOfWeek: String, onDone: () -> Unit = {}) {
+        if (isGuest()) { promptRegistration(); onDone(); return }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(sleepSaving = true)
             sleepRepo.updateSchedule(id, label, sleepType, startTime, endTime, daysOfWeek)
             loadSleep()
-            // Re-arm from the reloaded row: the old reminder is keyed to the previous times.
             com.lullabyai.app.util.SleepReminderScheduler.cancel(id)
             _uiState.value.sleepSchedules.find { it.id == id }
                 ?.let { com.lullabyai.app.util.SleepReminderScheduler.scheduleNext(it) }
@@ -1243,6 +1335,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun deleteSleepSchedule(id: String) {
+        if (isGuest()) { promptRegistration(); return }
         com.lullabyai.app.util.SleepReminderScheduler.cancel(id)
         viewModelScope.launch {
             if (!ensureChildOwner()) return@launch
@@ -1279,6 +1372,7 @@ class ChildViewModel : ViewModel() {
     /** Post-hoc mood tag (mockup's mood grid isn't gated behind ending a session) — applies to
      *  today's active session if one is running, else the most recent completed log today. */
     fun logMoodForToday(mood: String) {
+        if (isGuest()) { promptRegistration(); return }
         val logs = _uiState.value.sleepLogs
         val today = java.time.LocalDate.now()
         val target = _uiState.value.activeSleepSession
@@ -1291,13 +1385,12 @@ class ChildViewModel : ViewModel() {
     }
 
     fun addGrowthRecord(record: GrowthRecord) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val toSave = record.copy(childId = childId)
             healthRepo.addGrowthRecord(toSave)
                 .onSuccess {
-                    // HealthRepository already mirrored vitals onto `children` — refresh both the
-                    // history list and the in-memory child so Summary/Health hubs update immediately.
                     healthRepo.getGrowthRecords(childId).onSuccess {
                         _uiState.value = _uiState.value.copy(growthRecords = it)
                     }
@@ -1311,13 +1404,12 @@ class ChildViewModel : ViewModel() {
                         )
                     }
                 }
-                // Likely offline — queue it instead of silently losing what the parent just typed;
-                // PendingWriteQueue.flush() retries this at next app start.
                 .onFailure { com.lullabyai.app.data.offline.PendingWriteQueue.enqueueGrowthRecord(toSave) }
         }
     }
 
     fun deleteGrowthRecord(id: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             if (!ensureChildOwner(childId)) return@launch
@@ -1440,6 +1532,7 @@ class ChildViewModel : ViewModel() {
     /** Upload/replace the photo on a health record, persist its path, and refresh the list + preview.
      *  Blocked after the Batch Q #8 10-minute edit lock. */
     fun uploadHealthPhoto(recordId: String, bytes: ByteArray) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val record = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
@@ -1475,6 +1568,7 @@ class ChildViewModel : ViewModel() {
         recordId: String, title: String, description: String?,
         additionalSymptoms: List<String>, temperature: Double?, onDone: () -> Unit
     ) {
+        if (isGuest()) { promptRegistration(); onDone(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId }
@@ -1498,6 +1592,7 @@ class ChildViewModel : ViewModel() {
     /** Toggle a health record between "monitoring" and "recovered" — feeds HealthHistoryScreen's badge.
      *  Allowed even after the edit lock (status is not a content edit). */
     fun toggleHealthRecordStatus(recordId: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
@@ -1510,6 +1605,7 @@ class ChildViewModel : ViewModel() {
 
     /** Batch Q #8 — tick / untick "unused". Always allowed after the 10-min content lock. */
     fun setHealthRecordUnused(recordId: String, unused: Boolean) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val current = _uiState.value.healthRecords.firstOrNull { it.id == recordId } ?: return@launch
@@ -1785,6 +1881,7 @@ class ChildViewModel : ViewModel() {
         visitDatetime: String, facilityName: String?, doctorName: String?, reason: String?,
         reminders: List<String>, preparationNotes: String?, onDone: () -> Unit
     ) {
+        if (isGuest()) { promptRegistration(); onDone(); return }
         val childId = _uiState.value.child?.id ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(doctorVisitSaving = true)
@@ -1820,6 +1917,7 @@ class ChildViewModel : ViewModel() {
         symptoms: List<String>, reason: String?, diagnosis: String?, treatmentPlan: String?,
         nextAppointmentDate: String?, onSaved: (String) -> Unit
     ) {
+        if (isGuest()) { promptRegistration(); onSaved("guest"); return }
         val childId = _uiState.value.child?.id ?: return
         val status = if (!nextAppointmentDate.isNullOrBlank()) "follow_up" else "completed"
         viewModelScope.launch {
@@ -1832,9 +1930,6 @@ class ChildViewModel : ViewModel() {
                 nextAppointmentDate = nextAppointmentDate?.takeIf { it.isNotBlank() }, preparationNotes = null,
                 reminders = null, status = status
             ).onSuccess { visit ->
-                // Weight/height entered here are the same field as the standalone growth tracker —
-                // keep them in sync so this visit's vitals actually count as "the" growth update
-                // (they used to be stranded on the visit row, invisible to Growth History/WHO charts).
                 if (weightKg != null || heightCm != null) {
                     addGrowthRecord(
                         GrowthRecord(weightKg = weightKg, heightCm = heightCm, recordedAt = visitDatetime.take(10), recordType = "doctor_visit")
@@ -1849,6 +1944,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun loadVisitDocuments(visitId: String) {
+        if (isGuest()) return
         viewModelScope.launch {
             childRepo.getVisitDocuments(visitId).onSuccess { _uiState.value = _uiState.value.copy(visitDocuments = it) }
         }
@@ -1857,6 +1953,7 @@ class ChildViewModel : ViewModel() {
     /** Attach a photo/PDF (prescription, doctor's note, x-ray) to a doctor visit — same private
      *  'medical-docs' bucket as the general document vault, just tagged with doctor_visit_id. */
     fun uploadVisitDocument(visitId: String, name: String, mime: String?, bytes: ByteArray) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             _uiState.value = _uiState.value.copy(visitDocUploading = true)
@@ -1899,6 +1996,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun addVaccine(name: String, ageGroup: String, scheduledDate: String?, description: String?, place: String? = null) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val rec = VaccineRecord(
@@ -1929,12 +2027,11 @@ class ChildViewModel : ViewModel() {
     private var vaccineSeededChildId: String? = null
 
     fun ensureVaccineSchedule() {
+        if (isGuest()) return
         viewModelScope.launch {
             val child = _uiState.value.child ?: return@launch
             vaccineSeedMutex.withLock {
                 if (vaccineSeededChildId != child.id) {
-                    // Re-check the DB directly (not in-memory state) so we don't seed duplicates
-                    // while the initial vaccine load is still in flight.
                     val existing = healthRepo.getVaccineRecords(child.id).getOrDefault(emptyList())
                     if (existing.isEmpty()) {
                         healthRepo.insertDefaultVaccines(child.id, child.birthdate)
@@ -1942,7 +2039,6 @@ class ChildViewModel : ViewModel() {
                     vaccineSeededChildId = child.id
                 }
             }
-            // Keep statuses current with the child's age so the recommended vaccine advances over time
             healthRepo.refreshVaccineStatuses(child.id)
             healthRepo.getVaccineRecords(child.id).onSuccess {
                 _uiState.value = _uiState.value.copy(vaccines = it)
@@ -1952,6 +2048,7 @@ class ChildViewModel : ViewModel() {
 
     /** Edit / reschedule a vaccine (name, appointment date, description, place). */
     fun updateVaccineSchedule(record: VaccineRecord, name: String, scheduledDate: String?, description: String?, place: String?) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             healthRepo.updateVaccineSchedule(record.id, name, scheduledDate, description, place).onSuccess {
@@ -1969,6 +2066,7 @@ class ChildViewModel : ViewModel() {
 
     /** Mark a vaccine as skipped with a reason (like skipping a development milestone). */
     fun skipVaccine(record: VaccineRecord, reason: String) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             healthRepo.skipVaccine(record.id, reason.ifBlank { null }).onSuccess {
@@ -1979,18 +2077,13 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    /** Delete a vaccine record (called after the user confirms). */
-    /**
-     * Attach an ใบรับรองวัคซีน to a dose (#10): upload the bytes, then store the returned bucket
-     * path on the row. Only flips the row once the upload actually succeeded, so a failed upload
-     * can't leave a record claiming a certificate that isn't there.
-     */
     fun uploadVaccineCertificate(
         record: VaccineRecord,
         bytes: ByteArray,
         ext: String,
         onDone: (Boolean) -> Unit = {}
     ) {
+        if (isGuest()) { promptRegistration(); onDone(false); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch onDone(false)
             healthRepo.uploadVaccineCertificate(childId, record.id, bytes, ext)
@@ -2015,6 +2108,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun deleteVaccine(record: VaccineRecord) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             if (!ensureChildOwner(childId)) return@launch
@@ -2031,14 +2125,8 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Mark the doses the parent confirmed after scanning a สมุดวัคซีน (#10).
-     *
-     * Only touches rows whose name the parent actually ticked — OCR proposes, the parent decides.
-     * Stamps `source = "moph_book"` so the book and the PDF can show where the record came from.
-     * Uses the full-row update (not updateVaccineStatus) because that helper cannot write `source`.
-     */
     fun applyScannedVaccines(names: Set<String>, onDone: (Int) -> Unit = {}) {
+        if (isGuest()) { promptRegistration(); onDone(0); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch onDone(0)
             val today = java.time.LocalDate.now().toString()
@@ -2060,6 +2148,7 @@ class ChildViewModel : ViewModel() {
     }
 
     fun toggleVaccine(record: VaccineRecord) {
+        if (isGuest()) { promptRegistration(); return }
         viewModelScope.launch {
             val childId = _uiState.value.child?.id ?: return@launch
             val nowComplete = record.status != "completed"

@@ -299,18 +299,49 @@ object NutritionAiService {
     // ---------------- Detail content ----------------
 
     suspend fun generateRecipe(foodName: String, ageMonths: Int, lang: String): RecipeContent? {
+        val isThai = lang.startsWith("th")
         val prompt = "Create a simple, low-cost, safe home recipe of \"$foodName\" for a $ageMonths-month-old child. " +
             "Use common affordable ingredients; keep steps easy for busy parents. " +
-            "Return JSON: {\"title\":..,\"timeMinutes\":..,\"ageRange\":..,\"servings\":..,\"nutritionNote\":..,\"ingredients\":[..],\"steps\":[..]}"
-        val o = ask(prompt, lang, maxTokens = 1500)?.objOrNull() ?: return null
+            "Estimate nutritional values per child portion: caloriesKcal (integer), proteinG (grams float), carbG (grams float), fatG (grams float), calciumMg (mg int), and ironMg (mg float). " +
+            "Also list 2-3 key growth & health benefits for the child in 'benefits', " +
+            "and suggest a cooking tutorial search title in 'videoTitle' (e.g. \"วิธีทำ $foodName สำหรับเด็กเล็ก\" or \"How to cook $foodName for toddler\"). " +
+            "Return JSON: {\"title\":..,\"timeMinutes\":..,\"ageRange\":..,\"servings\":..,\"nutritionNote\":..,\"ingredients\":[..],\"steps\":[..]," +
+            "\"caloriesKcal\":int,\"proteinG\":float,\"carbG\":float,\"fatG\":float,\"calciumMg\":int,\"ironMg\":float,\"benefits\":[..],\"videoTitle\":..}"
+        val o = ask(prompt, lang, maxTokens = 1800)?.objOrNull() ?: return null
+        val title = o.str("title", foodName)
+        val vTitle = o.str("videoTitle").ifBlank { if (isThai) "วิธีทำ $title สำหรับเด็ก" else "How to cook $title for toddlers" }
+        val encodedQuery = java.net.URLEncoder.encode(vTitle, "UTF-8")
+        val videoUrl = "https://www.youtube.com/results?search_query=$encodedQuery"
+
+        fun parseNum(key: String): Double? {
+            val prim = o[key] as? JsonPrimitive ?: return null
+            return prim.doubleOrNull ?: prim.contentOrNull?.replace(Regex("[^0-9.]"), "")?.toDoubleOrNull()
+        }
+
+        val kcal = parseNum("caloriesKcal")?.toInt() ?: parseNum("kcal")?.toInt()
+        val protein = parseNum("proteinG") ?: parseNum("protein")
+        val carb = parseNum("carbG") ?: parseNum("carb")
+        val fat = parseNum("fatG") ?: parseNum("fat")
+        val calcium = parseNum("calciumMg")?.toInt() ?: parseNum("calcium")?.toInt()
+        val iron = parseNum("ironMg") ?: parseNum("iron")
+
         return RecipeContent(
-            title = o.str("title", foodName),
+            title = title,
             timeMinutes = o.str("timeMinutes"),
             ageRange = o.str("ageRange"),
             servings = o.str("servings"),
             nutritionNote = o.str("nutritionNote"),
             ingredients = o.strList("ingredients"),
-            steps = o.strList("steps")
+            steps = o.strList("steps"),
+            caloriesKcal = kcal,
+            proteinG = protein,
+            carbG = carb,
+            fatG = fat,
+            calciumMg = calcium,
+            ironMg = iron,
+            benefits = o.strList("benefits"),
+            videoUrl = videoUrl,
+            videoTitle = vTitle
         )
     }
 

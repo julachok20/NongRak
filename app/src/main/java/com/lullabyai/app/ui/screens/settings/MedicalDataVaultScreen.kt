@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -107,6 +108,7 @@ internal fun DocumentVaultBody(
     var pendingPickerMime by remember { mutableStateOf("*/*") }
     var toDelete by remember { mutableStateOf<MedicalDocument?>(null) }
     var busyId by remember { mutableStateOf<String?>(null) }
+    var viewingDocument by remember { mutableStateOf<com.lullabyai.app.ui.components.DocumentViewSource?>(null) }
 
     LaunchedEffect(state.child?.id) { childViewModel.loadMedicalDocuments() }
 
@@ -194,20 +196,10 @@ internal fun DocumentVaultBody(
                 ).show()
                 return@openMedicalDocument
             }
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                )
-            }.onFailure {
-                Toast.makeText(
-                    context,
-                    if (isThai) "ไม่มีแอปเปิดไฟล์นี้" else "No app can open this file",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            viewingDocument = com.lullabyai.app.ui.components.DocumentViewSource.Doc(
+                medicalDoc = doc,
+                signedUrl = url
+            )
         }
     }
 
@@ -593,6 +585,12 @@ internal fun DocumentVaultBody(
             }
         )
     }
+
+    com.lullabyai.app.ui.components.InAppDocumentViewerDialog(
+        source = viewingDocument,
+        onDismiss = { viewingDocument = null },
+        isThai = isThai
+    )
 }
 
 @Composable
@@ -652,7 +650,9 @@ private fun VaultDocCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onView() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp),
@@ -690,13 +690,11 @@ private fun VaultDocCard(
                     color = if (doc.verified) HealthGood else Outline
                 )
             }
+            IconButton(onClick = onView, enabled = !busy) {
+                Icon(Icons.Filled.Visibility, if (isThai) "ดู" else "View", tint = Primary)
+            }
             IconButton(onClick = onDownload, enabled = !busy) {
                 Icon(Icons.Filled.Download, if (isThai) "ดาวน์โหลด" else "Download", tint = Primary)
-            }
-            if (highlight || doc.verified) {
-                IconButton(onClick = onView, enabled = !busy) {
-                    Icon(Icons.Filled.Visibility, if (isThai) "ดู" else "View", tint = Primary)
-                }
             }
             if (showDelete) {
                 IconButton(onClick = onDelete, enabled = !busy) {

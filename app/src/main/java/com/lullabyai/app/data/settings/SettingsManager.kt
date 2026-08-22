@@ -17,6 +17,7 @@ enum class AppLanguage { TH, EN }
 data class AppSettings(
     val darkMode: Boolean = false,
     val language: AppLanguage = AppLanguage.TH,
+    val pushNotifications: Boolean = true,
     val dailyReport: Boolean = true,
     val healthAlert: Boolean = true,
     val aiTips: Boolean = false,
@@ -28,6 +29,7 @@ class SettingsManager(private val context: Context) {
 
     private val DARK_MODE = booleanPreferencesKey("dark_mode")
     private val LANGUAGE = stringPreferencesKey("language")
+    private val PUSH_NOTIFICATIONS = booleanPreferencesKey("push_notifications")
     private val DAILY_REPORT = booleanPreferencesKey("daily_report")
     private val HEALTH_ALERT = booleanPreferencesKey("health_alert")
     private val AI_TIPS = booleanPreferencesKey("ai_tips")
@@ -234,6 +236,7 @@ class SettingsManager(private val context: Context) {
         AppSettings(
             darkMode = prefs[DARK_MODE] ?: false,
             language = if (prefs[LANGUAGE] == "EN") AppLanguage.EN else AppLanguage.TH,
+            pushNotifications = prefs[PUSH_NOTIFICATIONS] ?: true,
             dailyReport = prefs[DAILY_REPORT] ?: true,
             healthAlert = prefs[HEALTH_ALERT] ?: true,
             aiTips = prefs[AI_TIPS] ?: false,
@@ -251,6 +254,10 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { it[LANGUAGE] = value.name }
     }
 
+    suspend fun setPushNotifications(value: Boolean) {
+        context.dataStore.edit { it[PUSH_NOTIFICATIONS] = value }
+    }
+
     suspend fun setDailyReport(value: Boolean) {
         context.dataStore.edit { it[DAILY_REPORT] = value }
     }
@@ -262,4 +269,67 @@ class SettingsManager(private val context: Context) {
     suspend fun setAiTips(value: Boolean) {
         context.dataStore.edit { it[AI_TIPS] = value }
     }
+
+    private val GALLERY_AUTO_CHECK = booleanPreferencesKey("gallery_auto_check")
+    private val GALLERY_AUTO_MOOD = booleanPreferencesKey("gallery_auto_mood")
+    private val GALLERY_DETECT_FIRST_STEPS = booleanPreferencesKey("gallery_detect_first_steps")
+    private val GALLERY_SMART_HIGHLIGHTS = booleanPreferencesKey("gallery_smart_highlights")
+    private val CHILD_RECOGNITION_PRIMARY = stringPreferencesKey("child_recognition_primary")
+    private val CHILD_RECOGNITION_REFS = stringPreferencesKey("child_recognition_refs")
+
+    val galleryAutoCheck: Flow<Boolean> = context.dataStore.data.map { it[GALLERY_AUTO_CHECK] ?: true }
+    suspend fun setGalleryAutoCheck(enabled: Boolean) { context.dataStore.edit { it[GALLERY_AUTO_CHECK] = enabled } }
+
+    val galleryAutoMood: Flow<Boolean> = context.dataStore.data.map { it[GALLERY_AUTO_MOOD] ?: true }
+    suspend fun setGalleryAutoMood(enabled: Boolean) { context.dataStore.edit { it[GALLERY_AUTO_MOOD] = enabled } }
+
+    val galleryDetectFirstSteps: Flow<Boolean> = context.dataStore.data.map { it[GALLERY_DETECT_FIRST_STEPS] ?: true }
+    suspend fun setGalleryDetectFirstSteps(enabled: Boolean) { context.dataStore.edit { it[GALLERY_DETECT_FIRST_STEPS] = enabled } }
+
+    val gallerySmartHighlights: Flow<Boolean> = context.dataStore.data.map { it[GALLERY_SMART_HIGHLIGHTS] ?: false }
+    suspend fun setGallerySmartHighlights(enabled: Boolean) { context.dataStore.edit { it[GALLERY_SMART_HIGHLIGHTS] = enabled } }
+
+    val childRecognitionPrimary: Flow<String?> = context.dataStore.data.map { it[CHILD_RECOGNITION_PRIMARY] }
+    suspend fun setChildRecognitionPrimary(uri: String?) {
+        context.dataStore.edit { if (uri != null) it[CHILD_RECOGNITION_PRIMARY] = uri else it.remove(CHILD_RECOGNITION_PRIMARY) }
+    }
+
+    val childRecognitionRefs: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        val raw = prefs[CHILD_RECOGNITION_REFS]
+        if (raw.isNullOrBlank()) emptyList()
+        else raw.split(";;;").filter { it.isNotBlank() }
+    }
+    suspend fun setChildRecognitionRefs(refs: List<String>) {
+        context.dataStore.edit { it[CHILD_RECOGNITION_REFS] = refs.joinToString(";;;") }
+    }
+
+    private val SYNC_CAMERA_ROLL = booleanPreferencesKey("sync_camera_roll")
+    private val SYNC_CLOUD_DRIVE = booleanPreferencesKey("sync_cloud_drive")
+    private val SYNC_CUSTOM_SOURCES = stringPreferencesKey("sync_custom_sources")
+
+    val syncCameraRoll: Flow<Boolean> = context.dataStore.data.map { it[SYNC_CAMERA_ROLL] ?: true }
+    suspend fun setSyncCameraRoll(enabled: Boolean) { context.dataStore.edit { it[SYNC_CAMERA_ROLL] = enabled } }
+
+    val syncCloudDrive: Flow<Boolean> = context.dataStore.data.map { it[SYNC_CLOUD_DRIVE] ?: true }
+    suspend fun setSyncCloudDrive(enabled: Boolean) { context.dataStore.edit { it[SYNC_CLOUD_DRIVE] = enabled } }
+
+    val syncCustomSources: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        val raw = prefs[SYNC_CUSTOM_SOURCES]
+        if (raw.isNullOrBlank()) emptyList()
+        else raw.split(";;;").filter { it.isNotBlank() }
+    }
+    suspend fun addCustomSource(sourceName: String) {
+        context.dataStore.edit { prefs ->
+            val cur = prefs[SYNC_CUSTOM_SOURCES]?.split(";;;")?.filter { it.isNotBlank() } ?: emptyList()
+            prefs[SYNC_CUSTOM_SOURCES] = (cur + sourceName).distinct().joinToString(";;;")
+        }
+    }
+    suspend fun removeCustomSource(sourceName: String) {
+        context.dataStore.edit { prefs ->
+            val cur = prefs[SYNC_CUSTOM_SOURCES]?.split(";;;")?.filter { it.isNotBlank() } ?: emptyList()
+            prefs[SYNC_CUSTOM_SOURCES] = cur.filter { it != sourceName }.joinToString(";;;")
+        }
+    }
 }
+
+

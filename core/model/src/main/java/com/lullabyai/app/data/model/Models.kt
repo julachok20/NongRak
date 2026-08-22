@@ -16,20 +16,6 @@ data class MentalHealthAssessment(
     @SerialName("created_at") val createdAt: String? = null
 )
 
-/** Monthly parent postpartum PHYSICAL-recovery self-assessment — a separate axis from
- *  MentalHealthAssessment (that one tracks mood/EPDS; this one tracks bleeding, pain, wound
- *  healing, fatigue). See PostpartumCatalog for the question set + scoring. */
-@Serializable
-data class PostpartumCheckIn(
-    val id: String = "",
-    @SerialName("user_id") val userId: String = "",
-    val answers: List<Int> = emptyList(),
-    @SerialName("total_score") val totalScore: Int = 0,
-    @SerialName("risk_tier") val riskTier: String = "low", // low | moderate | high
-    @SerialName("flagged_urgent") val flaggedUrgent: Boolean = false,
-    @SerialName("created_at") val createdAt: String? = null
-)
-
 @Serializable
 data class MedicalDocument(
     val id: String = "",
@@ -884,7 +870,16 @@ data class RecipeContent(
     val servings: String,
     val nutritionNote: String,
     val ingredients: List<String>,
-    val steps: List<String>
+    val steps: List<String>,
+    val caloriesKcal: Int? = null,
+    val proteinG: Double? = null,
+    val carbG: Double? = null,
+    val fatG: Double? = null,
+    val calciumMg: Int? = null,
+    val ironMg: Double? = null,
+    val benefits: List<String> = emptyList(),
+    val videoUrl: String? = null,
+    val videoTitle: String? = null
 )
 
 data class ExerciseContent(

@@ -119,6 +119,31 @@ fun HelpFaqScreen(
                 }
             }
 
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Primary.copy(0.05f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.RateReview, null, tint = Primary, modifier = Modifier.size(20.dp))
+                            Text(if (s.isThai) "ข้อเสนอแนะและรีวิวแอป" else "Feedback & App Review", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        }
+                        Text(if (s.isThai) "ร่วมให้คะแนนและส่งความคิดเห็นเพื่อพัฒนาแอป NongRak AI ให้ดียิ่งขึ้น" else "Rate and share your thoughts to help us improve NongRak AI", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(
+                            onClick = { navController.navigate(Screen.Feedback.route) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(100.dp)
+                        ) {
+                            Icon(Icons.Filled.Star, null, tint = Primary, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (s.isThai) "เขียนข้อเสนอแนะและรีวิว" else "Write Feedback & Review", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
             item { Spacer(Modifier.height(8.dp)) }
         }
     }

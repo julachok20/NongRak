@@ -34,6 +34,20 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** Intent extra key widgets use to request a specific screen instead of the default Dashboard. */
         const val WIDGET_TARGET_ROUTE_EXTRA = "widget_target_route"
+
+        /**
+         * The route an intent is asking for: a widget extra, or a nongrak://open/<route> link.
+         *
+         * Both funnel into one value so there is a single route-jump mechanism. The path is taken
+         * verbatim rather than mapped through a whitelist because AppNavigation already ignores
+         * routes it does not know — an unknown one lands on the default screen, not a crash.
+         */
+        fun targetRoute(intent: Intent?): String? {
+            intent?.getStringExtra(WIDGET_TARGET_ROUTE_EXTRA)?.let { return it }
+            val uri = intent?.data ?: return null
+            if (uri.scheme != "nongrak" || uri.host != "open") return null
+            return uri.pathSegments?.firstOrNull()?.takeIf { it.isNotBlank() }
+        }
     }
 
     private val settingsViewModel: SettingsViewModel by viewModels()
@@ -42,14 +56,14 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingDeepLink = intent.getStringExtra(WIDGET_TARGET_ROUTE_EXTRA)
+        pendingDeepLink = targetRoute(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        pendingDeepLink = intent?.getStringExtra(WIDGET_TARGET_ROUTE_EXTRA)
+        pendingDeepLink = targetRoute(intent)
 
         // Load persisted state into process-wide holders (multi-child selection + recent services).
         val settingsManager = com.lullabyai.app.data.settings.SettingsManager(applicationContext)
@@ -129,11 +143,20 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (isReady) {
-                        AppNavigation(
-                            navController = navController,
-                            startDestination = startDestination,
-                            settingsViewModel = settingsViewModel
-                        )
+                        androidx.compose.foundation.layout.Box {
+                            AppNavigation(
+                                navController = navController,
+                                startDestination = startDestination,
+                                settingsViewModel = settingsViewModel
+                            )
+                            // Drawn last so it floats over whatever screen is showing. Tapping it
+                            // opens the notification list, which is where the full text lives.
+                            com.lullabyai.app.ui.components.InAppAlertHost(
+                                onOpen = {
+                                    runCatching { navController.navigate(Screen.Notifications.route) }
+                                }
+                            )
+                        }
                         LaunchedEffect(pendingDeepLink) {
                             pendingDeepLink?.let { route ->
                                 navController.navigate(route)

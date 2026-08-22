@@ -31,3 +31,9 @@ app/graphify-out/
 
 # Built release artifacts (AAB/APK) — copied here for record-keeping, not source
 /Releases/
+
+# Pulled in only to run tsc against the edge functions; never part of the app build.
+node_modules/
+
+# Supabase CLI scratch state (linked project ref, etc).
+supabase/.temp/

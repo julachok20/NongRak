@@ -25,11 +25,7 @@ data class AuthUiState(
     // --- Mental health self-assessment (parent-level, monthly) ---
     val mentalHealthHistory: List<com.lullabyai.app.data.model.MentalHealthAssessment> = emptyList(),
     val mentalHealthSubmitting: Boolean = false,
-    val lastMentalHealthResult: com.lullabyai.app.data.model.MentalHealthAssessment? = null,
-    // --- Postpartum physical-recovery self-assessment (parent-level, monthly) ---
-    val postpartumHistory: List<com.lullabyai.app.data.model.PostpartumCheckIn> = emptyList(),
-    val postpartumSubmitting: Boolean = false,
-    val lastPostpartumResult: com.lullabyai.app.data.model.PostpartumCheckIn? = null
+    val lastMentalHealthResult: com.lullabyai.app.data.model.MentalHealthAssessment? = null
 )
 
 class AuthViewModel : ViewModel() {
@@ -121,6 +117,32 @@ class AuthViewModel : ViewModel() {
                 .onFailure {
                     _uiState.value = AuthUiState(
                         error = GoogleAuthHelper.friendlyError(it.message, isThai)
+                    )
+                }
+        }
+    }
+
+    /** Mirrors [completeGoogleSignIn] for LINE. A null token means cancelled or SDK failure. */
+    fun completeLineSignIn(
+        idToken: String?,
+        isThai: Boolean,
+        onSuccess: () -> Unit,
+        accountType: String = "parent",
+        errorMessage: String? = null
+    ) {
+        viewModelScope.launch {
+            if (idToken.isNullOrBlank()) {
+                _uiState.value = AuthUiState(
+                    error = com.lullabyai.app.util.LineAuthHelper.friendlyError(errorMessage, isThai)
+                )
+                return@launch
+            }
+            _uiState.value = AuthUiState(isLoading = true)
+            repo.signInWithLineIdToken(idToken, accountType)
+                .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
+                .onFailure {
+                    _uiState.value = AuthUiState(
+                        error = com.lullabyai.app.util.LineAuthHelper.friendlyError(it.message, isThai)
                     )
                 }
         }
@@ -345,27 +367,6 @@ class AuthViewModel : ViewModel() {
                     onDone()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(mentalHealthSubmitting = false) }
-        }
-    }
-
-    fun loadPostpartumHistory() {
-        viewModelScope.launch {
-            repo.getPostpartumHistory().onSuccess { _uiState.value = _uiState.value.copy(postpartumHistory = it) }
-        }
-    }
-
-    fun submitPostpartumCheckIn(answers: List<Int>, onDone: () -> Unit) {
-        _uiState.value = _uiState.value.copy(postpartumSubmitting = true)
-        viewModelScope.launch {
-            repo.submitPostpartumCheckIn(answers)
-                .onSuccess { result ->
-                    _uiState.value = _uiState.value.copy(
-                        postpartumSubmitting = false, lastPostpartumResult = result,
-                        postpartumHistory = listOf(result) + _uiState.value.postpartumHistory
-                    )
-                    onDone()
-                }
-                .onFailure { _uiState.value = _uiState.value.copy(postpartumSubmitting = false) }
         }
     }
 

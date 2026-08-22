@@ -1,7 +1,12 @@
 package com.lullabyai.app.ui.screens.onboarding
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -13,9 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.lullabyai.app.ui.components.BirthDatePickerField
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.theme.*
@@ -28,13 +38,23 @@ fun OnboardingStep1Screen(
     onBack: () -> Unit = {}
 ) {
     val state by onboardingViewModel.uiState.collectAsState()
+    val context = LocalContext.current
     var childName by remember { mutableStateOf(state.childName) }
     var birthdate by remember { mutableStateOf(state.birthdate) }
     var gender by remember { mutableStateOf(state.gender) }
+    var relationship by remember { mutableStateOf(state.relationship.ifBlank { "mother" }) }
     var nationality by remember { mutableStateOf(state.nationality) }
     var ethnicity by remember { mutableStateOf(state.ethnicity) }
     var religion by remember { mutableStateOf(state.religion) }
-    // Allergies + notes are collected later (Step 3: list-based allergies & notes), not here.
+    var avatarUri by remember { mutableStateOf(state.childAvatarUri) }
+    var avatarBytes by remember { mutableStateOf(state.childAvatarBytes) }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            avatarUri = uri.toString()
+            avatarBytes = com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, uri)
+        }
+    }
 
     BackHandler(onBack = onBack)
 
@@ -63,9 +83,71 @@ fun OnboardingStep1Screen(
             // Progress
             OnboardingProgressBar(currentStep = 1)
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // Child Avatar Picker (Optional)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable {
+                            photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (avatarUri != null) {
+                        AsyncImage(
+                            model = avatarUri,
+                            contentDescription = "รูปโปรไฟล์เด็ก",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.AddAPhoto,
+                            contentDescription = "เพิ่มรูปโปรไฟล์",
+                            tint = Primary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (avatarUri != null) "เปลี่ยนรูปโปรไฟล์น้อง" else "เพิ่มรูปโปรไฟล์น้อง (ไม่บังคับ)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
 
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                LabelField("คุณคือใคร (ความสัมพันธ์กับเด็ก)") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf(
+                            "mother" to "คุณแม่",
+                            "father" to "คุณพ่อ",
+                            "guardian" to "ผู้ปกครอง",
+                            "other" to "ญาติ/อื่นๆ"
+                        ).forEach { (value, label) ->
+                            Box(modifier = Modifier.weight(1f)) {
+                                GenderChip(
+                                    label = label,
+                                    selected = relationship == value,
+                                    onClick = { relationship = value },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
+
                 LabelField("ชื่อเด็ก") {
                     OutlinedTextField(
                         value = childName, onValueChange = { childName = it },
@@ -86,49 +168,104 @@ fun OnboardingStep1Screen(
                 }
 
                 LabelField("เพศ") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         listOf("male" to "ชาย", "female" to "หญิง", "unspecified" to "ไม่ระบุ").forEach { (value, label) ->
-                            GenderChip(label = label, selected = gender == value, onClick = { gender = value })
+                            Box(modifier = Modifier.weight(1f)) {
+                                GenderChip(
+                                    label = label,
+                                    selected = gender == value,
+                                    onClick = { gender = value },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 }
 
-                // Hospital-record demographics — optional, not required to proceed (matches
-                // allergies/notes below, which are also optional at this step).
-                LabelField("สัญชาติ") {
-                    OutlinedTextField(
-                        value = nationality, onValueChange = { nationality = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("เช่น ไทย", color = Outline) },
-                        singleLine = true, shape = RoundedCornerShape(12.dp),
-                        colors = fieldColors()
-                    )
+                // Collapsible Additional Information (สัญชาติ / เชื้อชาติ / ศาสนา)
+                var showAdditionalInfo by remember { mutableStateOf(nationality.isNotBlank() || ethnicity.isNotBlank() || religion.isNotBlank()) }
+
+                Surface(
+                    onClick = { showAdditionalInfo = !showAdditionalInfo },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            Icon(Icons.Filled.Info, null, tint = Primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                if (showAdditionalInfo) "ข้อมูลเพิ่มเติม (สัญชาติ / เชื้อชาติ / ศาสนา)"
+                                else "ข้อมูลเพิ่มเติม (ไม่บังคับ)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            if (showAdditionalInfo) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            tint = Outline,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
-                LabelField("เชื้อชาติ") {
-                    OutlinedTextField(
-                        value = ethnicity, onValueChange = { ethnicity = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("เช่น ไทย", color = Outline) },
-                        singleLine = true, shape = RoundedCornerShape(12.dp),
-                        colors = fieldColors()
-                    )
-                }
-                LabelField("ศาสนา") {
-                    OutlinedTextField(
-                        value = religion, onValueChange = { religion = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("เช่น พุทธ", color = Outline) },
-                        singleLine = true, shape = RoundedCornerShape(12.dp),
-                        colors = fieldColors()
-                    )
+
+                androidx.compose.animation.AnimatedVisibility(visible = showAdditionalInfo) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        LabelField("สัญชาติ (ไม่บังคับ)") {
+                            OutlinedTextField(
+                                value = nationality, onValueChange = { nationality = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("เช่น ไทย", color = Outline) },
+                                singleLine = true, shape = RoundedCornerShape(12.dp),
+                                colors = fieldColors()
+                            )
+                        }
+                        LabelField("เชื้อชาติ (ไม่บังคับ)") {
+                            OutlinedTextField(
+                                value = ethnicity, onValueChange = { ethnicity = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("เช่น ไทย", color = Outline) },
+                                singleLine = true, shape = RoundedCornerShape(12.dp),
+                                colors = fieldColors()
+                            )
+                        }
+                        LabelField("ศาสนา (ไม่บังคับ)") {
+                            OutlinedTextField(
+                                value = religion, onValueChange = { religion = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("เช่น พุทธ", color = Outline) },
+                                singleLine = true, shape = RoundedCornerShape(12.dp),
+                                colors = fieldColors()
+                            )
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
 
                 PrimaryButton(
-                    text = "Next >",
+                    text = "ถัดไป →",
                     onClick = {
-                        onboardingViewModel.updateStep1(childName, birthdate, gender, "", "", nationality, ethnicity, religion)
+                        onboardingViewModel.updateStep1(
+                            name = childName,
+                            birthdate = birthdate,
+                            gender = gender,
+                            nationality = nationality,
+                            ethnicity = ethnicity,
+                            religion = religion,
+                            relationship = relationship,
+                            avatarUri = avatarUri,
+                            avatarBytes = avatarBytes
+                        )
                         onNext()
                     },
                     enabled = childName.isNotBlank() && birthdate.isNotBlank()
@@ -174,20 +311,32 @@ fun OnboardingProgressBar(currentStep: Int) {
 }
 
 @Composable
-fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit) {
+fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(100.dp),
         color = if (selected) Primary else MaterialTheme.colorScheme.surface,
-        border = if (!selected) ButtonDefaults.outlinedButtonBorder else null
+        border = if (!selected) ButtonDefaults.outlinedButtonBorder else null,
+        modifier = modifier
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.Center
         ) {
-            if (selected) Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
-            Text(label, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            if (selected) {
+                Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.width(3.dp))
+            }
+            Text(
+                label,
+                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                fontSize = 12.5.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }

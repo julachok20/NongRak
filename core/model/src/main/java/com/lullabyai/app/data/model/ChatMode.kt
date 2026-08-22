@@ -26,16 +26,20 @@ enum class ChatMode(val speechRate: Float, val speechPitch: Float) {
     }
 
     /** Empty for [NORMAL] so normal chat sends exactly what it sends today. */
-    fun promptPrefix(): String = when (this) {
+    fun promptPrefix(isThai: Boolean = true): String = when (this) {
         NORMAL -> ""
-        STORY ->
+        STORY -> if (isThai)
             "[โหมดเล่านิทาน] ตอบในบทบาทผู้เล่านิทานสำหรับเด็กเล็ก เล่าเป็นเรื่องราวสั้น ๆ ต่อเนื่อง " +
                 "ใช้ประโยคสั้น คำง่าย น้ำเสียงอบอุ่นนุ่มนวลเหมาะกับก่อนนอน ปิดท้ายด้วยข้อคิดสั้น ๆ " +
                 "ข้อความจะถูกอ่านออกเสียง จึงห้ามใช้ markdown สัญลักษณ์พิเศษ หรือ emoji\n\n"
-        CHILD ->
+        else
+            "[Storytelling Mode] Respond in English as a gentle bedtime storyteller for toddlers. Tell a short engaging story with simple words and warm tone. Do not use markdown, special symbols, or emoji.\n\n"
+        CHILD -> if (isThai)
             "[โหมดสนทนากับเด็ก] ตอบในบทบาทเพื่อนคุยของเด็กเล็ก พูดกับเด็กโดยตรง ใช้ประโยคสั้นมาก คำง่าย " +
                 "สนุก ถามกลับทีละคำถาม ไม่อธิบายเรื่องการแพทย์ที่ซับซ้อนกับเด็ก " +
                 "หากเด็กเล่าอาการที่น่าเป็นห่วง ให้บอกเด็กอย่างอ่อนโยนให้ไปเรียกผู้ปกครองมาคุยทันที " +
                 "ข้อความจะถูกอ่านออกเสียง จึงห้ามใช้ markdown สัญลักษณ์พิเศษ หรือ emoji\n\n"
+        else
+            "[Talk to Child Mode] Respond in English as a friendly playmate talking directly to a young toddler. Use very short, simple, playful sentences. Ask one question at a time. If the child mentions illness or pain, gently tell them to call their parent right away. Do not use markdown, symbols, or emoji.\n\n"
     }
 }

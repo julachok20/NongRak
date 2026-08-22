@@ -97,6 +97,26 @@ class ChildRepository {
         supabase.from("children").select { filter { eq("id", childId) } }.decodeSingle<Child>()
     }
 
+    suspend fun updateChild(childId: String, updates: Map<String, Any?>): Result<Unit> = runCatching {
+        supabase.from("children").update(updates) {
+            filter { eq("id", childId) }
+        }
+    }
+
+    suspend fun uploadChildAvatar(childId: String, bytes: ByteArray, ext: String = "jpg"): Result<String> = runCatching {
+        val uid = supabase.auth.currentUserOrNull()?.id ?: error("Not signed in")
+        val path = "$uid/child_${childId}_${System.currentTimeMillis()}.$ext"
+        supabase.storage.from(StorageHelper.AVATAR_BUCKET).upload(path, bytes) {
+            upsert = true
+        }
+        supabase.from("children").update(buildJsonObject {
+            put("avatar_url", JsonPrimitive(path))
+        }) {
+            filter { eq("id", childId) }
+        }
+        path
+    }
+
     /**
      * The child the user is currently viewing (multi-child). Resolves the persisted selection from
      * [ChildSelection]; falls back to the first child if nothing is selected or the selected child

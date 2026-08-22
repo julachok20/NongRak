@@ -2147,3 +2147,472 @@ Migration: **`20260731_vaccine_vault_rpc_and_visit_appointment.sql`** ✅ applie
 
 
 
+
+
+---
+
+## BATCH BF — LINE OA integration (2026-08-21)
+
+Parents can now sign in with LINE, pair their account with the NongRak OA, and receive
+notifications there. This matters more than a normal integration: the app has **no FCM**, so
+`SystemNotifier` only fires while the app's own process is running. LINE is currently the only
+channel that reaches a phone with the app closed.
+
+| Area | What changed |
+|------|--------------|
+| **Schema** | [`20260821_line_oa_link.sql`](file:///D:/Claude-Access/LullabyAI/supabase/migrations/20260821_line_oa_link.sql) — `line_links` + `line_pair_codes`, RLS, `line_issue_pair_code()`. Client may read/update/delete its own link but **never insert**: only the webhook has heard from LINE and can prove a `line_user_id` is real. `line_pair_codes` has no policies at all, so a pending code cannot be harvested. Both FKs are `ON DELETE CASCADE` — deliberately not a seventh `NO ACTION` FK to break account deletion further. |
+| **Webhook** | [`line-webhook`](file:///D:/Claude-Access/LullabyAI/supabase/functions/line-webhook/index.ts) — HMAC-SHA256 `x-line-signature` verify over the **raw** body, then follow / unfollow / pairing-code redemption. Deploy with `--no-verify-jwt` or LINE gets 401 on every delivery. |
+| **Push** | [`line-push`](file:///D:/Claude-Access/LullabyAI/supabase/functions/line-push/index.ts) — runs on the **caller's own JWT**, so `line_links` RLS is the authorisation check; there is no "is this my link?" branch to get wrong. A 403 from LINE flips `notify_enabled` off (free tier is 200 messages/month). |
+| **Auth** | [`line-auth`](file:///D:/Claude-Access/LullabyAI/supabase/functions/line-auth/index.ts) — Supabase has no LINE provider and `signInWithIdToken` only accepts Google/Apple/Azure/Facebook/Kakao, so: verify id_token at LINE's `/oauth2/v2.1/verify` (with `client_id` for the `aud` check and `nonce` against replay) → resolve/create user → `admin.generateLink` → `/auth/v1/verify` → real session. Signing in with LINE also links notifications in the same step. |
+| **App** | [`LineRepository.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/data/repository/LineRepository.kt), [`LineAuthHelper.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/util/LineAuthHelper.kt), [`LineSignInLauncher.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/ui/components/LineSignInLauncher.kt), [`LineLinkScreen.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/ui/screens/settings/LineLinkScreen.kt), [`LineOaBanner.kt`](file:///D:/Claude-Access/LullabyAI/app/src/main/java/com/lullabyai/app/ui/components/LineOaBanner.kt). LINE SDK `5.11.1`. `NotificationRepository.notify()` now mirrors every notification to LINE, best-effort. |
+| **Settings** | Antigravity's two `AccountLinkRow` placeholders were already in `SettingsScreen` with no-op `onClick`. **Wired those rather than adding new rows** — a duplicate "Connect LINE" row was written first and removed. Status is read live from `line_links` and the Supabase identity list, never cached. |
+
+**Config:** `local.properties` needs `LINE_OA_ID`, `LINE_LOGIN_CHANNEL_ID`. Supabase secrets need
+`LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_LOGIN_CHANNEL_ID`.
+
+**Trap:** the Login channel and Messaging channel must sit in the **same LINE Provider**, or the
+`userId` from login never matches the one the OA sees and notifications silently go nowhere.
+
+**Open:** no unit tests on this batch. `.invalid` synthetic-email domain is unverified against
+this Supabase project's email validation — `create_user_failed:` will name it if rejected.
+
+**Build:** `:app:compileDebugKotlin` ✅ GREEN.
+
+### BATCH BF addendum — verified against the live LINE API (2026-08-21)
+
+`GET /v2/bot/info` on the real OA surfaced two things no build or test would have caught:
+
+| Finding | Consequence | Action |
+|---|---|---|
+| `chatMode: "chat"` | LINE routes messages to the OA Manager inbox and **never calls the webhook**. The whole pairing flow does nothing, silently. | OA Manager → Settings → Response settings → Chat **off**, Webhooks **on**. |
+| `quota: {type: limited, value: 300}` | 300 push messages per MONTH across **all users combined**, not per user. | `LINE_PUSH_CATEGORIES` in `NotificationRepository.kt` now gates pushes to WARNING / SCHEDULE / SYNC_REQUEST. NORMAL stays in-app. ~300 covers roughly 60 families at ~5 alerts each. Webhook *replies* are free. |
+
+Verified good: token valid, `basicId` `@946xkztx`, displayName "NongRak", and `2011198023`
+confirmed as a **LINE Login** channel (LINE accepted the client_id and rejected only the dummy
+token's format).
+
+**Lesson worth keeping:** credentials were checked against the real service before deploying.
+Both problems present as "everything compiles and nothing happens" — the most expensive failure
+shape to debug from a user report.
+
+**Secret handling:** `local.properties` holds only `LINE_OA_ID` and `LINE_LOGIN_CHANNEL_ID`, both
+public. The channel access token and channel secret are Supabase secrets only — the token can
+push to every follower, so it must never reach the APK. Verified no secret is present in any
+tracked file.
+
+
+---
+
+## BATCH BG — LINE OA as a second surface (2026-08-21)
+
+The OA is no longer a notification pipe. A parent can ask questions, record feeds and sleeps,
+and jump into the app, entirely from LINE. Verified end to end against production.
+
+### Live
+
+| Piece | Where |
+|---|---|
+| Pairing + conversational router | `line-webhook` v9 |
+| LINE Login to Supabase session | `line-auth` v5 |
+| Push to a linked account | `line-push` v1 |
+| Daily vaccine reminders 3/2/1 days | `line-vaccine-reminder` v1 (cron NOT yet scheduled) |
+| Deep-link bounce | `line-open` v4 |
+| Rich menus TH + EN | `richmenu-f54b17f4…` (default) / `richmenu-24344abe…` |
+
+Tables: `line_links`, `line_pair_codes`, `line_prefs`, `line_rich_menus`, `line_reminder_log`,
+`line_pending_actions`, `line_topic_cards`. All RLS-enabled with NO client policies — every one
+is webhook-only via the service role.
+
+Commands: `/help /menu /eng /thai /vaccine /children /kids /link /unlink`. Thai keywords still
+work. `/unlink` is behind a Yes/No confirm template.
+
+Chat recording: milk, food, sleep (ongoing AND finished), waking, nappy. Always confirm-first.
+
+### Traps that cost real time — read before touching LINE again
+
+1. **`chatMode: "chat"` silently disables webhooks.** LINE routes messages to the OA Manager
+   inbox and never calls the endpoint. Everything looks built and nothing works. Check
+   `GET /v2/bot/info` first, always.
+2. **Supabase edge functions cannot serve HTML.** The gateway forces `Content-Type: text/plain`,
+   `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`.
+   A bounce page renders as visible markup. Use a 302 — a redirect has no body.
+3. **LINE URI actions allow only http/https/line/tel.** A `nongrak://` button is rejected, hence
+   `line-open` existing at all.
+4. **`generateLink` returns an ALREADY-hashed token.** Send it as `token_hash`, never `token` —
+   GoTrue hashes `token` again and the comparison can never match. This was the whole
+   `could_not_exchange_token` bug.
+5. **LINE Login needs the Android package name + signing SHA-1 registered** on the Login channel.
+   Debug fingerprint `ae4eb52c978bb2caae3692acd9af8c14db0fb1e7`. Release needs adding too.
+6. **Never set a long `Cache-Control` on an endpoint still being iterated.** A 1-hour cache on
+   `line-open` v1 meant three later fixes were invisible on the device while curl showed them
+   working. Route values now carry a `~N` suffix that `line-open` strips, so a cache bust is a
+   one-line SQL update.
+7. **Quota: 300 pushes/month across ALL users.** *Replies are free.* That asymmetry is why the OA
+   can answer unlimited questions but reminders need `line_reminder_log` dedup and a reserve
+   guard.
+8. **Reminder day maths runs in Asia/Bangkok.** On a UTC server the date rolls at 07:00 Thai time
+   and every "tomorrow" reminder fires on the wrong day.
+9. **`created_by` defaults to `auth.uid()`, which is NULL under the service role.** Every table
+   the webhook writes must set it explicitly or rows land authorless.
+
+### Design decisions worth keeping
+
+- **Confirm before every write.** The parse is stored server-side keyed by an opaque id (LINE
+  postback data caps at 300 chars, and a client-visible payload is a client-editable one).
+  `confirmed_at` is claimed BEFORE the insert so a double-tap cannot duplicate a health record.
+- **The classifier leans towards `record`.** Since the confirm gates every write, a missed record
+  is the expensive failure and a spurious offer costs one ignored bubble. Corrected from the
+  opposite bias after user feedback.
+- **Vaccine dates are read, never generated.** A model asked to guess one always produces
+  something plausible.
+- **Rich menus link per-user, not as a new default** — a default change would flip every
+  follower's menu when one person types /eng.
+- **Reminders go to `children.user_id` (owner) only.** `child_members` holders get nothing;
+  widening multiplies push cost. Revisit if shared-care families miss appointments.
+
+### Open
+
+- Cron job for `line-vaccine-reminder` not created (dashboard → Integrations → Cron, `0 2 * * *`).
+- OA Response settings: **Chat off / Webhooks on** — status unconfirmed at time of writing.
+- Topic cards have no images; needs a public bucket and four uploads, then
+  `update line_topic_cards set image_url = …`.
+- `line-vaccine-reminder/index.ts` exists in production only — `supabase functions download` it.
+- LINE secrets are all in the session transcript and need rotating. So does `MAPS_API_KEY`.
+- No unit tests on this batch. Test count still 66.
+- Release keystore SHA-1 not yet registered with LINE Login.
+
+**Build:** `:app:assembleDebug` GREEN, installed to device, `nongrak://open/nutrition` verified
+resolving to `com.publish.NongRak/MainActivity` and launching.
+
+---
+
+## 2026-08-22 — In-app alert banner, LINE reminders tab, /clear wording, admin inbox
+
+### Built
+
+- **`ui/components/InAppAlerts.kt`** (new) — process-wide `MutableStateFlow<Alert?>` plus
+  `InAppAlertHost`, a slide-in-from-top overlay. `NotificationRepository.notify()` now posts to it
+  alongside `SystemNotifier.show()`, and `MainActivity` wraps `AppNavigation` in a `Box` so the
+  banner floats over every screen. Tapping it opens `Screen.Notifications`.
+  - Global state, not a ViewModel: every caller is a background worker (`VaccineReminderWorker`,
+    `MedicineReminderWorker`, `DeviceSyncWorker`) with no UI scope.
+  - `STALE_MS = 30s` drops an alert posted while the app was backgrounded — otherwise a 03:00
+    worker greets the parent at breakfast with a banner that already fired as a system notification.
+  - The visible alert is held in a separate `remember` so the exit animation still has content
+    after the state has gone null.
+- **`/reminders` (also `/today`, "เตือนความจำ", "วันนี้")** in `line-webhook` — one Flex bubble with
+  today's open medicine doses, today's sleep schedule, and vaccines due or overdue within 14 days,
+  for every linked child. Listed first in `helpCard`.
+
+### Decided
+
+- **The LINE reminders tab is a REPLY, not a push.** The free tier is 300 pushes a month across
+  ALL followers combined. Pushing every dose, bedtime and vaccine would exhaust it on a handful of
+  families and then fail silently for everyone, including the warnings that matter. A tile the
+  parent taps costs nothing. Pushes stay reserved for the vaccine cron and the app's
+  WARNING/SCHEDULE mirror.
+- **Vaccines in the tab have no lower date bound.** An overdue dose is the one most worth showing;
+  an upcoming-only window is exactly how a missed dose stays missed.
+- Open doses are filtered in JS, not SQL: `status` is NULL for an untouched dose and
+  `not in (taken, skipped)` is NULL-unsafe in Postgres — it would drop the doses still due.
+- Day windows are built in `+07:00` and converted back to UTC for the column. Comparing a UTC
+  column against a Bangkok date string shifts the window seven hours and loses the evening doses.
+
+### Fixed
+
+- **`clearNote` in `S` was a syntax error** — the previous session's patch wrote literal newlines
+  inside a double-quoted TS string, which does not parse. It had never been deployed, so nothing
+  was live, but deploying it would have taken the whole webhook down. Now `\n\n`.
+  Bash heredocs eating backslashes is now the third bug from this cause; build such strings in
+  Python with `chr(92)+'n'`.
+- Three `TS2345` errors in the new code: `new Map(...)` from an `any[]` infers `unknown` values.
+  Typed as `Map<string, string>` / `Map<string, any>`.
+
+### Verified
+
+- `:app:compileDebugKotlin` GREEN.
+- `tsc --noEmit` on `line-webhook/index.ts` clean (module-resolution errors for `jsr:` excluded).
+- Bangkok weekday mapping and the day-window round-trip checked against four boundary timestamps
+  (01:00 and 23:00 local, either side of the 07:00 UTC rollover) — all pass.
+- `line_links`: one row, Julachok2, `is_admin = true`, `notify_enabled = true`.
+- `cron.job`: `line-vaccine-reminder-daily` (`0 2 * * *`) exists and is active.
+
+### Open
+
+- ~~`line-webhook` not deployed~~ — **deployed, v14 live, `verify_jwt` false**, carrying
+  `/inbox`, `/reminders` and the fixed `/clear`. Supabase CLI 2.115.0 is installed and
+  authenticated, so future deploys are one command from disk:
+  `supabase functions deploy line-webhook --no-verify-jwt --project-ref rdylsezwjdujvllyjhqb`.
+  An unsigned POST returns 401 from `verify()`, which also proves the module boots.
+- No cron job for `line-tip-broadcast` (`0 3 * * 1,4`). Vaccine one exists.
+- `/reminders` has no rich-menu tile — the artwork has six fixed tiles and none is spare. Needs a
+  decision on which to repurpose, or new artwork.
+- The admin support-notification push is hardcoded Thai while the admin's phone is set to English.
+- Migrations applied via MCP but still missing from `supabase/migrations/`: topic_cards,
+  pending_actions, tips, tip_sends, faqs, support.
+- Still no unit tests on any LINE work. Test count 66.
+
+---
+
+## 2026-08-22 (later) — Auto-push care reminders, and three broken cron jobs
+
+### Found
+
+**None of the LINE cron jobs had ever run.** Both were created through the dashboard Cron UI with
+its default template left in place:
+
+```
+url:='.../functions/v1/ai-generate', headers:='{}'::jsonb, timeout_milliseconds:=1000
+```
+
+Wrong function, no `Authorization` header, and a timeout shorter than a cold start. `cron.job`
+showed `active = true` since 2026-08-21, so the vaccine reminders looked live and were not. Any
+future "the job exists" check must read `command`, not just `active`.
+
+### Built
+
+- **`line_care_reminder_log`** + **`line_due_care_reminders(p_window_minutes)`**
+  (`20260822_line_care_reminders.sql`) — medicine doses and sleep start times due inside a window,
+  joined to the LINE account that should get them. `security definer`, execute revoked from
+  anon/authenticated.
+- **`line-care-reminder`** edge function, `verify_jwt` ON, cron `*/30 * * * *`. Same shape as
+  `line-vaccine-reminder`: `dryRun`, `RESERVE = 30` quota floor, 403 → `notify_enabled = false`,
+  and the log written only after a confirmed send.
+- All three cron jobs rewired to the correct URL with a Vault-sourced key
+  (`20260822_line_cron_fix.sql`).
+
+### Decided
+
+- **Per-event push for medicine and sleep, not a daily digest.** A dose reminder an hour early is
+  not a reminder. The cost is real: roughly 4 pushes/family/day against a 300/month shared cap, so
+  this configuration supports about **2-3 families before the RESERVE floor starts refusing runs**.
+  It degrades by refusing whole runs, never by sending half a family's reminders.
+- **Vaccines stay in their own job.** Including them here would send two messages per appointment.
+- **`WINDOW_MINUTES = 35` against a 30-minute cron.** An exact 30 leaves a gap whenever a run
+  starts late, and the dose in that gap is never reminded. The overlap is safe because
+  `line_care_reminder_log` has a unique key on `(kind, ref_id, slot)`.
+- **The service-role key lives in Vault, not in the cron command.** `cron.job.command` is readable
+  by anyone who can query it.
+
+### Verified
+
+- `line_due_care_reminders(10080)` returns a real row — Fifa, sleep, 20:00, 2026-08-22 — proving
+  the text `start_time` cast, the Monday-first weekday match and the Bangkok arithmetic all work
+  against production data.
+- `tsc --noEmit` clean on `line-care-reminder/index.ts`.
+- All three `cron.job` rows now target their own function and reference `vault.decrypted_secrets`.
+
+### Open
+
+- ~~`vault.secrets` is EMPTY~~ — stored, and **all three jobs verified 200** by dry-running them
+  through the exact `net.http_post` the cron uses.
+  - It went in with the arguments **reversed** the first time: `vault.create_secret` is
+    `(secret, name)`, so the key landed in `vault.secrets.name`. Names are NOT encrypted, and the
+    NULL lookup made `'Bearer ' || NULL` collapse the whole header — hence
+    `UNAUTHORIZED_NO_AUTH_HEADER` rather than a 401 about a bad token. Repaired by re-creating
+    from a subquery over the misplaced column, then deleting the bad row.
+  - **The service-role key was therefore exposed in plaintext and needs rotating**
+    (Dashboard -> Project Settings -> API -> Rotate). After rotating, re-run
+    `vault.create_secret('<NEW_KEY>', 'service_role_key')` — argument order matters.
+- A medicine push has no "mark as taken" button; it tells the parent to open the app. Needs a
+  postback handler in `line-webhook` to do better.
+- `line-vaccine-reminder/index.ts` is now in the repo (downloaded), previously production-only.
+
+---
+
+## 2026-08-22 (later still) — Admin decoupled from the app account
+
+### Found
+
+`is_admin` lived on `line_links`, whose PRIMARY KEY is `user_id` with an FK to `auth.users`. So
+"is this person staff?" was structurally welded to "does this person have a NongRak parent
+account?" — there was no row to put a support admin in. No UPDATE could have fixed it.
+
+Separately, `follow` events only `update` an existing `line_links` row, so an unlinked follower
+leaves no trace anywhere. There was no way to learn a prospective admin's LINE id at all.
+
+### Built
+
+- **`line_admins`** (`20260822_line_admins.sql`) — `line_user_id` as the primary key,
+  plus `notify_enabled`, `always_notify`, `note`. Seeded from `line_links.is_admin` so support
+  was never unwatched during the switch. RLS on, no policies: service role only.
+- **`always_notify`** (`20260822_line_admin_always_notify.sql`) — per-admin override of the
+  "never ping the sender" rule. A column, not a deleted branch: a staff admin added later must
+  not start receiving echoes of their own messages.
+- **`/whoami`** (also `/id`) in `line-webhook` — replies with the caller's own LINE id. This is
+  how an admin is onboarded without reading ids out of the database. Undocumented: not in
+  `helpCard`, not on the rich menu. Open to everyone, because it reveals only the caller's own id.
+- `supportCapture`, `supportReply` and `/inbox` now all route through one `isAdmin()` helper
+  instead of three separate inline `line_links` queries.
+
+### Current admin
+
+**Julachok** (`Uac23015…`), `notify_enabled` and `always_notify` both true — every enquiry lands
+in that chat, including its own test messages. Julachok2 removed from `line_admins`, and
+`line_links.is_admin` set false everywhere so no stale second answer to "who is staff?" remains.
+
+### Open
+
+- Support pushes have no `RESERVE` quota floor, unlike the two cron jobs. A month of routine
+  reminders could leave a genuine enquiry undeliverable.
+- A medicine push still has no "mark as taken" postback button.
+- `line_links.is_admin` column is now dead. Drop it once nothing else reads it.
+
+---
+
+## 2026-08-22 (later still) — Support messages as Flex cards
+
+### Built
+
+- **`supportNotifyCard`** — what an admin now receives instead of a text blob: sender, message,
+  code, a **Copy reply command** button and a **See all waiting** button (`/inbox`).
+- **`supportReplyCard`** — the team's answer as it lands in the parent's chat, with a
+  **Write again** postback so the thread can continue without hunting for the menu tile.
+
+### Decided
+
+- **Clipboard, not a message action, for the reply button.** `{type:"message", text:"/reply <code> "}`
+  would SEND that string immediately with no body, and the webhook would answer with the usage
+  hint. Copying lets the admin paste, type, and send once.
+- **Each card is rendered in the READER's language, not the sender's.** The admin alert uses
+  `langFor(admin)` and the parent's reply uses `langFor(recipient)`. Previously both were
+  hardcoded Thai, so an English-reading admin got a Thai header.
+
+### Trap re-encountered
+
+Thai string literals do NOT survive a Bash heredoc into `python -` on this machine — stdin decodes
+as cp874 and the match silently fails (the assert caught it before any write). Fix: write the
+fragment with the Write tool as UTF-8, then have Python read it with `encoding='utf-8'` and splice.
+Locate splice points with **ASCII-only anchors** and replace by span; never match on Thai text.
+
+### Verified
+
+- `tsc --noEmit` clean; no unbalanced-quote lines; braces and parens balanced at 1656 lines.
+- Deployed; unsigned POST returns 401 from `verify()`, which also proves the module boots.
+
+---
+
+## 2026-08-22 (later still) — Guest limits, photos and stickers
+
+### Built
+
+- **`line_guest_usage` + `line_guest_take(text)`** (`20260822_line_guest_usage.sql`) — per
+  Bangkok-day allowance for followers with no linked account. The increment and the read happen in
+  ONE statement (`insert … on conflict do update … returning used`), so two messages arriving
+  together cannot both see the old value and each be let through.
+- **Guest tier in `line-webhook`**: `GUEST_DAILY_LIMIT = 5`.
+  - `/tips` returns `guestLockedCard` instead of a tip.
+  - Free-text answers run under `guestContext()` — 2 sentences, app questions and general child
+    care only, explicitly no dosages, no diagnosis, no personalised medical advice.
+  - Over the limit -> `guestLimitCard`, with a **How to connect** button that sends `/link`.
+- **`onImage`** — pulls the binary from **`api-data.line.me`** (not `api.line.me`, which 404s for
+  content), caps at 4 MB, base64s it and sends it to `ai-generate`, which already accepted
+  `imageBase64`/`imageMimeType` across the whole Gemini -> Claude -> OpenRouter chain.
+- **`onSticker`** — answers using LINE's `keywords` array so the reply matches the mood.
+
+### Decided
+
+- **`guestTake` fails OPEN.** If the counter errors, the question is answered. Refusing to talk to
+  a parent because a counter is unavailable is a worse failure than one free extra answer.
+- **A photo spends from the same allowance.** Vision costs more than text, and without this a
+  guest could bypass the cap by photographing their question.
+- **Guests get the narrow brief for photos too**, or an image becomes a way around the ban on
+  personalised medical advice.
+- **Stickers are answered with words, never another sticker.** An invalid packageId/stickerId
+  makes LINE reject the WHOLE reply, so the flourish would cost the actual response.
+- **A sticker with no `keywords` gets a canned line** — no AI call, no allowance spent, because
+  there is no signal to answer.
+- `encodeBase64` from `jsr:@std/encoding/base64`, not `btoa(String.fromCharCode(...bytes))`, which
+  overflows the argument limit and throws above roughly 100 KB.
+
+### Verified
+
+- `line_guest_take` returns 1, 2, 3 on successive calls; probe row deleted afterwards.
+- `tsc --noEmit` clean; no unbalanced-quote lines; braces and parens balanced at 1937 lines.
+- Deployed; unsigned POST returns **401**, which also proves `jsr:@std/encoding/base64` resolved
+  at boot — a failed import would have given 500.
+
+### Open
+
+- `helpCard` still lists `/tips` to guests; they get the locked card on tap.
+- A photo from a LINKED parent is described but not offered as a record (photo of a meal -> food
+  log). `classify` is text-only.
+
+---
+
+## 2026-08-22 — Memory Studio: the export was a lie
+
+### Found
+
+`NongRakMediaWatermarkEngine.prepareWatermarkedVideoForExport` **byte-copied the source file**,
+reported `onProgress` 0.2 -> 0.8 -> 1.0 and returned a FileProvider URI. No encoder existed
+anywhere in the project — no Media3, no ExoPlayer, no FFmpeg. So:
+
+- every exported `.mp4` carried "ลิขสิทธิ์แท้" in the UI and **no watermark in the file**;
+- the 2-second outro was a Compose preview (`NongRakAnimatedOutroBumper`) that never reached export;
+- `exportMemoryToSocial` took only title/description/date/uri, so aspect ratio, mascot sticker and
+  milestone stamp were **discarded at the door**.
+
+The UI for all of it (mascots, `StudioAspectRatio`, `TimeCapsuleTarget`, stamps) was real and
+compiled. Only the render was missing. Image export was — and remains — genuinely watermarked.
+
+### Built
+
+- Added `androidx.media3:{transformer,effect,common}` 1.9.0. This is the only encoder in the app.
+- Rewrote the video path on **Media3 Transformer**: `OverlayEffect` for the badge and mascot,
+  `Presentation.createForAspectRatio` for reformat, and an `EditedMediaItemSequence` of
+  [video, 2s outro still] for the ending card.
+- Wired `aspectRatio` / `mascotResId` / `mascotPosition` through `exportMemoryToSocial` to all
+  three studio export pills.
+
+### Decided
+
+- **Full-frame transparent overlay bitmaps**, not badge-sized bitmaps with anchor maths, so the
+  SAME `drawWatermarkBadge` produces pixel-identical output for a photo and a video frame.
+- **`experimentalSetForceAudioTrack(true)`** — the outro still has no audio track, and without a
+  forced one the muxer drops audio for the whole composition, silencing the parent's own video.
+- **Presentation applied AFTER the overlay**, or the new aspect ratio crops the badge off.
+- **Rotation-aware sizing**: a portrait phone video is stored landscape with rotation 90, and
+  overlays composite after rotation, so a badge sized to raw dimensions lands sideways.
+- **Transformer runs on `Dispatchers.Main`** — it requires a Looper on the calling thread.
+- **Failure returns the ORIGINAL uri** and logs the reason. A parent sharing a memory still gets
+  their video; the failure is named rather than hidden (the old bug was a silent success).
+- Added a Toast before rendering: a real encode takes seconds, where the byte-copy was instant.
+
+### Verified
+
+- `:app:compileDebugKotlin` GREEN after adding Media3 and after the wiring.
+- One compile error found and fixed: `OverlayEffect` takes `List<TextureOverlay>`, and a list
+  inferred as `MutableList<BitmapOverlay>` does not satisfy it from Kotlin.
+
+### Open
+
+- **Never run on a device.** The render path compiles but is unproven: encoder availability,
+  output orientation and the image-in-sequence outro all need a real export to confirm.
+- The editor UI still has **8 tool tabs** in one sheet — the "looks bad" complaint, not yet addressed.
+- `CompareMemoriesScreen` drag uses `dragAmount.x / 300f` and a hardcoded
+  `screenWidthDp - 32` offset, so the handle drifts from the finger on other screen sizes.
+
+### Editor redesign (same day)
+
+`StudioToolTab` had **eight** pills in a `horizontalScroll` Row at 11sp, sized to their own
+content. Half the studio was off-screen unless you thought to swipe a strip of text.
+
+Replaced with `StudioGroup { STYLE, DECORATE, EXPORT }` — three full-width `Modifier.weight(1f)`
+tabs, icon above a 12sp label, grouped by what the parent is trying to do:
+
+| Group | Contains |
+|---|---|
+| STYLE | quick presets, effects, music |
+| DECORATE | mascot + position, tags & stamp |
+| EXPORT | aspect ratio, ending outro, time capsule |
+
+- Group content sits in a `heightIn(max = 300.dp).verticalScroll(...)` column, so three stacked
+  tools can never push the preview off screen — the preview is the thing being looked at.
+- `StudioSectionLabel` separates the stacked tools inside a group.
+- Switching group clears `isPreviewingOutro`; previously the Outro TAB forced the preview on,
+  which is wrong now that outro shares a group with two other tools.
+- Deleted `StudioTabPill` (21 lines) — dead once nothing referenced it.
+
+`:app:compileDebugKotlin` GREEN. Only remaining warning is pre-existing
+(`Icons.Filled.VolumeOff` deprecated, line 1204, not from this change).

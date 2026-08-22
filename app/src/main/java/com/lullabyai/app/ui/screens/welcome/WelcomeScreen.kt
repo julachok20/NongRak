@@ -64,7 +64,8 @@ fun WelcomeScreen(
     settingsViewModel: SettingsViewModel,
     // Default no-op keeps this screen wireable today — AppNavigation.kt passes the real
     // navigation to Screen.DoctorWelcome.route once the doctor flow is hooked up centrally.
-    onDoctorMode: () -> Unit = {}
+    onDoctorMode: () -> Unit = {},
+    onGuestMode: () -> Unit = {}
 ) {
     val s = LocalStrings.current
     val isThai = s.isThai
@@ -257,7 +258,24 @@ fun WelcomeScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(10.dp))
+
+                    TextButton(
+                        onClick = onGuestMode,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Icon(Icons.Filled.FlashOn, null, tint = Primary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (isThai) "เข้าใช้งานบัญชีทดลอง (Test Account)"
+                            else "Explore Test Account (Preview)",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Primary
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
 
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         HorizontalDivider(Modifier.weight(1f), color = Outline.copy(0.35f))

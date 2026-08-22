@@ -39,6 +39,13 @@ android {
         // empty so a checkout without the key still builds — the feature reports itself as
         // unconfigured rather than failing the build.
         buildConfigField("String", "MAPS_API_KEY", "\"${localProps["MAPS_API_KEY"] ?: ""}\"")
+        // LINE OA basic id, e.g. "@nongrak" — used to build the chat deep link. Blank hides
+        // the LINE features rather than shipping a link that opens nothing.
+        buildConfigField("String", "LINE_OA_ID", "\"${localProps["LINE_OA_ID"] ?: ""}\"")
+        // LINE Login channel id. MUST live in the same LINE Provider as the Messaging channel,
+        // otherwise the userId from login never matches the one the OA sees and notifications
+        // silently go nowhere.
+        buildConfigField("String", "LINE_LOGIN_CHANNEL_ID", "\"${localProps["LINE_LOGIN_CHANNEL_ID"] ?: ""}\"")
 
         manifestPlaceholders["supabaseRedirectScheme"] = "lullabyai"
     }
@@ -121,6 +128,7 @@ dependencies {
     // Supabase
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.auth)
+    implementation(libs.linesdk)
     implementation(libs.supabase.storage)
     implementation(libs.supabase.realtime)
 
@@ -131,6 +139,13 @@ dependencies {
     // Ktor JSON serialization for Claude/Anthropic REST API
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+
+    // Video export pipeline. Media3 Transformer is the ONLY encoder in this project — without it
+    // the watermark and outro cannot reach an exported .mp4, which is what the previous
+    // implementation silently failed to do (it byte-copied the source and reported success).
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
+    implementation(libs.androidx.media3.common)
 
     // Image loading
     implementation(libs.coil.compose)

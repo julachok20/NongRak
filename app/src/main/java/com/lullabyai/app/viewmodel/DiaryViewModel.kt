@@ -175,6 +175,68 @@ class DiaryViewModel(
         }
     }
 
+    fun importFromSync(
+        uris: List<android.net.Uri>,
+        sourceName: String,
+        context: android.content.Context,
+        isThai: Boolean,
+        onProgress: (Int, Int) -> Unit,
+        onDone: (Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            val child = _uiState.value.child ?: childRepo.getSelectedChild().getOrNull()
+            if (child == null || uris.isEmpty()) {
+                onDone(0)
+                return@launch
+            }
+            var importedCount = 0
+            val total = uris.size
+            val tags = listOf("first_step", "first_smile", "first_word", null, null)
+            val titlesTh = listOf("ตรวจพบก้าวสำคัญ", "ตรวจพบรอยยิ้มแสนหวาน", "โมเมนต์แห่งความสุข", "ความทรงจำในครอบครัว")
+            val titlesEn = listOf("Milestone detected", "Sweet smile captured", "Joyful family moment", "Precious childhood memory")
+
+            for ((index, uri) in uris.withIndex()) {
+                onProgress(index + 1, total)
+                try {
+                    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    val isVideo = mime.startsWith("video/")
+                    val isImage = mime.startsWith("image/")
+                    val bytes = if (isImage) {
+                        com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, uri)
+                    } else {
+                        com.lullabyai.app.util.ImageUtils.readBytes(context, uri)
+                    }
+                    if (bytes != null) {
+                        val fileName = uri.lastPathSegment ?: if (isVideo) "video_${System.currentTimeMillis()}.mp4" else "photo_${System.currentTimeMillis()}.jpg"
+                        val path = diaryRepo.uploadMedia(child.id, bytes, fileName, mime).getOrNull()
+                        val tag = tags[index % tags.size]
+                        val autoTitle = (if (isThai) titlesTh else titlesEn)[index % 4]
+                        val todayIso = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+                        val res = diaryRepo.saveMemory(
+                            id = null,
+                            childId = child.id,
+                            title = autoTitle,
+                            description = if (isThai) "NongRak AI ตรวจพบและซิงก์จาก $sourceName โดยอัตโนมัติ" else "NongRak AI auto-detected and synced from $sourceName",
+                            memoryDate = todayIso,
+                            mediaType = if (isVideo) "video" else "photo",
+                            mediaPath = path,
+                            mimeType = mime,
+                            durationSec = null,
+                            milestoneTag = tag,
+                            isFavorite = index % 2 == 0,
+                            isMilestone = tag != null,
+                            category = if (sourceName.contains("Drive", true)) "cloud_archive" else "camera_roll"
+                        )
+                        if (res.isSuccess) importedCount++
+                    }
+                } catch (_: Exception) { }
+            }
+            load(force = true)
+            onDone(importedCount)
+        }
+    }
+
+
     fun toggleFavorite(memory: DiaryMemory) {
         viewModelScope.launch {
             val next = !memory.isFavorite

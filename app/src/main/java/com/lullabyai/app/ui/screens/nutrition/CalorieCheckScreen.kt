@@ -56,6 +56,14 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
         if (bmp != null) vm.runCalorieCheckFromPhoto(bitmapToJpeg(bmp), lang)
     }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val bytes = com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, uri)
+            if (bytes != null) {
+                vm.runCalorieCheckFromPhoto(bytes, lang)
+            }
+        }
+    }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) cameraLauncher.launch(null)
         else Toast.makeText(context, if (isThai) "ต้องอนุญาตให้ใช้กล้องก่อน" else "Camera permission is needed", Toast.LENGTH_SHORT).show()
@@ -111,12 +119,27 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
                 if (ui.checkLoading) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White); Spacer(Modifier.width(8.dp)) }
                 Text(if (isThai) "ให้ AI คำนวณ" else "Let AI calculate", fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(
-                onClick = { openCamera() },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), enabled = !ui.checkLoading
-            ) {
-                Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                Text(if (isThai) "ถ่ายรูปอาหาร ให้ AI คำนวณให้" else "Take a photo — AI calculates for you", fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { openCamera() },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(100.dp),
+                    enabled = !ui.checkLoading
+                ) {
+                    Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isThai) "ถ่ายรูปอาหาร" else "Take photo", fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = { galleryLauncher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(100.dp),
+                    enabled = !ui.checkLoading
+                ) {
+                    Icon(Icons.Filled.PhotoLibrary, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isThai) "เลือกรูปภาพ" else "Upload photo", fontWeight = FontWeight.Bold, maxLines = 1)
+                }
             }
             // Explicit Cancel for the in-flight photo/AI check — user asked for a real button
             // rather than relying on the back button while a capture/upload is processing.

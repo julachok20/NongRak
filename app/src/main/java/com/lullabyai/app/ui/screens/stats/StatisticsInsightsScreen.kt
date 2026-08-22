@@ -188,9 +188,15 @@ fun StatisticsInsightsScreen(
             com.lullabyai.app.ui.components.ChildLoadErrorCard(s.isThai) { childViewModel.loadChild() }
         }
         } else if (state.children.isEmpty() && !state.isLoading) {
-        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            NoChildDataCard(s.isThai) { navController.navigate(Screen.AddChildChoice.route) }
-        }
+            Box(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                NoChildDataCard(s.isThai) {
+                    if (childViewModel.isGuest()) {
+                        childViewModel.promptRegistration(if (s.isThai) "ต้องสมัครสมาชิกก่อนเพิ่มข้อมูลลูก" else "Registration required to add a child")
+                    } else {
+                        navController.navigate(Screen.AddChildChoice.route)
+                    }
+                }
+            }
         } else {
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -215,7 +221,13 @@ fun StatisticsInsightsScreen(
                     }
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.clickable { navController.navigate(Screen.AddChildChoice.route) }) {
+                    modifier = Modifier.clickable {
+                        if (childViewModel.isGuest()) {
+                            childViewModel.promptRegistration(if (s.isThai) "ต้องสมัครสมาชิกก่อนเพิ่มข้อมูลลูก" else "Registration required to add a child")
+                        } else {
+                            navController.navigate(Screen.AddChildChoice.route)
+                        }
+                    }) {
                     Box(
                         Modifier.size(52.dp).clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceVariant),

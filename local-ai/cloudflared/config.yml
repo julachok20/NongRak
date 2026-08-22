@@ -1,0 +1,35 @@
+# Cloudflare Tunnel — publishes the GB10's inference server without opening a port.
+#
+# The box makes an OUTBOUND connection to Cloudflare and keeps it open. Nothing
+# listens on the public internet, there is no port forward, and the school/home IP
+# is never published. That matters more than convenience here: the alternative is a
+# forwarded port on a network that also carries everything else.
+#
+# Install on the GB10 (DGX OS, aarch64):
+#   curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 \
+#     -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
+#   cloudflared tunnel login
+#   cloudflared tunnel create nongrak-ai
+#   cloudflared tunnel route dns nongrak-ai ai.nongrak-ai.com
+#   sudo cp config.yml /etc/cloudflared/config.yml
+#   sudo cloudflared service install
+#
+# `tunnel create` writes the credentials JSON and prints the UUID — put both below.
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: ai.nongrak-ai.com
+    service: http://localhost:11434
+    originRequest:
+      # A 27B model on this box generates ~20-40 tok/s, so a long answer is a long
+      # request. Cloudflare's default 30s origin timeout would cut it off mid-sentence
+      # and the edge function would read that as "local failed" on a box that is fine.
+      connectTimeout: 10s
+      # ponytail: 120s is generous on purpose; the edge function holds the real ceiling
+      # (LOCAL_AI_TIMEOUT_MS). One authority for the budget, and it is the one that can
+      # fall back to Gemini.
+      noHappyEyeballs: true
+  # Everything else gets refused here rather than reaching the box.
+  - service: http_status:404
