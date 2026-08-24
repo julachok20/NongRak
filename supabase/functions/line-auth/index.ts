@@ -103,11 +103,16 @@ Deno.serve(async (req) => {
   if (!LOGIN_CHANNEL_ID) return json({ error: "line_login_not_configured" }, 503);
 
   let idToken = "", nonce: string | undefined, accountType = "parent";
+  // linkOnly: answer "is this LINE account already linked?" WITHOUT creating anything.
+  // claimCode: spend an 8-digit code from the app against this VERIFIED LINE id.
+  let linkOnly = false, claimCode = "";
   try {
     const b = await req.json();
     idToken = String(b?.idToken ?? "");
     if (typeof b?.nonce === "string" && b.nonce) nonce = b.nonce;
     if (typeof b?.accountType === "string" && b.accountType) accountType = b.accountType;
+    linkOnly = b?.linkOnly === true;
+    if (typeof b?.claimCode === "string") claimCode = b.claimCode.trim();
   } catch { /* handled by the blank check below */ }
   if (!idToken) return json({ error: "missing_id_token" }, 400);
 
@@ -123,6 +128,26 @@ Deno.serve(async (req) => {
     .select("user_id")
     .eq("line_user_id", lineUserId)
     .maybeSingle();
+
+  // Claiming a code: the LINE id comes from the VERIFIED token, never from the request body.
+  // Letting the caller name the line_user_id would let anyone claim a code as somebody else and
+  // have that family's own phone approve the attacker's account.
+  if (claimCode) {
+    const { data: ok, error: claimErr } = await admin.rpc("claim_link_code", {
+      p_code: claimCode,
+      p_line_user_id: lineUserId,
+      p_display_name: claims.name ?? null,
+    });
+    if (claimErr) return json({ error: `claim_failed: ${claimErr.message}` }, 500);
+    return json({ claimed: ok === true });
+  }
+
+  // Asked only to look, not to create. This is what stops a parent who already uses the app —
+  // but has never linked LINE — being handed a brand new empty account with none of their
+  // children in it.
+  if (linkOnly && !existing?.user_id) {
+    return json({ linked: false });
+  }
 
   let email: string | null = null;
 

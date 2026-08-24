@@ -185,10 +185,18 @@ object LineRepository {
     }
 
     /** Forgets the link entirely. The parent must pair again to get notifications back. */
-    suspend fun unlink(): Result<Unit> = runCatching {
-        val uid = supabase.auth.currentUserOrNull()?.id ?: error("not signed in")
-        supabase.from("line_links").delete { filter { eq("user_id", uid) } }
-        Unit
+    /**
+     * Disconnects LINE, and kills any link code still in flight.
+     *
+     * One RPC rather than a delete here plus a cleanup there: an 8-digit code issued minutes ago
+     * stays live for its full ten minutes, and a request already claimed on another device could
+     * still be approved afterwards, silently re-linking the account the parent just disconnected.
+     *
+     * Returns true when a link actually existed, so the screen can tell the parent what happened
+     * instead of reporting success whatever the outcome.
+     */
+    suspend fun unlink(): Result<Boolean> = runCatching {
+        supabase.postgrest.rpc("unlink_line").data.trim().equals("true", ignoreCase = true)
     }
 
     /**

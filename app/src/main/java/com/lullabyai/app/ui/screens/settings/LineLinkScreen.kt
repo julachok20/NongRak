@@ -52,6 +52,8 @@ fun LineLinkScreen(
     var otp by remember { mutableStateOf<com.lullabyai.app.data.repository.LineLinkCode?>(null) }
     // Somebody has entered a code and is waiting to be let in. Approving is the second factor.
     var request by remember { mutableStateOf<com.lullabyai.app.data.repository.LineLinkRequest?>(null) }
+    // Unlinking stops every LINE reminder. One stray tap should not do that silently.
+    var confirmUnlink by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
         link = LineRepository.status().getOrNull()
@@ -78,6 +80,60 @@ fun LineLinkScreen(
             link = LineRepository.status().getOrNull()
         }
         code = null
+    }
+
+    if (confirmUnlink) {
+        AlertDialog(
+            onDismissRequest = { confirmUnlink = false },
+            title = { Text(if (isThai) "ยกเลิกการเชื่อมต่อ LINE?" else "Disconnect LINE?") },
+            text = {
+                Text(
+                    if (isThai)
+                        "จะไม่ได้รับแจ้งเตือนวัคซีน ยา และเวลานอนทาง LINE อีก และจะบันทึกข้อมูลผ่านแชทไม่ได้ เชื่อมใหม่ได้ทุกเมื่อ"
+                    else
+                        "You will stop receiving vaccine, medicine and sleep reminders on LINE, and can no longer record by chat. You can reconnect at any time."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        confirmUnlink = false
+                        scope.launch {
+                            busy = true
+                            LineRepository.unlink()
+                                .onSuccess { had ->
+                                    message = if (had) {
+                                        if (isThai) "ยกเลิกการเชื่อมต่อแล้ว" else "Disconnected."
+                                    } else {
+                                        if (isThai) "บัญชีนี้ยังไม่ได้เชื่อมกับ LINE" else "This account was not linked."
+                                    }
+                                }
+                                // Surfaced, not swallowed: a failed delete used to leave the row in
+                                // place, and refresh() simply redrew "connected" with no explanation.
+                                .onFailure { e ->
+                                    message = (if (isThai) "ยกเลิกไม่สำเร็จ: " else "Could not disconnect: ") +
+                                        (e.message ?: "unknown")
+                                }
+                            otp = null
+                            request = null
+                            refresh()
+                            busy = false
+                        }
+                    }
+                ) {
+                    Text(
+                        if (isThai) "ยกเลิกการเชื่อมต่อ" else "Disconnect",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmUnlink = false }) {
+                    Text(if (isThai) "ไม่ใช่" else "Keep it")
+                }
+            }
+        )
     }
 
     request?.let { req ->
@@ -217,14 +273,7 @@ fun LineLinkScreen(
                     Spacer(Modifier.height(12.dp))
                     TextButton(
                         enabled = !busy,
-                        onClick = {
-                            scope.launch {
-                                busy = true
-                                LineRepository.unlink()
-                                refresh()
-                                busy = false
-                            }
-                        }
+                        onClick = { confirmUnlink = true }
                     ) {
                         Text(
                             if (isThai) "ยกเลิกการเชื่อมต่อ" else "Unlink",

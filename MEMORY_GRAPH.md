@@ -2693,3 +2693,22 @@ a URL means creating a new menu, not editing the old one.
 - Setting the default menu is a **bodyless POST and returns 411 without `Content-Length: 0`**.
 - Verified the stored Thai by **codepoint** (`U+0E16 U+0E32 U+0E21…`), not by eye — the console
   renders it as mojibake even when the stored value is correct.
+
+### Unlink made real (same day)
+
+`unlink()` deleted the `line_links` row and nothing else. Three gaps, all fixed:
+
+1. **No confirmation.** One tap on a text button killed every LINE reminder.
+2. **Errors swallowed.** The `Result` was discarded, so a failed delete left the row in place and
+   `refresh()` simply redrew "connected" with no explanation — rule 3 of CLAUDE.md exactly.
+3. **Codes survived.** An 8-digit code issued minutes earlier stayed live for its full ten
+   minutes, and a request already claimed on another device could still be approved afterwards,
+   **silently re-linking the account the parent had just disconnected**.
+
+Replaced with `unlink_line()` (security definer): deletes the link and cancels every outstanding
+code in one statement, so there is no window between the two. Returns whether a link actually
+existed, so the screen can say "disconnected" or "there was nothing to disconnect" rather than
+reporting success either way.
+
+RLS on `line_links` already allowed owner delete, so the original path did work — the problems
+were all around it, not in it.
