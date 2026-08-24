@@ -273,6 +273,10 @@ const S = {
     th: "รหัสผู้ใช้ LINE ของคุณคือ\n\n",
     en: "Your LINE user id is\n\n",
   },
+  otpClaimed: {
+    th: "รับรหัสแล้วค่ะ ขั้นตอนสุดท้าย เปิดแอปน้องรักบนมือถือของคุณแล้วกดยืนยันการเชื่อมต่อ",
+    en: "Code accepted. Last step: open the NongRak app on your phone and approve the connection.",
+  },
   unknownCmd: {
     th: "ไม่รู้จักคำสั่งนี้ค่ะ พิมพ์ /help เพื่อดูคำสั่งทั้งหมด",
     en: "Unknown command. Type /help to see everything I can do.",
@@ -1848,6 +1852,9 @@ async function onPostback(lineUserId: string, data: string, replyToken: string) 
 /** Codes are 8 chars from an unambiguous alphabet; anything else is ordinary conversation. */
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/;
 
+/** The two-factor code shown in the app. Digits only, so it cannot collide with CODE_RE. */
+const OTP_RE = /^[0-9]{8}$/;
+
 async function onText(lineUserId: string, text: string, replyToken: string) {
   // A pending support enquiry takes the next message whole — checked BEFORE the router so a
   // question typed to the team is not answered by the AI instead of reaching a human.
@@ -1863,6 +1870,22 @@ async function onText(lineUserId: string, text: string, replyToken: string) {
   }
 
   const code = text.trim().toUpperCase();
+
+  // Eight digits is the 2FA code from the app. Claiming it raises a request; it does NOT link.
+  // The parent still has to approve on the phone, which is the whole point of the second factor.
+  if (OTP_RE.test(code)) {
+    const lang = await langFor(lineUserId);
+    const p = await profile(lineUserId);
+    const { data: ok } = await db.rpc("claim_link_code", {
+      p_code: code,
+      p_line_user_id: lineUserId,
+      p_display_name: p.displayName ?? null,
+    });
+    // Same message for wrong, expired, already-used and rate-limited: telling them which would
+    // let someone guessing codes learn which guesses exist.
+    return reply(replyToken, ok === true ? t("otpClaimed", lang) : t("codeBad", lang));
+  }
+
   if (!CODE_RE.test(code)) return route(lineUserId, text, replyToken);
 
   const lang = await langFor(lineUserId);

@@ -2616,3 +2616,50 @@ tabs, icon above a 12sp label, grouped by what the parent is trying to do:
 
 `:app:compileDebugKotlin` GREEN. Only remaining warning is pre-existing
 (`Icons.Filled.VolumeOff` deprecated, line 1204, not from this change).
+
+---
+
+## 2026-08-22 — NongRak web companion + two-factor LINE linking
+
+### Built (new repo: `Jul-SBW/nongrak-web`, live at nongrak-web.vercel.app)
+
+Next.js 16 App Router + Supabase, deliberately SEPARATE from the marketing site
+(`nongrak-ai.vercel.app`), which stays untouched. This one exists for the LINE OA.
+
+- LINE sign-in reuses the existing `line-auth` edge function: the web route runs the OAuth
+  dance, then hands the id_token to the same function the Android app uses, so web and mobile
+  resolve to the SAME account. Google uses the native Supabase provider.
+- `/dashboard`, `/children/[id]`, `/children/[id]/health`, `/health` (child picker).
+- Health log shows vaccine book, nutrition, sleep and `health_records` (the sickness log).
+
+### Two-factor LINE linking (`20260822_line_link_otp` applied)
+
+`line_link_codes` + `line_link_attempts`, with `issue_link_code()`, `claim_link_code()` and
+`confirm_link_code()`. The webhook accepts an 8-digit code (`OTP_RE`, digits only so it cannot
+collide with the existing alphanumeric `CODE_RE`).
+
+**Claiming a code links nothing.** It raises a request the phone must approve — verified against
+production: after a correct claim, `line_links` still pointed at the original account. Knowledge
+(the code, visible only in the app) plus possession (approving in the app).
+
+### Decided
+
+- **A per-code attempt counter is not enough.** Capped at 5 per code AND 10 failures per LINE
+  account per hour — otherwise one guess against each of a thousand codes walks the keyspace.
+- **One live code per parent**; issuing cancels the previous, so the guessable surface stays at one.
+- **Identical message for wrong / expired / used / throttled.** Distinguishing them tells someone
+  guessing which of their guesses exist.
+- Server Supabase client is per-request, never a module singleton — a shared one in Next.js hands
+  one parent's session to the next visitor.
+- Dashboard queries carry no `user_id` filter: RLS already scopes rows, and a second copy of the
+  rule is a second place to get it wrong. Care Circle shares then appear for free.
+- A child the caller cannot see 404s rather than 403s, so routes cannot probe for other families' ids.
+
+### Open
+
+- **The Android approve screen does not exist yet.** `confirm_link_code(id)` is deployed and
+  tested, but nothing in the app calls it, so the 2FA flow cannot complete end to end today.
+- Health log is read-only; record/edit buttons not built (deliberately not stubbed).
+- `/children/new` is linked from the dashboard but not built — that link 404s.
+- Rich menu still not updated; tiles should point at nongrak-web.vercel.app.
+- Vercel MCP token can read but not create projects (403); the CLI, logged in as the user, can.
