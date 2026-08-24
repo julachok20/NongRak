@@ -2663,3 +2663,33 @@ production: after a correct claim, `line_links` still pointed at the original ac
 - `/children/new` is linked from the dashboard but not built — that link 404s.
 - Rich menu still not updated; tiles should point at nongrak-web.vercel.app.
 - Vercel MCP token can read but not create projects (403); the CLI, logged in as the user, can.
+
+### Rich menu v5 — tiles now open the web companion
+
+Replaced both menus with the `02.*` artwork. **Tile actions are immutable**, so pointing a tile at
+a URL means creating a new menu, not editing the old one.
+
+| Tile | Action |
+|---|---|
+| ลูกของคุณ / Your Child | uri -> nongrak-web.vercel.app/dashboard |
+| สมุดสุขภาพลูก / Child Health Book | uri -> nongrak-web.vercel.app/health |
+| Quick Action | `/quick` |
+| ถาม / Ask | `ถามน้องรัก` / `ask` |
+| ช่วยเหลือ / Help Center | `/help` |
+| ติดต่อแอดมิน / Contact Admin | `/admin` |
+
+- **TH `richmenu-dfe701100c349d595f81260cacee6a35`** (default for all followers)
+- **EN `richmenu-fb0b6c6372f6a5d14b5977f2905adad1`**
+- `line_rich_menus` updated; old v4 menus deleted, which also clears their per-user links.
+
+### Traps hit
+
+- Source art was **1527x1030 and 1536x1024, both over LINE's 1 MB cap**. Resized to 2500x1686 and
+  JPEG q92 -> 477 KB / 488 KB. The Thai image is exactly 2500x1686 scaled down, so the proven grid
+  (X 0/833/1667/2500, Y 632/1100/1568) transferred unchanged.
+- `print()` redirected to a file writes **cp874** on this machine, which corrupted the Thai in the
+  menu JSON and made the API reject it. Fixed by writing with `io.open(..., encoding='utf-8')`.
+  Same root cause as the earlier heredoc problem: never let Thai cross a shell boundary.
+- Setting the default menu is a **bodyless POST and returns 411 without `Content-Length: 0`**.
+- Verified the stored Thai by **codepoint** (`U+0E16 U+0E32 U+0E21…`), not by eye — the console
+  renders it as mojibake even when the stored value is correct.
