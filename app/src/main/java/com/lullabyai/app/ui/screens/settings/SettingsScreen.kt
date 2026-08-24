@@ -211,6 +211,13 @@ fun SettingsScreen(
             item {
                 SettingsGroup {
                     SettingsRow(
+                        icon = Icons.Filled.PhonelinkLock,
+                        label = if (isThai) "อุปกรณ์ที่เชื่อมต่อ" else "Trusted Devices",
+                        value = if (isThai) "จัดการ" else "Manage",
+                        onClick = { navController.navigate(Screen.TrustedDevices.route) }
+                    )
+                    Divider52()
+                    SettingsRow(
                         icon = Icons.Filled.Notifications,
                         label = if (isThai) "ศูนย์การแจ้งเตือนและประวัติ" else "Notification Center",
                         value = if (isThai) "เปิดดู" else "View",

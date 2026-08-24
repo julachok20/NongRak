@@ -850,6 +850,12 @@ fun AppNavigation(
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(Screen.TrustedDevices.route) {
+            com.lullabyai.app.ui.screens.settings.TrustedDevicesScreen(
+                navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(Screen.PermissionAccess.route) {
             com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,

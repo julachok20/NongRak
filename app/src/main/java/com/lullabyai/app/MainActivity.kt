@@ -144,11 +144,16 @@ class MainActivity : ComponentActivity() {
 
                     if (isReady) {
                         androidx.compose.foundation.layout.Box {
-                            AppNavigation(
-                                navController = navController,
-                                startDestination = startDestination,
-                                settingsViewModel = settingsViewModel
-                            )
+                            // Every sign-in path funnels through here, so device trust is checked
+                            // once rather than at each of the dozen places that navigate to
+                            // Dashboard — eleven of which are easy to update and one easy to miss.
+                            com.lullabyai.app.ui.components.DeviceTrustGate(settingsManager) {
+                                AppNavigation(
+                                    navController = navController,
+                                    startDestination = startDestination,
+                                    settingsViewModel = settingsViewModel
+                                )
+                            }
                             // Drawn last so it floats over whatever screen is showing. Tapping it
                             // opens the notification list, which is where the full text lives.
                             com.lullabyai.app.ui.components.InAppAlertHost(

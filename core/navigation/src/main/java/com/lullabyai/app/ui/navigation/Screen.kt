@@ -102,6 +102,7 @@ sealed class Screen(val route: String) {
     object AiDataRetention : Screen("ai_data_retention")
     /** Pair this account with the NongRak LINE OA for notifications. Added 2026-08-21. */
     object LineLink : Screen("line_link")
+    object TrustedDevices : Screen("trusted_devices")
     object MilkRecord : Screen("milk_record")
     object NutritionInsights : Screen("nutrition_insights")
     object SleepActivityInsights : Screen("sleep_activity_insights")

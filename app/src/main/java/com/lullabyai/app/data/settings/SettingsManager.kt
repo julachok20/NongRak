@@ -37,6 +37,7 @@ class SettingsManager(private val context: Context) {
     private val HAS_SEEN_TOUR = booleanPreferencesKey("has_seen_first_run_tour")
     private val HAS_SEEN_DOCTOR_TOUR = booleanPreferencesKey("has_seen_doctor_first_run_tour")
     private val SLEEP_REC_RESPONSE_AT = stringPreferencesKey("sleep_rec_response_at")
+    private val DEVICE_ID = stringPreferencesKey("trusted_device_id")
 
     /** When the parent last answered (yes or no+reason) the recommended-bedtime prompt — gates
      *  how often SleepScheduleScreen/SleepRecommendationWorker re-ask (cooldown, not one-and-done). */
@@ -44,6 +45,21 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setSleepRecResponded() {
         context.dataStore.edit { it[SLEEP_REC_RESPONSE_AT] = java.time.Instant.now().toString() }
+    }
+
+    /**
+     * A random id for this install, persisted once and reused forever after.
+     *
+     * Not the Android ID or any hardware identifier: those can change on reinstall or be shared
+     * across profiles on some OEM skins. A self-issued UUID is what device-trust approval keys
+     * off, so it needs to be stable for exactly this install and nothing else.
+     */
+    suspend fun getOrCreateDeviceId(): String {
+        val existing = context.dataStore.data.map { it[DEVICE_ID] }.first()
+        if (existing != null) return existing
+        val fresh = java.util.UUID.randomUUID().toString()
+        context.dataStore.edit { it[DEVICE_ID] = fresh }
+        return fresh
     }
 
     /** Whether the parent has already seen (or skipped) the first-run feature tour. */
