@@ -938,6 +938,12 @@ async function topicCard(question: string, lang: Lang) {
 
 const SUPPORT_EMAIL = "pgaslgofficial@gmail.com";
 
+/**
+ * The LINE OA companion site. Separate from nongrak-ai.vercel.app, which is the marketing page:
+ * this one is behind a login and shows the family's own data.
+ */
+const WEB_BASE = "https://nongrak-web.vercel.app";
+
 const APP_LINK = (route: string) =>
   `${Deno.env.get("SUPABASE_URL")}/functions/v1/line-open?r=${encodeURIComponent(route)}`;
 
@@ -1007,6 +1013,11 @@ async function childrenCards(userId: string, lang: Lang) {
         type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
         contents: [
           openButton("vaccine_book", lang, th ? "สมุดวัคซีน" : "Vaccine book"),
+          // Straight to THIS child on the web. iOS has no NongRak app, so for those parents the
+          // website is the only way in — the "open in app" button above does nothing for them.
+          { type: "button", style: "secondary", height: "sm",
+            action: { type: "uri", label: th ? "ดูบนเว็บ" : "View on web",
+                      uri: `${WEB_BASE}/children/${kid.id}` } },
           { type: "button", style: "secondary", height: "sm",
             action: { type: "uri", label: th ? "การเจริญเติบโต" : "Growth",
                       uri: APP_LINK("growth_history") } },
@@ -1064,7 +1075,12 @@ function quickActionCard(lang: Lang) {
       },
       footer: {
         type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
-        contents: [openButton("dashboard~2", lang, th ? "ไปที่แอป NongRak" : "Go to the NongRak app")],
+        contents: [
+          openButton("dashboard~2", lang, th ? "ไปที่แอป NongRak" : "Go to the NongRak app"),
+          { type: "button", style: "secondary", height: "sm",
+            action: { type: "uri", label: th ? "เปิดบนเว็บ" : "Open on the web",
+                      uri: `${WEB_BASE}/dashboard` } },
+        ],
       },
     },
   };
@@ -1777,6 +1793,40 @@ async function route(lineUserId: string, raw: string, replyToken: string) {
     // support queue exists at all.
     if (!(await isAdmin(lineUserId))) return reply(replyToken, t("unknownCmd", lang));
     return send(replyToken, [await inboxCard(lang)]);
+  }
+  if (lower === "/web" || lower === "/health" ||
+      /^(เว็บ|บันทึกสุขภาพ|health)$/i.test(text)) {
+    const th = lang !== "en";
+    return send(replyToken, [{
+      type: "flex",
+      altText: th ? "บันทึกสุขภาพบนเว็บ" : "Health log on the web",
+      contents: {
+        type: "bubble",
+        body: {
+          type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+          contents: [
+            { type: "text", text: th ? "ดูข้อมูลลูกบนเว็บ" : "Your child's records on the web",
+              weight: "bold", size: "lg", color: "#2743C4", wrap: true },
+            { type: "text",
+              text: th
+                ? "สมุดวัคซีน โภชนาการ การนอน และบันทึกการเจ็บป่วย เข้าสู่ระบบด้วย LINE บัญชีเดียวกัน"
+                : "Vaccine book, nutrition, sleep and sickness records. Sign in with the same LINE account.",
+              size: "sm", color: "#7A7168", wrap: true },
+          ],
+        },
+        footer: {
+          type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
+          contents: [
+            { type: "button", style: "primary", color: "#2743C4", height: "sm",
+              action: { type: "uri", label: th ? "บันทึกสุขภาพ" : "Health log",
+                        uri: `${WEB_BASE}/health` } },
+            { type: "button", style: "secondary", height: "sm",
+              action: { type: "uri", label: th ? "ลูกทั้งหมด" : "All children",
+                        uri: `${WEB_BASE}/dashboard` } },
+          ],
+        },
+      },
+    }]);
   }
   if (lower === "/quick") return send(replyToken, [quickActionCard(lang)]);
   if (lower === "/tips") {

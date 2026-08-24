@@ -35,6 +35,26 @@ data class LineLink(
     @SerialName("linked_at") val linkedAt: String? = null
 )
 
+/** A live two-factor code, as returned by `issue_link_code`. */
+@Serializable
+data class LineLinkCode(
+    @SerialName("code") val code: String,
+    @SerialName("expires_at") val expiresAt: String? = null
+)
+
+/**
+ * Someone has entered this parent's code on another device and is waiting to be let in.
+ *
+ * Nothing is linked at this point. The row exists so the phone can ask the parent, which is the
+ * second factor: knowing the code is not enough without the handset.
+ */
+@Serializable
+data class LineLinkRequest(
+    @SerialName("id") val id: String,
+    @SerialName("claimed_display_name") val displayName: String? = null,
+    @SerialName("claimed_at") val claimedAt: String? = null
+)
+
 /**
  * Linking a NongRak account to the NongRak LINE OA, and pushing notifications to it.
  *
@@ -69,6 +89,47 @@ object LineRepository {
      */
     suspend fun issuePairCode(): Result<String> = runCatching {
         supabase.postgrest.rpc("line_issue_pair_code").data.trim().trim('"')
+    }
+
+    /**
+     * A fresh 8-digit two-factor code for linking from a device that is not this phone.
+     *
+     * Issuing cancels any previous live code, so only one is ever guessable at a time.
+     */
+    suspend fun issueLinkCode(): Result<LineLinkCode> = runCatching {
+        // The RPC returns a one-row table, so PostgREST sends an array.
+        supabase.postgrest.rpc("issue_link_code").decodeList<LineLinkCode>().first()
+    }
+
+    /**
+     * The request waiting for this parent's approval, or null.
+     *
+     * Filtered on claimed_at rather than just "newest": a code nobody has entered yet is not a
+     * request, and prompting for it would train the parent to approve without reading.
+     */
+    suspend fun pendingLinkRequest(): Result<LineLinkRequest?> = runCatching {
+        supabase.from("line_link_codes").select {
+            filter {
+                exact("confirmed_at", null)
+                exact("cancelled_at", null)
+                filterNot("claimed_at", io.github.jan.supabase.postgrest.query.filter.FilterOperator.IS, null)
+                gt("expires_at", java.time.Instant.now().toString())
+            }
+            order("claimed_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+            limit(1)
+        }.decodeSingleOrNull<LineLinkRequest>()
+    }
+
+    /** Approves the request: only now does the LINE account actually link. */
+    suspend fun confirmLinkCode(id: String): Result<Boolean> = runCatching {
+        supabase.postgrest.rpc("confirm_link_code", buildJsonObject { put("p_id", id) })
+            .data.trim().equals("true", ignoreCase = true)
+    }
+
+    /** Rejects the request, or withdraws a code the parent no longer wants live. */
+    suspend fun cancelLinkCode(id: String): Result<Boolean> = runCatching {
+        supabase.postgrest.rpc("cancel_link_code", buildJsonObject { put("p_id", id) })
+            .data.trim().equals("true", ignoreCase = true)
     }
 
     /**

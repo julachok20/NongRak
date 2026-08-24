@@ -48,11 +48,25 @@ fun LineLinkScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
+    // The 8-digit code for linking from a device that is not this phone.
+    var otp by remember { mutableStateOf<com.lullabyai.app.data.repository.LineLinkCode?>(null) }
+    // Somebody has entered a code and is waiting to be let in. Approving is the second factor.
+    var request by remember { mutableStateOf<com.lullabyai.app.data.repository.LineLinkRequest?>(null) }
+
     suspend fun refresh() {
         link = LineRepository.status().getOrNull()
         loading = false
     }
     LaunchedEffect(Unit) { refresh() }
+
+    // Polled for as long as this screen is open, not only while a code is on show. The parent
+    // may issue a code, leave, then come back while the other device is still waiting.
+    LaunchedEffect(Unit) {
+        while (true) {
+            request = LineRepository.pendingLinkRequest().getOrNull()
+            delay(3_000)
+        }
+    }
 
     // While a code is on screen the parent is over in LINE sending it. Poll so that coming back
     // to the app simply shows "connected" — asking them to press refresh after they already did
@@ -64,6 +78,68 @@ fun LineLinkScreen(
             link = LineRepository.status().getOrNull()
         }
         code = null
+    }
+
+    request?.let { req ->
+        AlertDialog(
+            // Deliberately not dismissible by tapping outside: this grants another device access
+            // to a child's health record, so it should take an explicit yes or no.
+            onDismissRequest = { },
+            icon = { Icon(Icons.Filled.Chat, null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text(if (isThai) "อนุญาตการเชื่อมต่อ?" else "Allow this connection?") },
+            text = {
+                Text(
+                    if (isThai)
+                        "มีคนกรอกรหัสของคุณจากอุปกรณ์อื่น" +
+                            (req.displayName?.let { "\n\nบัญชี LINE: " + it } ?: "") +
+                            "\n\nถ้าไม่ใช่คุณ ให้กดปฏิเสธ"
+                    else
+                        "Someone entered your code on another device." +
+                            (req.displayName?.let { "\n\nLINE account: " + it } ?: "") +
+                            "\n\nIf this was not you, tap Reject."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            LineRepository.confirmLinkCode(req.id)
+                                .onSuccess { ok ->
+                                    message = if (ok) {
+                                        if (isThai) "เชื่อมต่อสำเร็จแล้ว" else "Connected."
+                                    } else {
+                                        if (isThai) "คำขอหมดอายุแล้ว" else "That request expired."
+                                    }
+                                }
+                                .onFailure {
+                                    message = if (isThai) "ยืนยันไม่สำเร็จ" else "Could not approve."
+                                }
+                            request = null
+                            otp = null
+                            refresh()
+                            busy = false
+                        }
+                    }
+                ) { Text(if (isThai) "อนุญาต" else "Allow") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            LineRepository.cancelLinkCode(req.id)
+                            request = null
+                            otp = null
+                            message = if (isThai) "ปฏิเสธคำขอแล้ว" else "Request rejected."
+                            busy = false
+                        }
+                    }
+                ) { Text(if (isThai) "ปฏิเสธ" else "Reject") }
+            }
+        )
     }
 
     Scaffold(
@@ -255,6 +331,63 @@ fun LineLinkScreen(
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(14.dp)
                     ) { Text(if (isThai) "ขอรหัสเชื่อมต่อ" else "Get a linking code") }
+
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        enabled = !busy,
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                LineRepository.issueLinkCode()
+                                    .onSuccess { otp = it }
+                                    .onFailure {
+                                        message = if (isThai)
+                                            "ขอรหัสไม่สำเร็จ กรุณาลองใหม่"
+                                        else
+                                            "Could not get a code — please try again"
+                                    }
+                                busy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(if (isThai) "เชื่อมจากอุปกรณ์อื่น" else "Link from another device")
+                    }
+
+                    otp?.let { c ->
+                        Spacer(Modifier.height(20.dp))
+                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                // Grouped 4 + 4: eight unbroken digits is what people mistype.
+                                Text(
+                                    c.code.chunked(4).joinToString(" "),
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 4.sp
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    if (isThai)
+                                        "พิมพ์รหัสนี้ในแชท LINE น้องรักจากอุปกรณ์อีกเครื่อง แล้วกลับมากดอนุญาตที่นี่"
+                                    else
+                                        "Type this in the NongRak LINE chat on the other device, then come back here to approve.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    if (isThai) "หมดอายุใน 10 นาที" else "Expires in 10 minutes",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
