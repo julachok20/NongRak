@@ -361,6 +361,42 @@ fun ChildSummaryScreen(
                 ) { navController.navigate(Screen.GrowthHistory.route) }
             }
 
+            // The whole record as a book to page through, and to hand to a doctor as a PDF.
+            // Placed with the growth cards because this is where a parent already comes to look
+            // something up about their child rather than to log something new.
+            Card(
+                onClick = { navController.navigate(Screen.HealthBook.route) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.MenuBook, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (s.isThai) "สมุดสุขภาพประจำตัว" else "Health Book",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (s.isThai)
+                                "เปิดอ่านทั้งเล่ม บันทึกเป็น PDF ให้คุณหมอได้"
+                            else
+                                "Page through the whole record, or export it as a PDF",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // Unique standout AI Guidance ("คำแนะนำ AI") button linking to full AI Guidance & Daily Brief
             Card(
                 onClick = { navController.navigate(AI_GUIDANCE_ROUTE) },

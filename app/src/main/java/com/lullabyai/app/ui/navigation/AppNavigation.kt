@@ -856,6 +856,12 @@ fun AppNavigation(
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(Screen.HealthBook.route) {
+            com.lullabyai.app.ui.screens.child.HealthBookScreen(
+                navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(Screen.PermissionAccess.route) {
             com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
