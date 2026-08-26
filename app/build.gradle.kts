@@ -22,7 +22,7 @@ android {
         targetSdk = 36
         versionCode = 16
         versionName = "1.0.3-dev36"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.lullabyai.app.NongRakTestRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${localProps["SUPABASE_URL"]}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProps["SUPABASE_ANON_KEY"]}\"")
