@@ -34,8 +34,7 @@ class HealthBookRenderTest {
                 FormPage.Cover(
                     childName = "น้องทดสอบ ใจดี",
                     nickname = "น้องทดสอบ",
-                    birthdate = "2024-02-10",
-                    healthcareCenter = "โรงพยาบาลตัวอย่าง"
+                    birthdate = "2024-02-10"
                 ),
                 FormPage.Instructions(
                     steps = List(5) { "หัวข้อที่ ${it + 1}" to "คำอธิบายตัวอย่างสำหรับขั้นตอนที่ ${it + 1} ของการใช้สมุดเล่มนี้" },
@@ -69,12 +68,6 @@ class HealthBookRenderTest {
                         "ที่อยู่ (Address)" to "",
                         "โทรศัพท์ (Phone)" to "",
                         "อีเมล (Email)" to ""
-                    ),
-                    healthcare = listOf(
-                        "ชื่อโรงพยาบาล/สถานพยาบาล (Hospital/Clinic Name)" to "โรงพยาบาลตัวอย่าง",
-                        "ที่อยู่ (Address)" to "",
-                        "โทรศัพท์ (Phone)" to "",
-                        "แพทย์ประจำตัว (Primary Doctor)" to "นพ.ตัวอย่าง"
                     ),
                     feeding = listOf(
                         "นมแม่อย่างเดียว (Breastmilk Only)" to false,
@@ -163,9 +156,6 @@ class HealthBookRenderTest {
                 ),
                 FormPage.Closing(
                     notes = listOf("เริ่มบันทึกตั้งแต่แรกเกิด"),
-                    primaryDoctor = "นพ.ตัวอย่าง",
-                    healthcareCenter = "โรงพยาบาลตัวอย่าง",
-                    phone = "02-000-0000",
                     firstUsed = "2024-02-12",
                     lastUpdated = "2026-08-26"
                 )

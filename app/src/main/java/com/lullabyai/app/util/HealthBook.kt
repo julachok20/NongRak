@@ -28,8 +28,7 @@ sealed interface FormPage {
     data class Cover(
         val childName: String,
         val nickname: String,
-        val birthdate: String,
-        val healthcareCenter: String
+        val birthdate: String
     ) : FormPage {
         override val chapter get() = "ปก"
     }
@@ -48,7 +47,6 @@ sealed interface FormPage {
         val birth: List<Pair<String, String>>,
         val deliveryType: String,
         val guardian: List<Pair<String, String>>,
-        val healthcare: List<Pair<String, String>>,
         val feeding: List<Pair<String, Boolean>>,
         val sleepHours: String,
         val sleepWindow: String,
@@ -101,9 +99,6 @@ sealed interface FormPage {
 
     data class Closing(
         val notes: List<String>,
-        val primaryDoctor: String,
-        val healthcareCenter: String,
-        val phone: String,
         val firstUsed: String,
         val lastUpdated: String
     ) : FormPage {
@@ -182,8 +177,7 @@ object HealthBookBuilder {
         pages += FormPage.Cover(
             childName = child.name,
             nickname = nicknameOf(child),
-            birthdate = child.birthdate.ifBlank { "" },
-            healthcareCenter = visits.firstNotNullOfOrNull { it.facilityName?.takeIf(String::isNotBlank) } ?: ""
+            birthdate = child.birthdate.ifBlank { "" }
         )
         pages += instructionsPage()
         pages += basicInfoPage(child, allergies, chronic, milk, sleep, milestones, visits)
@@ -288,14 +282,6 @@ object HealthBookBuilder {
                 "ที่อยู่ (Address)" to "",
                 "โทรศัพท์ (Phone)" to "",
                 "อีเมล (Email)" to ""
-            ),
-            healthcare = listOf(
-                "ชื่อโรงพยาบาล/สถานพยาบาล (Hospital/Clinic Name)" to
-                    (visits.firstNotNullOfOrNull { it.facilityName?.takeIf(String::isNotBlank) } ?: ""),
-                "ที่อยู่ (Address)" to "",
-                "โทรศัพท์ (Phone)" to "",
-                "แพทย์ประจำตัว (Primary Doctor)" to
-                    (visits.firstNotNullOfOrNull { it.doctorName?.takeIf(String::isNotBlank) } ?: "")
             ),
             feeding = listOf(
                 "นมแม่อย่างเดียว (Breastmilk Only)" to (breast > 0 && formula == 0),
@@ -484,9 +470,6 @@ object HealthBookBuilder {
         )
         return FormPage.Closing(
             notes = emptyList(),
-            primaryDoctor = visits.firstNotNullOfOrNull { it.doctorName?.takeIf(String::isNotBlank) } ?: "",
-            healthcareCenter = visits.firstNotNullOfOrNull { it.facilityName?.takeIf(String::isNotBlank) } ?: "",
-            phone = "",
             firstUsed = (child.createdAt ?: "").take(10),
             lastUpdated = stamps.mapNotNull { it.take(10).takeIf(String::isNotBlank) }.maxOrNull() ?: ""
         )
