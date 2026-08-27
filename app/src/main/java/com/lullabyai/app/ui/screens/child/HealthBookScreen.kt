@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -376,6 +377,20 @@ private fun FlipBook(
     }
 }
 
+/**
+ * Sizes a sheet to fit inside whatever space it is given, in BOTH directions.
+ *
+ * Deliberately no `fillMaxWidth()`: that pins the width exactly, so `aspectRatio` can only derive
+ * a height from it and the sheet is always 1.415x as tall as it is wide. That overflows precisely
+ * when the container is SHORTER than that — landscape, an unfolded foldable, a wide tablet, or a
+ * portrait phone whose bottom bar has grown under a large system font. Ordinary portrait phones
+ * (16:9 and taller) happened to fit either way, which is exactly why a phone-shaped emulator never
+ * showed it. With loose constraints `aspectRatio` tries the width first and falls back to the
+ * height when that would not fit — letterboxing, which is what a page needs.
+ */
+private fun Modifier.sheetFit(): Modifier =
+    this.aspectRatio(HealthBookPageRenderer.PAGE_W / HealthBookPageRenderer.PAGE_H)
+
 /** One rendered sheet, at the size it will actually be shown. */
 @Composable
 private fun Sheet(book: HealthBook, index: Int, modifier: Modifier = Modifier) {
@@ -384,8 +399,7 @@ private fun Sheet(book: HealthBook, index: Int, modifier: Modifier = Modifier) {
         if (bmp == null) {
             Box(
                 Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(HealthBookPageRenderer.PAGE_W / HealthBookPageRenderer.PAGE_H)
+                    .sheetFit()
                     .shadow(8.dp, RoundedCornerShape(6.dp))
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.White),
@@ -397,8 +411,7 @@ private fun Sheet(book: HealthBook, index: Int, modifier: Modifier = Modifier) {
                 contentDescription = book.pages.getOrNull(index)?.chapter,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(HealthBookPageRenderer.PAGE_W / HealthBookPageRenderer.PAGE_H)
+                    .sheetFit()
                     .shadow(8.dp, RoundedCornerShape(6.dp))
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.White)
@@ -448,12 +461,16 @@ private fun ZoomedSheet(book: HealthBook, index: Int, onClose: () -> Unit) {
             .horizontalScroll(rememberScrollState())
     ) {
         if (bmp != null) {
+            // Zoom is a multiple of THIS screen's width, not a fixed dp: 922dp is a comfortable
+            // magnification on a large phone and an absurd one on a small screen, where the reader
+            // would be scrolling a page several times wider than anything they can hold in view.
+            val screenW = LocalConfiguration.current.screenWidthDp.dp
             Image(
                 bitmap = bmp.asImageBitmap(),
                 contentDescription = book.pages.getOrNull(index)?.chapter,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .width((HealthBookPageRenderer.PAGE_W * 1.55f).dp)
+                    .width(screenW * 2.2f)
                     .aspectRatio(HealthBookPageRenderer.PAGE_W / HealthBookPageRenderer.PAGE_H)
                     .background(Color.White)
                     .clickable(
