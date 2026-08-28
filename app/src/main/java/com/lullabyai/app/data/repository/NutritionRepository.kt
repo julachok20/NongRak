@@ -40,6 +40,7 @@ class NutritionRepository {
             put("notes", notes?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
             if (loggedAt != null) put("logged_at", JsonPrimitive(loggedAt))
         })
+        MascotRewards.noteCareToday()
     }
 
     // ---------------- FOOD ----------------
@@ -59,6 +60,7 @@ class NutritionRepository {
             put("item_name", JsonPrimitive(itemName))
             put("calories", calories?.let { JsonPrimitive(it) } ?: JsonNull)
         })
+        MascotRewards.noteCareToday()
     }
 
     suspend fun updateFood(id: String, itemName: String): Result<Unit> = runCatching {

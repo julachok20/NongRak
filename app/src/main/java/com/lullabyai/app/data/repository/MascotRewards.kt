@@ -28,6 +28,31 @@ object MascotRewards {
     private val repo = MascotBondRepository()
 
     /**
+     * The date this process last credited, so the day's credit is asked for once.
+     *
+     * Every milk, meal and nap would otherwise fire an RPC that the server answers "already
+     * counted" to. Being in memory rather than stored is deliberate and enough: the worst case
+     * is one extra no-op call after a cold start, and the ledger is the real guard.
+     */
+    @Volatile
+    private var dailyCareAwardedFor: String? = null
+
+    /**
+     * Notes that the child was cared for today.
+     *
+     * The date is the idempotency key, so this is a no-op after the first call of the day no
+     * matter how many things get logged. Call it from routine logging: caring for a baby is
+     * mostly feeding, changing and naps, and a progression that ignored those would only ever
+     * reward the paperwork.
+     */
+    fun noteCareToday() {
+        val today = java.time.LocalDate.now().toString()
+        if (dailyCareAwardedFor == today) return
+        dailyCareAwardedFor = today
+        award(XpKind.DAILY_CARE, today)
+    }
+
+    /**
      * Credits [kind] against [refId], off the caller's thread and without a result.
      *
      * @param refId the row the milestone is about — a vaccine id, a growth id, a date. This is

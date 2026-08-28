@@ -1,7 +1,7 @@
 # 🧠 NongRak AI — Memory Graph
 
 > Single source of truth for this project. I read & update THIS file instead of re-scanning full context.
-> Last updated: **2026-08-01 (Cursor — vc16 release bundle dev36)** · Branch **`track3`** · **`1.0.3-dev36`**
+> Last updated: **2026-08-25 (Cursor — Welcome parent-only, doctor portal button removed)** · Branch **`track3`** · **`1.0.3-dev36`**
 
 ---
 
@@ -2712,3 +2712,57 @@ reporting success either way.
 
 RLS on `line_links` already allowed owner delete, so the original path did work — the problems
 were all around it, not in it.
+
+---
+
+## 2026-08-25 — Welcome is parent-only (doctor portal button removed)
+
+User: remove the Welcome link into Doctor / Pedia Connect so the first screen is parent-only.
+
+- `WelcomeScreen.kt`: dropped `onDoctorMode` and the clinician / "Doctor & Provider Portal" card
+  (plus the "or" divider that only existed for that card). CTAs left: Get started, Sign in, Test Account.
+- `AppNavigation.kt`: Welcome no longer navigates to `Screen.DoctorWelcome`.
+- Doctor routes (`DoctorWelcome`, `DoctorSignIn`, Pedia Connect parent hub after login) are **unchanged**.
+  There is no Welcome entrance anymore. Parent Pedia Connect after login (Connect tab) is untouched.
+
+Not verified on-device. Compile not run this pass.
+
+---
+
+## 2026-08-27 — Mascot wardrobe, levels and care XP (Option A: built on `mascot_bonds`)
+
+User: mascot "everything" — more moods, more screens, reactive, customisable — plus a closet for
+T-shirt decoration, level gating, and gamification.
+
+**Nearly shipped a duplicate.** Created `mascot_profiles` as a parallel per-user XP store before
+noticing `mascot_bonds` already existed (per `(user_id, mascot)`, `mascot_level(xp)`,
+`feed_mascot` with a 20-minute cooldown). Exactly the trap CLAUDE.md rule 4 warns about — ran
+`ls migrations` but never grepped the domain word. Duplicate dropped; the wardrobe now sits on the
+bond, matching the existing per-companion design.
+
+- **Rig**: `Mascot(garments = List<@DrawableRes>)` draws each garment through the SAME deformed
+  vertex buffer as the body. A sleeve swings with the arm bone for free — no per-garment rigging.
+  Garment art must share the skin's canvas (nongrak 715², bunny 680², coco 577², pingu 620²).
+- **DB**: `mascot_bonds.equipped jsonb`; `mascot_xp_kinds` (server-owned prices);
+  `mascot_xp_events` append-only, `UNIQUE(user_id, mascot, kind, ref_id)`;
+  `award_mascot_xp(mascot, kind, ref_id)`. Client names the event, server prices it.
+  Idempotency probed live in a rolled-back transaction: 4 calls, 3 identical → 2 rows, 80 xp.
+- **Bug fixed**: `MascotBondRepository.get()` called `feed_mascot(p_xp = 0)` to read a level.
+  Outside the cooldown that still stamped `last_fed_at` and bumped `fed_count`, so **opening the
+  companion screen ate the next real feed**. Now `get_mascot_bond`, STABLE and non-definer.
+- **Closet**: `Screen.MascotCloset`, reached from the companion screen (optional `onOpenCloset`,
+  null in onboarding). Companions unlock on the BEST bond raised anywhere — gating each on its own
+  level would lock all four at 1 forever.
+- **XP wired**: child_added, vaccine_completed (`updateVaccineStatus` — the path actually used;
+  `updateVaccineRecord` is the minor one), doctor_visit, illness_recovered, growth_recorded,
+  milestone_achieved, daily_care (date as ref, in-memory per-process guard).
+  Onboarding's "doses already had" loop passes `awardBond = false`: 10 past doses = 400 xp = level 5
+  during setup.
+- **No streaks, XP never decreases** — a broken streak punishes the parent whose child was in
+  hospital. Deliberate, stated in the migration.
+
+**Wardrobe catalogue is empty on purpose.** The mascots already wear designed costumes, so where a
+shirt sits is a design decision. Spec for the art is in `MascotWardrobe.items` KDoc.
+
+Compiles; unit tests green (`MascotWardrobeTest` pins Kotlin level maths to Postgres across
+0–5000 xp). **Not run on-device** — no screen has been seen rendering, no level seen moving.

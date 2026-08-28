@@ -35,7 +35,7 @@ class SleepRepository {
                 put("sleep_type", JsonPrimitive(sleepType))
                 put("start_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.now())))
             }
-        ) { select() }.decodeSingle<SleepLog>()
+        ) { select() }.decodeSingle<SleepLog>().also { MascotRewards.noteCareToday() }
     }
 
     suspend fun endSession(id: String, mood: String?): Result<Unit> = runCatching {
