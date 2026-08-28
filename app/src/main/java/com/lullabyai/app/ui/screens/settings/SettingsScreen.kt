@@ -55,6 +55,7 @@ fun SettingsScreen(
     var googleEmail by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(isGuest) {
         if (isGuest) return@LaunchedEffect
+        authViewModel.loadProfile()
         googleLinked = com.lullabyai.app.data.repository.AuthRepository().linkedProviders().contains("google")
         googleEmail = runCatching { com.lullabyai.app.data.remote.supabase.auth.currentUserOrNull()?.email }.getOrNull()
         if (com.lullabyai.app.data.repository.LineRepository.isConfigured) {
@@ -96,6 +97,69 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
+            if (!isGuest) {
+                item {
+                    val avatarUrl = authState.avatarSignedUrl ?: authState.profile?.avatarUrl
+                    val displayName = authState.profile?.username?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: authState.profile?.fullName?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: (if (isThai) "ผู้ใช้งาน NongRak" else "NongRak User")
+                    val role = authState.profile?.relationship?.takeIf { it.isNotBlank() } ?: (if (isThai) "ผู้ปกครอง" else "Parent")
+                    val userEmail = googleEmail ?: authState.profile?.phone ?: ""
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .clickable { onNavigateToEditProfile() },
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.2f)),
+                        shadowElevation = 1.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(PrimaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!avatarUrl.isNullOrBlank()) {
+                                    coil.compose.AsyncImage(
+                                        model = avatarUrl,
+                                        contentDescription = "Avatar",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(Icons.Filled.Person, contentDescription = null, tint = Primary, modifier = Modifier.size(32.dp))
+                                }
+                            }
+
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = displayName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "$role${if (userEmail.isNotBlank()) " • $userEmail" else ""}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+            }
+
             item { SectionLabel(s.accountSection) }
             item {
                 if (isGuest) {
@@ -165,6 +229,38 @@ fun SettingsScreen(
                         Divider52()
                         SettingsRow(Icons.Filled.Lock, s.changePassword, onClick = { navController.navigate(Screen.ChangePassword.route) })
                         Divider52()
+                        ToggleRow(
+                            icon = Icons.Filled.Security,
+                            label = if (isThai) "การยืนยันตัวตน 2 ขั้นตอน (2FA)" else "Two-Factor Authentication (2FA)",
+                            checked = authState.profile?.twoFactorEnabled ?: false
+                        ) { isChecked ->
+                            authViewModel.setTwoFactorEnabled(isChecked)
+                            settingsViewModel.setTwoFactorEnabled(isChecked)
+                        }
+                        Text(
+                            text = if (isThai)
+                                "เมื่อเปิดใช้งาน การเข้าสู่ระบบจากเครื่องใหม่จะต้องได้รับการยืนยันจากอุปกรณ์ที่ลงชื่อเข้าใช้ไว้แล้วก่อน"
+                            else
+                                "Require approval on an existing signed-in device when logging in from a new device",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 50.dp, end = 16.dp, bottom = 10.dp)
+                        )
+                        Divider52()
+                        SettingsRow(
+                            icon = Icons.Filled.Checkroom,
+                            label = if (isThai) "ตู้เสื้อผ้าน้องรัก" else "Companion Closet",
+                            value = if (isThai) "ระดับและเสื้อผ้า" else "Level & outfits",
+                            onClick = { navController.navigate(Screen.MascotCloset.route) }
+                        )
+                        Divider52()
+                        SettingsRow(
+                            icon = Icons.Filled.PhonelinkLock,
+                            label = if (isThai) "อุปกรณ์ที่เชื่อมต่อ (Trusted Devices)" else "Trusted Devices & Sessions",
+                            value = if (authState.profile?.twoFactorEnabled == true) (if (isThai) "2FA เปิดใช้งาน" else "2FA Active") else (if (isThai) "จัดการ" else "Manage"),
+                            onClick = { navController.navigate(Screen.TrustedDevices.route) }
+                        )
+                        Divider52()
                         // Graphify: Account Linking placeholder for Google OAuth & Line OA notification integration
                         AccountLinkRow(
                             icon = Icons.Filled.AccountCircle,
@@ -210,13 +306,6 @@ fun SettingsScreen(
             item { SectionLabel(s.notificationSection) }
             item {
                 SettingsGroup {
-                    SettingsRow(
-                        icon = Icons.Filled.PhonelinkLock,
-                        label = if (isThai) "อุปกรณ์ที่เชื่อมต่อ" else "Trusted Devices",
-                        value = if (isThai) "จัดการ" else "Manage",
-                        onClick = { navController.navigate(Screen.TrustedDevices.route) }
-                    )
-                    Divider52()
                     SettingsRow(
                         icon = Icons.Filled.Notifications,
                         label = if (isThai) "ศูนย์การแจ้งเตือนและประวัติ" else "Notification Center",
