@@ -56,6 +56,15 @@ fun Mascot(
     speaking: Boolean = false,
     /** Draws blinking eyes and a mouth over the printed ones. */
     animateFace: Boolean = true,
+    /**
+     * Worn items, drawn over the body in order — shirt first, then anything on top of it.
+     *
+     * Each is a full-canvas PNG registered to the same art as [art] and transparent everywhere
+     * else, so it goes through the SAME deformed vertex grid as the body. That is the whole trick:
+     * a sleeve swings with the arm bone and a belly print squashes with a bounce for free, with no
+     * per-garment rigging and no anchor points to keep in sync.
+     */
+    garments: List<Int> = emptyList(),
     onTap: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -70,6 +79,22 @@ fun Mascot(
                 inScaled = false
             }
         )
+    }
+
+    // Same decode rules as the body: software config (drawBitmapMesh cannot read a hardware
+    // bitmap) and unscaled, so a garment lines up with the art on every density.
+    val garmentBitmaps = remember(garments) {
+        garments.mapNotNull { res ->
+            runCatching {
+                BitmapFactory.decodeResource(
+                    context.resources, res,
+                    BitmapFactory.Options().apply {
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                        inScaled = false
+                    }
+                )
+            }.getOrNull()
+        }
     }
 
     val mesh = remember(art) { SkinnedMesh(art.bones) }
@@ -171,6 +196,10 @@ fun Mascot(
             native.scale(pose.sx, pose.sy)
             native.translate(-w / 2f, -h / 2f)
             native.drawBitmapMesh(bitmap, mesh.cols, mesh.rows, vertices, 0, null, 0, paint)
+            // The same vertex buffer, so clothing deforms with the body rather than sliding over it.
+            garmentBitmaps.forEach { garment ->
+                native.drawBitmapMesh(garment, mesh.cols, mesh.rows, vertices, 0, null, 0, paint)
+            }
             native.restoreToCount(saved)
         }
 
