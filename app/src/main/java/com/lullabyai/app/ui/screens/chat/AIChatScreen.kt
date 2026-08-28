@@ -284,6 +284,7 @@ fun AIChatScreen(
                             },
                             title = if (isThai) "คุยกับ${mascot.thaiName}" else "Chat with ${mascot.englishName}",
                             onSwitchMascot = { onNavigate(Screen.MascotSwitch.route) },
+                            onCloset = { onNavigate(Screen.MascotCloset.route) },
                             voiceEnabled = voiceEnabled,
                             onToggleVoice = {
                                 voiceEnabled = !voiceEnabled
@@ -727,7 +728,8 @@ private fun CompanionTopBar(
     voiceEnabled: Boolean,
     onToggleVoice: () -> Unit,
     onHistory: () -> Unit,
-    onSwitchMascot: () -> Unit
+    onSwitchMascot: () -> Unit,
+    onCloset: () -> Unit
 ) {
     Surface(color = Color.White) {
         // The app draws edge to edge; without this the header sits under the phone's clock and
@@ -778,6 +780,11 @@ private fun CompanionTopBar(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                // The closet sits with the companion, not in Settings: this screen is where the
+                // parent already thinks about who they are talking to.
+                IconButton(onClick = onCloset) {
+                    Icon(Icons.Filled.Checkroom, "ตู้เสื้อผ้าน้องรัก", tint = StitchInkSoft)
+                }
                 IconButton(onClick = onToggleVoice) {
                     Icon(
                         if (voiceEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,

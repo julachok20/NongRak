@@ -248,13 +248,6 @@ fun SettingsScreen(
                         )
                         Divider52()
                         SettingsRow(
-                            icon = Icons.Filled.Checkroom,
-                            label = if (isThai) "ตู้เสื้อผ้าน้องรัก" else "Companion Closet",
-                            value = if (isThai) "ระดับและเสื้อผ้า" else "Level & outfits",
-                            onClick = { navController.navigate(Screen.MascotCloset.route) }
-                        )
-                        Divider52()
-                        SettingsRow(
                             icon = Icons.Filled.PhonelinkLock,
                             label = if (isThai) "อุปกรณ์ที่เชื่อมต่อ (Trusted Devices)" else "Trusted Devices & Sessions",
                             value = if (authState.profile?.twoFactorEnabled == true) (if (isThai) "2FA เปิดใช้งาน" else "2FA Active") else (if (isThai) "จัดการ" else "Manage"),
