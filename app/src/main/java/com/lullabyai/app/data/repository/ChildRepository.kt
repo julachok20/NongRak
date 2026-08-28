@@ -54,9 +54,11 @@ private val medicalDocUrlTtl = 3600.seconds
 class ChildRepository {
 
     suspend fun createChild(child: Child): Result<Child> = runCatching {
-        supabase.from("children").insert(child) {
+        val saved = supabase.from("children").insert(child) {
             select()
         }.decodeSingle<Child>()
+        MascotRewards.award(XpKind.CHILD_ADDED, saved.id)
+        saved
     }
 
     /** All children this account can see — own + synced. Scoping is left entirely to RLS

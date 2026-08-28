@@ -30,13 +30,29 @@ class HealthRepository {
         }.decodeList<VaccineRecord>()
     }
 
-    suspend fun updateVaccineStatus(id: String, status: String, dateGiven: String?): Result<Unit> = runCatching {
+    /**
+     * @param awardBond false when the caller is RECORDING HISTORY rather than reporting care that
+     *   just happened. Onboarding asks which doses a child has already had; crediting those at
+     *   full rate would hand a parent of a two-year-old several levels during setup, before the
+     *   app has done anything for them.
+     */
+    suspend fun updateVaccineStatus(
+        id: String,
+        status: String,
+        dateGiven: String?,
+        awardBond: Boolean = true
+    ): Result<Unit> = runCatching {
         supabase.from("vaccine_records").update(
             kotlinx.serialization.json.buildJsonObject {
                 put("status", kotlinx.serialization.json.JsonPrimitive(status))
                 if (dateGiven != null) put("date_given", kotlinx.serialization.json.JsonPrimitive(dateGiven))
             }
         ) { filter { eq("id", id) } }
+        // Keyed on the vaccine row, so the automatic status refresh re-running, or a parent
+        // re-saving, credits the dose exactly once.
+        if (awardBond && status == "completed") {
+            MascotRewards.award(XpKind.VACCINE_COMPLETED, id)
+        }
     }
 
     suspend fun addVaccineRecord(record: VaccineRecord): Result<VaccineRecord> = runCatching {
@@ -494,6 +510,11 @@ class HealthRepository {
         supabase.from("health_records").update(
             buildJsonObject { put("status", JsonPrimitive(status)) }
         ) { filter { eq("id", id) } }
+        // Getting better is the milestone. Keyed on the episode, so moving it back to monitoring
+        // and recovering again is credited once — and never takes anything away.
+        if (status == "recovered") {
+            MascotRewards.award(XpKind.ILLNESS_RECOVERED, id)
+        }
     }
 
     /** Latest symptom-log calendar date per health_record_id for a child — used by Batch Q #9
@@ -604,7 +625,7 @@ class HealthRepository {
         for (r in records) {
             if (r.vaccineName in canonical) {
                 val given = r.scheduledDate ?: today.toString()
-                updateVaccineStatus(r.id, "completed", given)
+                updateVaccineStatus(r.id, "completed", given, awardBond = false)
             } else {
                 val due = r.scheduledDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
                 val newStatus = when {

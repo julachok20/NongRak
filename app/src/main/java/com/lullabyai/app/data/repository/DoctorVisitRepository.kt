@@ -80,11 +80,19 @@ class DoctorVisitRepository {
             put("reminders", reminders?.let { rs -> buildJsonArray { rs.forEach { add(JsonPrimitive(it)) } } } ?: JsonNull)
             put("status", JsonPrimitive(status))
         }
-        if (id == null) {
+        val saved = if (id == null) {
             supabase.from("doctor_visits").insert(payload) { select() }.decodeSingle<DoctorVisit>()
         } else {
             supabase.from("doctor_visits").update(payload) { filter { eq("id", id) }; select() }.decodeSingle<DoctorVisit>()
         }
+        // A visit that actually happened, not one still scheduled. Keyed on the row, so editing
+        // the notes afterwards does not pay again.
+        if (visitType == "completed") {
+            com.lullabyai.app.data.repository.MascotRewards.award(
+                com.lullabyai.app.data.repository.XpKind.DOCTOR_VISIT, saved.id
+            )
+        }
+        saved
     }
 
     suspend fun deleteVisit(id: String): Result<Unit> = runCatching {

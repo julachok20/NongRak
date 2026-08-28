@@ -511,7 +511,8 @@ fun AppNavigation(
             NongRakTheme(darkTheme = false) {
                 MascotSelectScreen(
                     onSelected = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onOpenCloset = { navController.navigate(Screen.MascotCloset.route) }
                 )
             }
         }

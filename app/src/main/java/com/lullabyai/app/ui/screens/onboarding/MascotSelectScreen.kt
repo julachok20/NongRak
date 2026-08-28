@@ -42,7 +42,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun MascotSelectScreen(
     onSelected: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /**
+     * Opens the closet. Null during onboarding on purpose: a wardrobe is meaningless before a
+     * companion has been chosen, let alone raised, and the first run should not offer a room
+     * with nothing in it.
+     */
+    onOpenCloset: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -81,6 +87,15 @@ fun MascotSelectScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
         )
+
+        onOpenCloset?.let { open ->
+            TextButton(
+                onClick = open,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                Text("ตู้เสื้อผ้าและระดับความผูกพัน", fontWeight = FontWeight.Bold)
+            }
+        }
 
         Column(
             modifier = Modifier
