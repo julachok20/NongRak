@@ -63,7 +63,7 @@ private enum class CallState { LISTENING, THINKING, SPEAKING, IDLE }
  * to think, or to look at the baby mid-sentence, keeps their turn instead of having half a
  * question sent. Any new speech cancels it, so you can keep going as long as you like.
  */
-private const val TURN_END_SILENCE_MS = 1400L
+private const val TURN_END_SILENCE_MS = 900L
 
 /**
  * Full-screen "call" with the AI: continuous listen → send → speak → re-listen loop, so the parent
@@ -272,7 +272,12 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             lastSpokenMessageId = latest.id
             if (speakerOn) {
                 callState = CallState.SPEAKING
-                tts.speak(latest.content, isThai, chatState.mode.speechRate, chatState.mode.speechPitch)
+                tts.speak(
+                    latest.content, isThai,
+                    chatState.mode.speechRate, chatState.mode.speechPitch,
+                    // A call is a conversation: start talking now rather than after a round trip.
+                    instant = true
+                )
             } else {
                 restartListening()
             }

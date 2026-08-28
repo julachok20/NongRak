@@ -63,12 +63,49 @@ class TtsSpeaker(context: Context) {
     // silently, which reads as "the voice is broken".
     private var pending: Utterance? = null
 
+    private val appContext = context.applicationContext
+
+    /** Guards one retry, so a device where no engine speaks Thai cannot loop rebuilding engines. */
+    private var triedAlternateEngine = false
+
     init {
-        engine = TextToSpeech(context.applicationContext) { status ->
-            val e = engine
-            if (status != TextToSpeech.SUCCESS || e == null) return@TextToSpeech
-            thaiVoiceAvailable = runCatching { e.isLanguageAvailable(THAI) }
+        buildEngine(null)
+    }
+
+    /**
+     * Brings up a speech engine, falling back to another installed one if the default cannot speak
+     * Thai.
+     *
+     * The default is not always usable. On the test Galaxy A54 `tts_default_locale` names
+     * `com.samsung.SMT` while the only installed engine is `com.google.android.tts`, so the
+     * default resolves to something absent, Thai reports unavailable, and this class then keeps
+     * quiet by design — the app looked like it had simply lost its voice. Asking the platform for
+     * the engines that actually exist fixes it without the parent installing anything.
+     *
+     * @param enginePackage null for the system default; a package name for the retry.
+     */
+    private fun buildEngine(enginePackage: String?) {
+        var created: TextToSpeech? = null
+        val onInit = TextToSpeech.OnInitListener { status ->
+            val e = created
+            if (status != TextToSpeech.SUCCESS || e == null) return@OnInitListener
+
+            val speaksThai = runCatching { e.isLanguageAvailable(THAI) }
                 .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED) >= TextToSpeech.LANG_AVAILABLE
+
+            if (!speaksThai && !triedAlternateEngine) {
+                triedAlternateEngine = true
+                val alternate = runCatching {
+                    e.engines.map { it.name }.firstOrNull { it != enginePackage }
+                }.getOrNull()
+                if (alternate != null) {
+                    e.shutdown()
+                    buildEngine(alternate)
+                    return@OnInitListener
+                }
+            }
+
+            thaiVoiceAvailable = speaksThai
             e.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) { isSpeaking = true }
                 override fun onDone(utteranceId: String?) { isSpeaking = false }
@@ -80,16 +117,40 @@ class TtsSpeaker(context: Context) {
             ready = true
             pending?.let { pending = null; enqueue(it) }
         }
+        created = if (enginePackage == null) TextToSpeech(appContext, onInit)
+        else TextToSpeech(appContext, onInit, enginePackage)
+        engine = created
     }
 
     /**
      * Speaks [text] in Thai or English per the caller's `LocalStrings.isThai`.
      * [rate]/[pitch] carry the mode's speech style (slower for storytelling, brighter for a child).
      */
-    fun speak(text: String, isThai: Boolean, rate: Float = 1f, pitch: Float = 1f, style: String? = null) {
+    /**
+     * @param instant skip the cloud voice and speak with the on-device engine straight away.
+     *   Cloud synthesis is a whole round trip AFTER the reply text has already arrived — fine when
+     *   reading a message back, but in a live call it is seconds of silence where a person would
+     *   have started talking. A call trades timbre for turn-taking.
+     */
+    fun speak(
+        text: String,
+        isThai: Boolean,
+        rate: Float = 1f,
+        pitch: Float = 1f,
+        style: String? = null,
+        instant: Boolean = false
+    ) {
         if (text.isBlank()) return
         val u = Utterance(text, isThai, rate, pitch)
         stop()
+        // Instant only when the device can actually say it. A Thai reply on a device with no Thai
+        // voice would otherwise hit the silent-by-design path and the call would just stop talking
+        // — the exact failure this parameter exists to avoid. Slow beats silent, so fall through
+        // to the cloud voice instead.
+        if (instant && (!isThai || thaiVoiceAvailable)) {
+            if (!ready) pending = u else enqueue(u)
+            return
+        }
         // Gemini first — it speaks Thai properly and does not care whether the device has Thai
         // voice data installed. The platform engine stays as the offline/failure path.
         speechJob = scope.launch {
