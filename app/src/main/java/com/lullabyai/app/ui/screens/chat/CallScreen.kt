@@ -45,12 +45,25 @@ import androidx.core.content.ContextCompat
 import com.lullabyai.app.ui.theme.Primary
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 
 private val VIDEO_FRAME_INTERVAL_MS = 5_000L
 
 private enum class CallState { LISTENING, THINKING, SPEAKING, IDLE }
+
+/**
+ * How long a real pause lasts before the turn is treated as finished.
+ *
+ * Android's recogniser is told to segment after a short silence, which makes it return often; this
+ * is what actually decides the turn is over. Splitting the two is the point: a parent who pauses
+ * to think, or to look at the baby mid-sentence, keeps their turn instead of having half a
+ * question sent. Any new speech cancels it, so you can keep going as long as you like.
+ */
+private const val TURN_END_SILENCE_MS = 1400L
 
 /**
  * Full-screen "call" with the AI: continuous listen → send → speak → re-listen loop, so the parent
@@ -98,7 +111,12 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     var callState by remember { mutableStateOf(CallState.IDLE) }
     var muted by remember { mutableStateOf(false) }
     var speakerOn by remember { mutableStateOf(true) }
-    var showInstructions by remember { mutableStateOf(true) }
+    // Hidden by default: during a call the answer is spoken, and a wall of text over the
+    // mascot is something to dismiss rather than read. A button opens it.
+    var showInstructions by remember { mutableStateOf(false) }
+    var pendingUtterance by remember { mutableStateOf("") }
+    var commitJob by remember { mutableStateOf<Job?>(null) }
+    val callScope = rememberCoroutineScope()
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
     var userSpeaking by remember { mutableStateOf(false) }
     var partialSpeech by remember { mutableStateOf("") }
@@ -107,9 +125,12 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
         android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (isThai) "th-TH" else "en-US")
-            // Wait longer before Android decides the user finished — avoids cutting mid-sentence.
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+            // Short, so the recogniser hands back a chunk quickly rather than owning the turn.
+            // Whether the turn is FINISHED is decided by TURN_END_SILENCE_MS below, which survives
+            // a pause; 1800 here meant one pause ended the sentence, and adding a wait on top of
+            // it would have made every reply feel a second slower.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 400L)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
@@ -129,10 +150,33 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
         runCatching { recognizer.startListening(recognizerIntent) }
     }
 
+    /**
+     * Starts the clock on "have they finished?".
+     *
+     * Cancelled by [onBeginningOfSpeech], so a pause only ends the turn if no more speech follows.
+     * That is what lets a parent interrupt, add a second thought, and still have both halves
+     * arrive as one question.
+     */
+    fun scheduleTurnEnd(send: (String) -> Unit) {
+        commitJob?.cancel()
+        commitJob = callScope.launch {
+            delay(TURN_END_SILENCE_MS)
+            val text = pendingUtterance.trim()
+            if (text.isBlank()) return@launch
+            pendingUtterance = ""
+            runCatching { recognizer.cancel() }
+            callState = CallState.THINKING
+            send(text)
+        }
+    }
+
     fun interruptAiAndListen() {
         tts.stop()
+        commitJob?.cancel()
         runCatching { recognizer.cancel() }
         partialSpeech = ""
+        // Interrupting starts a fresh question, not an addition to the one just answered.
+        pendingUtterance = ""
         callState = CallState.LISTENING
         if (!muted) runCatching { recognizer.startListening(recognizerIntent) }
     }
@@ -144,11 +188,20 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 val text = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                     ?: partialSpeech
                 partialSpeech = ""
-                if (text.isNullOrBlank()) {
-                    restartListening()
-                } else {
-                    callState = CallState.THINKING
-                    chatViewModel.sendMessage(text, childState.child, imageBytes = latestFrame, imageMime = if (latestFrame != null) "image/jpeg" else null)
+                // A chunk, not necessarily the whole turn. It joins what has been said so far and
+                // the mic reopens immediately, so a pause to think does not send half a question.
+                if (!text.isNullOrBlank()) {
+                    pendingUtterance = (pendingUtterance + " " + text).trim()
+                }
+                restartListening()
+                if (pendingUtterance.isNotBlank()) {
+                    scheduleTurnEnd { spoken ->
+                        chatViewModel.sendMessage(
+                            spoken, childState.child,
+                            imageBytes = latestFrame,
+                            imageMime = if (latestFrame != null) "image/jpeg" else null
+                        )
+                    }
                 }
             }
             override fun onError(error: Int) {
@@ -158,12 +211,22 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH,
                     SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                        // Heard nothing THIS segment, which during a pause is normal rather than a
+                        // failure. Keep whatever was captured, reopen the mic, and let the turn
+                        // timer decide whether the parent has actually finished.
                         if (capturedPartial.isNotBlank()) {
                             partialSpeech = ""
-                            callState = CallState.THINKING
-                            chatViewModel.sendMessage(capturedPartial, childState.child, imageBytes = latestFrame, imageMime = if (latestFrame != null) "image/jpeg" else null)
-                        } else {
-                            restartListening()
+                            pendingUtterance = (pendingUtterance + " " + capturedPartial).trim()
+                        }
+                        restartListening()
+                        if (pendingUtterance.isNotBlank()) {
+                            scheduleTurnEnd { spoken ->
+                                chatViewModel.sendMessage(
+                                    spoken, childState.child,
+                                    imageBytes = latestFrame,
+                                    imageMime = if (latestFrame != null) "image/jpeg" else null
+                                )
+                            }
                         }
                     }
                     else -> restartListening()
@@ -172,6 +235,8 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {
                 userSpeaking = true
+                // Still talking, so the turn is not over — whatever comes next joins the question.
+                commitJob?.cancel()
                 if (callState == CallState.SPEAKING) interruptAiAndListen()
             }
             override fun onRmsChanged(rmsdB: Float) {}
@@ -352,13 +417,40 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                         speaking = tts.isSpeaking,
                         modifier = Modifier.size(180.dp)
                     )
-                } else if (callState == CallState.SPEAKING || callState == CallState.THINKING) {
+                }
+            }
+
+            // Shown whenever a tap would actually do something, camera or not. Previously this
+            // only appeared with video on, so in the common case the affordance was invisible and
+            // the parent had no way to know they could cut in.
+            if (callState == CallState.SPEAKING || callState == CallState.THINKING) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (isThai) "แตะเพื่อขัดจังหวะและพูดต่อได้เลย"
+                    else "Tap to interrupt — you can keep talking",
+                    color = Color.White.copy(0.75f),
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
+
+            // The reply is spoken, so the text is opt-in. During a call a wall of text over the
+            // mascot is something to dismiss, not something to read.
+            if (!showInstructions && latestAiMessage?.content?.isNotBlank() == true &&
+                callState != CallState.THINKING
+            ) {
+                TextButton(onClick = { showInstructions = true }) {
+                    Icon(
+                        Icons.Filled.Article, null,
+                        tint = Color.White.copy(0.8f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        if (isThai) "แตะกลางจอเพื่อขัดจังหวะและพูด" else "Tap center to interrupt and speak",
-                        color = Color.White.copy(0.75f),
-                        style = MaterialTheme.typography.labelMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 24.dp)
+                        if (isThai) "ดูข้อความ" else "See transcript",
+                        color = Color.White.copy(0.8f),
+                        style = MaterialTheme.typography.labelMedium
                     )
                 }
             }
