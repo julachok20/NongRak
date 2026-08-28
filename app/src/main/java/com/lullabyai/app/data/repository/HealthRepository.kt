@@ -49,6 +49,11 @@ class HealthRepository {
         supabase.from("vaccine_records").update(record) {
             filter { eq("id", record.id) }
         }
+        // Only a dose actually given counts. Keyed on the vaccine row, so re-saving the same
+        // record — or ticking, unticking and ticking again — credits it exactly once.
+        if (record.status == "completed" && !record.dateGiven.isNullOrBlank()) {
+            MascotRewards.award(XpKind.VACCINE_COMPLETED, record.id)
+        }
     }
 
     /** Bucket holding medical attachments. Certificates live under {ownerUserId}/{childId}/certs/. */
@@ -414,6 +419,9 @@ class HealthRepository {
         if (record.weightKg != null || record.heightCm != null) {
             ChildRepository().updateVitals(record.childId, record.weightKg, record.heightCm)
         }
+        // Keyed on the row the database just created, so a retry of the same save cannot pay
+        // twice — and two genuine measurements on one day both count, because they are two rows.
+        MascotRewards.award(XpKind.GROWTH_RECORDED, saved.id)
         saved
     }
 

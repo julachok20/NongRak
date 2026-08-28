@@ -96,6 +96,13 @@ enum class MascotArt(@DrawableRes val art: Int, val bones: List<Bone>, val face:
         Face(0.407f, 0.476f, 0.603f, 0.445f, 0.038f, 0.040f, 0.513f, 0.528f, 0.030f, 0.016f, 0xFFFDF7F2)
     );
 
+    /**
+     * The name this companion goes by outside the app: the value stored in
+     * `mascot_bonds.mascot` and constrained there to nongrak|coco|bunny|pingu. Derived rather
+     * than a second field, so the two can never disagree.
+     */
+    val key: String get() = name.lowercase()
+
     companion object {
         /** Index of the bone each mood drives; see [MascotMood]. */
         const val ARM = 0

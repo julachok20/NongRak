@@ -272,7 +272,6 @@ fun AppNavigation(
                     onSignUp = { navController.navigate(Screen.SignUp.route) },
                     onLogin = { navController.navigate(Screen.Login.route) },
                     settingsViewModel = settingsViewModel,
-                    onDoctorMode = { navController.navigate(Screen.DoctorWelcome.route) },
                     onGuestMode = {
                         childViewModel.initGuestChild()
                         navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
@@ -852,6 +851,12 @@ fun AppNavigation(
         }
         composable(Screen.TrustedDevices.route) {
             com.lullabyai.app.ui.screens.settings.TrustedDevicesScreen(
+                navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.MascotCloset.route) {
+            com.lullabyai.app.ui.screens.mascot.MascotClosetScreen(
                 navController = navController,
                 onBack = { navController.popBackStack() }
             )
@@ -1754,6 +1759,45 @@ fun AppNavigation(
             RecordOralHealthEventScreen(
                 oralHealthViewModel = oralHealthViewModel,
                 navController = navController
+            )
+        }
+
+        // --- NongRak Parent Community Suite ---
+        composable(Screen.Community.route) {
+            com.lullabyai.app.ui.screens.community.ParentCommunityHubScreen(
+                navController = navController,
+                authViewModel = authViewModel,
+                childViewModel = childViewModel
+            )
+        }
+        composable(Screen.CreateCommunityPost.route) {
+            com.lullabyai.app.ui.screens.community.CreateCommunityPostScreen(
+                navController = navController,
+                authViewModel = authViewModel,
+                childViewModel = childViewModel
+            )
+        }
+        composable(
+            route = Screen.ProfessionalBlogDetail.route,
+            arguments = listOf(androidx.navigation.navArgument("blogId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val blogId = backStackEntry.arguments?.getString("blogId") ?: ""
+            com.lullabyai.app.ui.screens.community.ProfessionalBlogDetailScreen(
+                blogId = blogId,
+                navController = navController
+            )
+        }
+        composable(
+            route = Screen.CommunityUserProfile.route,
+            arguments = listOf(androidx.navigation.navArgument("authorName") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val rawAuthorName = backStackEntry.arguments?.getString("authorName") ?: ""
+            val authorName = java.net.URLDecoder.decode(rawAuthorName, "UTF-8")
+            com.lullabyai.app.ui.screens.community.CommunityUserProfileScreen(
+                authorName = authorName,
+                navController = navController,
+                authViewModel = authViewModel,
+                childViewModel = childViewModel
             )
         }
     }

@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -98,7 +99,19 @@ class ChildRepository {
     }
 
     suspend fun updateChild(childId: String, updates: Map<String, Any?>): Result<Unit> = runCatching {
-        supabase.from("children").update(updates) {
+        val json = buildJsonObject {
+            updates.forEach { (k, v) ->
+                when (v) {
+                    null -> put(k, JsonNull)
+                    is String -> put(k, JsonPrimitive(v))
+                    is Number -> put(k, JsonPrimitive(v))
+                    is Boolean -> put(k, JsonPrimitive(v))
+                    is JsonElement -> put(k, v)
+                    else -> put(k, JsonPrimitive(v.toString()))
+                }
+            }
+        }
+        supabase.from("children").update(json) {
             filter { eq("id", childId) }
         }
     }
@@ -1354,6 +1367,11 @@ class ChildRepository {
     suspend fun updateMilestone(milestone: DevelopmentMilestone): Result<Unit> = runCatching {
         supabase.from("development_milestones").update(milestone) {
             filter { eq("id", milestone.id) }
+        }
+        // Only reaching it counts, not un-ticking it. Keyed on the milestone row, so a parent who
+        // tries it, unticks and ticks again is credited once — and never loses what they had.
+        if (milestone.isAchieved) {
+            MascotRewards.award(XpKind.MILESTONE_ACHIEVED, milestone.id)
         }
     }
 

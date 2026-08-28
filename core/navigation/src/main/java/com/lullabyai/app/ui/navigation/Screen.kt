@@ -103,6 +103,8 @@ sealed class Screen(val route: String) {
     /** Pair this account with the NongRak LINE OA for notifications. Added 2026-08-21. */
     object LineLink : Screen("line_link")
     object TrustedDevices : Screen("trusted_devices")
+    /** ตู้เสื้อผ้า — companion level, unlocks and outfits. Added 2026-08-27. */
+    object MascotCloset : Screen("mascot_closet")
     object HealthBook : Screen("health_book")
     object MilkRecord : Screen("milk_record")
     object NutritionInsights : Screen("nutrition_insights")
@@ -247,5 +249,15 @@ sealed class Screen(val route: String) {
 
     // --- Compare Memories / Growth Transformation ---
     object CompareMemories : Screen("compare_memories")
+
+    // --- NongRak Parent Community Suite ---
+    object Community : Screen("community")
+    object CreateCommunityPost : Screen("create_community_post")
+    object ProfessionalBlogDetail : Screen("professional_blog_detail/{blogId}") {
+        fun route(blogId: String) = "professional_blog_detail/$blogId"
+    }
+    object CommunityUserProfile : Screen("community_user_profile/{authorName}") {
+        fun route(authorName: String) = "community_user_profile/" + java.net.URLEncoder.encode(authorName, "UTF-8")
+    }
 }
 
