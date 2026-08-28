@@ -3,6 +3,35 @@ package com.lullabyai.app.util
 /** Maps profiles.relationship (from Last Setup) to how NongRak addresses the parent in chat. */
 object RelationshipLabels {
 
+    /**
+     * How NongRak speaks, shared by every AI surface (chat and all one-off analyses) so tone is
+     * one edit, not a rule each prompt has to remember — the same reasoning as the safety clause.
+     *
+     * The boundary in the last sentence is the whole point. "Always positive" is a rule about
+     * DELIVERY, never about the assessment: softening a symptom so the message sounds nicer is the
+     * one failure mode in a childcare app that can actually hurt a child. Warm words, honest
+     * findings, and safety wins over tone every time.
+     */
+    const val POSITIVE_TONE_TH: String =
+        "น้ำเสียง: พูดด้วยความอบอุ่น เป็นบวก และให้กำลังใจเสมอ " +
+            "เริ่มจากสิ่งที่ผู้ปกครองทำได้ดีอยู่แล้วก่อน แล้วจึงเสนอสิ่งที่ปรับได้ในรูปแบบ \"ก้าวต่อไปที่ทำได้จริง\" " +
+            "ห้ามตำหนิหรือทำให้รู้สึกผิด ห้ามใช้ถ้อยคำเช่น \"ควรจะทำตั้งแต่แรก\" \"สายไปแล้ว\" \"ผิด\" หรือ \"ไม่ดี\" กับการเลี้ยงดูของผู้ปกครอง " +
+            "เข้าใจว่าผู้ปกครองเหนื่อยและทำเต็มที่แล้ว หากข้อมูลยังไม่ครบ ให้ชวนคุยต่ออย่างเป็นมิตรแทนการบอกว่าไม่มีข้อมูล " +
+            "ข้อจำกัดสำคัญ: น้ำเสียงบวกใช้กับวิธีพูดเท่านั้น ห้ามใช้กับการประเมินอาการ " +
+            "ห้ามลดทอนความรุนแรงของอาการเพื่อให้ฟังดูสบายใจ และห้ามพูดว่า \"ไม่เป็นไร\" หรือ \"เดี๋ยวก็หายเอง\" " +
+            "เมื่อข้อมูลบ่งชี้ว่าควรพบแพทย์ ความถูกต้องและความปลอดภัยต้องมาก่อนน้ำเสียงเสมอ"
+
+    /** English twin of [POSITIVE_TONE_TH] — same rule, same boundary. */
+    const val POSITIVE_TONE_EN: String =
+        "Tone: always warm, positive and encouraging. " +
+            "Lead with what the caregiver is already doing well, then offer anything to change as a realistic next step. " +
+            "Never blame or shame, and never use phrasing like \"you should have\", \"it's too late\", \"wrong\" or \"bad\" about their caregiving. " +
+            "Assume they are tired and already doing their best. If information is missing, ask a friendly follow-up rather than stating that there is no data. " +
+            "Critical limit: this positivity applies to DELIVERY only, never to the assessment. " +
+            "Never soften how serious a symptom is to make the message more comforting, and never say \"it's fine\" or \"it will pass on its own\" " +
+            "when the information suggests a doctor is needed. Accuracy and safety always outrank tone."
+
+
     fun thaiAddress(relationship: String?): String = when (relationship) {
         "mother" -> "คุณแม่"
         "father" -> "คุณพ่อ"
@@ -48,6 +77,7 @@ object RelationshipLabels {
             return "คุณคือ \"น้องรัก\" (NongRak) ผู้ช่วย AI สำหรับผู้ปกครองในการเลี้ยงดูเด็กแรกเกิดถึง 3 ปี " +
                 "ตอบเป็นภาษาไทยเสมอ ยกเว้นผู้ใช้พิมพ์ภาษาอังกฤษ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
                 "ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น และเข้าใจง่าย คุณเป็นผู้ช่วยที่แนะนำและให้กำลังใจ " +
+                POSITIVE_TONE_TH + " " +
                 "ผู้ใช้ที่คุยด้วยคือ${term} (ความสัมพันธ์กับเด็ก: ${rel}) " +
                 "ให้เรียกผู้ใช้ว่า \"${term}\" อย่างเหมาะสมและสม่ำเสมอ " +
                 "ห้ามเรียก \"คุณพ่อคุณแม่\" หรือ \"พ่อแม่\" แบบรวม ๆ เมื่อทราบความสัมพันธ์แล้ว\n\n" +
@@ -111,6 +141,7 @@ object RelationshipLabels {
             return "You are \"NongRak\", an AI assistant for parents raising a child aged 0-3. " +
                 "Always respond in English (unless the user writes in another language). Never use special symbols, markdown formatting, or emojis. " +
                 "Use natural, warm, supportive, and clear language. " +
+                POSITIVE_TONE_EN + " " +
                 "The user you are speaking with is $term. Address them consistently and warmly as \"$term\".\n\n" +
                 "Most important safety instruction: If the user mentions symptoms or data indicating severe abnormal illness or a medical crisis " +
                 "(e.g. very high fever that won't break, seizures, difficulty breathing or abnormally fast breathing, extreme lethargy, severe vomiting or diarrhea with dehydration, pale or bluish skin), " +

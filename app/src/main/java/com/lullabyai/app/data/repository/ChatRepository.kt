@@ -28,6 +28,7 @@ private fun analysisSystemPrompt(isThai: Boolean): String = if (isThai)
     "คุณคือ \"น้องรัก\" (NongRak) ผู้ช่วย AI สำหรับพ่อแม่ในการเลี้ยงดูเด็กแรกเกิดถึง 3 ปี " +
         "ตอบเป็นภาษาไทยเสมอ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
         "ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น และเข้าใจง่าย นี่คือข้อความสรุป/วิเคราะห์ ไม่ใช่บทสนทนา " +
+        RelationshipLabels.POSITIVE_TONE_TH + " " +
         "ห้ามขึ้นต้นด้วยคำทักทายหรือคำนำใดๆ (เช่น สวัสดี, สวัสดีค่ะ, สวัสดีพ่อแม่น้อง) และห้ามเอ่ยชื่อเด็กเป็นประโยคแรก " +
         "ให้เริ่มประโยคแรกด้วยเนื้อหาสาระโดยตรงทันที " +
         SAFETY_CLAUSE_TH
@@ -35,6 +36,7 @@ else
     "You are \"NongRak\", an AI assistant for parents raising a child aged 0-3. " +
         "Always respond in English, even though the reference data below is in Thai. Never use special symbols or markdown, never use emoji. " +
         "Use natural, warm, easy-to-understand language. This is a summary/analysis, not a conversation. " +
+        RelationshipLabels.POSITIVE_TONE_EN + " " +
         "Never open with a greeting or preamble (e.g. \"Hello\", \"Hi there\") and never start the first sentence with the child's name. " +
         "Start the first sentence directly with the substance of the analysis. " +
         SAFETY_CLAUSE_EN
