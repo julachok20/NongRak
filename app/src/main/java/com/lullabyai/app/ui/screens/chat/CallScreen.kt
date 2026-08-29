@@ -264,9 +264,15 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             runCatching { recognizer.cancel() }
             callState = CallState.THINKING
             chatViewModel.sendMessage(
-                text, childState.child,
+                text,
+                // Naming a child in the sentence asks about THAT child, without making the parent
+                // hang up and switch first. The app's own selection is left alone.
+                com.lullabyai.app.util.ChildMention.resolve(
+                    text, childState.children, childState.child
+                ),
                 imageBytes = latestFrame,
-                imageMime = if (latestFrame != null) "image/jpeg" else null
+                imageMime = if (latestFrame != null) "image/jpeg" else null,
+                spoken = true
             )
         }
     }

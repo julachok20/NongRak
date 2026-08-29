@@ -185,6 +185,22 @@ class ChatViewModel : ViewModel() {
             .onSuccess { if (it.fed && announce) _uiState.value = _uiState.value.copy(bondFeed = it) }
     }
 
+    /** Empty unless the reply will be spoken aloud — normal chat sends exactly what it always did. */
+    private fun spokenPrefix(spoken: Boolean, isThai: Boolean): String {
+        if (!spoken) return ""
+        return if (isThai)
+            "[คำสั่งการตอบ: ข้อความนี้มาจากการโทรคุยด้วยเสียง ตอบสั้นมาก 1-2 ประโยค " +
+                "คุยแบบเพื่อนคุยกับเพื่อน ใช้คำพูดธรรมดาสั้น ๆ " +
+                "ห้ามใช้หัวข้อ รายการ ตัวเลขนำหน้า หรือ markdown ห้ามตอบยาวเป็นย่อหน้า " +
+                "ถ้าเรื่องนั้นต้องอธิบายยาว ให้ตอบใจความสำคัญก่อนแล้วถามกลับสั้น ๆ ว่าอยากฟังต่อไหม] "
+        else
+            "[Reply instruction: this came from a voice call, so the answer will be spoken. " +
+                "Reply in at most 1-2 short sentences, like one friend talking to another. " +
+                "No headings, lists, numbering or markdown, and no paragraphs. " +
+                "If it genuinely needs a long answer, give the key point and ask briefly whether " +
+                "they want the rest.] "
+    }
+
     fun sendMessage(
         content: String,
         child: Child?,
@@ -192,14 +208,23 @@ class ChatViewModel : ViewModel() {
         imageUri: String? = null,
         imageMime: String? = null,
         persona: String? = null,
-        isThai: Boolean = true
+        isThai: Boolean = true,
+        /**
+         * This message came from a voice call, so the reply is going to be SPOKEN.
+         *
+         * A paragraph that reads well on screen is unbearable read aloud: the parent waits through
+         * it, cannot skim it, and has usually stopped listening by sentence three. Same mechanism
+         * as [ChatMode.promptPrefix] — an instruction on the outgoing text, since the system prompt
+         * is fixed in ChatRepository and the bubble keeps the parent's raw wording.
+         */
+        spoken: Boolean = false
     ) {
         val sessionId = _uiState.value.currentSessionId ?: return
         val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = content, imageUri = imageUri)
         // Persona instruction rides along with the text (the system prompt is fixed inside
         // ChatRepository); the bubble above keeps the parent's raw wording. Empty for NORMAL, so
         // normal chat sends exactly what it always did.
-        val outgoing = _uiState.value.mode.promptPrefix(isThai) + content
+        val outgoing = spokenPrefix(spoken, isThai) + _uiState.value.mode.promptPrefix(isThai) + content
         _uiState.value = _uiState.value.copy(
             messages = _uiState.value.messages.filterNot { it.id == "welcome" } + userMsg,
             isLoading = true

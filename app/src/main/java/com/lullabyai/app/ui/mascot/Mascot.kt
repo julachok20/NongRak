@@ -177,9 +177,16 @@ fun Mascot(
 
     Canvas(tappable) {
         if (bitmap == null) return@Canvas
-        val w = size.width
-        val h = size.height
-        if (w <= 0f || h <= 0f) return@Canvas
+        // The art is square, so the mesh must be too. Using the box's own width and height
+        // stretched the character whenever its container was not square — opening the transcript
+        // shortens the space above it, and the mascot went wide and fat. Taking the smaller side
+        // and centring keeps the proportions whatever the layout does.
+        val side = minOf(size.width, size.height)
+        if (side <= 0f) return@Canvas
+        val w = side
+        val h = side
+        val insetX = (size.width - side) / 2f
+        val insetY = (size.height - side) / 2f
 
         angles[MascotArt.ARM] = Math.toRadians(pose.arm.toDouble()).toFloat()
         angles[MascotArt.ARM_FAR] = Math.toRadians(pose.armFar.toDouble()).toFloat()
@@ -189,6 +196,7 @@ fun Mascot(
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
             val saved = native.save()
+            native.translate(insetX, insetY)
             // Whole-body motion happens around the mascot's centre, on top of the bone
             // deformation — the two are independent, which is why a wave can happen mid-bounce.
             native.translate(w / 2f + pose.dx * w, h / 2f + pose.dy * h)
@@ -209,6 +217,9 @@ fun Mascot(
         // bounce or a tilt. It sits where bone weights are ~0, which is why it stays aligned while
         // a limb is swinging.
         withTransform({
+            // Same centring as the mesh, or the redrawn eyes and mouth sit in the top-left square
+            // while the body is centred.
+            translate(insetX, insetY)
             translate(pose.dx * w, pose.dy * h)
             rotate(pose.rot, pivot = Offset(w / 2f, h / 2f))
             scale(pose.sx, pose.sy, pivot = Offset(w / 2f, h / 2f))
