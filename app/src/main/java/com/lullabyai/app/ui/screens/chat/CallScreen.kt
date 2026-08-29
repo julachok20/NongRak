@@ -47,7 +47,11 @@ import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Job
+import androidx.compose.runtime.snapshotFlow
+import com.lullabyai.app.util.VoiceTurnRecorder
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 
@@ -123,166 +127,61 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     // Hidden by default: during a call the answer is spoken, and a wall of text over the
     // mascot is something to dismiss rather than read. A button opens it.
     var showInstructions by remember { mutableStateOf(false) }
-    var pendingUtterance by remember { mutableStateOf("") }
-    /** When speech was last actually heard. A clock, not a countdown — see the ticker below. */
-    var lastVoiceAtMs by remember { mutableStateOf(0L) }
-    var turnStartedAtMs by remember { mutableStateOf(0L) }
+
+
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
-    var userSpeaking by remember { mutableStateOf(false) }
-    var partialSpeech by remember { mutableStateOf("") }
 
-    val recognizerIntent = remember {
-        android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (isThai) "th-TH" else "en-US")
-            // Short, so the recogniser hands back a chunk quickly rather than owning the turn.
-            // Whether the turn is FINISHED is decided by TURN_END_SILENCE_MS below, which survives
-            // a pause; 1800 here meant one pause ended the sentence, and adding a wait on top of
-            // it would have made every reply feel a second slower.
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 400L)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        }
-    }
-    val recognizer = remember { SpeechRecognizer.createSpeechRecognizer(context) }
 
-    fun restartListening() {
-        if (muted) {
-            if (callState == CallState.LISTENING) callState = CallState.IDLE
-            return
-        }
-        if (callState == CallState.THINKING) return
-        // After TTS ends callState may still be SPEAKING until we reset it — allow mic reopen then.
-        if (callState == CallState.SPEAKING && tts.isSpeaking) return
-        partialSpeech = ""
-        callState = CallState.LISTENING
-        runCatching { recognizer.startListening(recognizerIntent) }
-    }
-
-    fun interruptAiAndListen() {
-        tts.stop()
-        lastVoiceAtMs = 0L
-        turnStartedAtMs = 0L
-        runCatching { recognizer.cancel() }
-        partialSpeech = ""
-        // Interrupting starts a fresh question, not an addition to the one just answered.
-        pendingUtterance = ""
-        callState = CallState.LISTENING
-        if (!muted) runCatching { recognizer.startListening(recognizerIntent) }
-    }
-
-    DisposableEffect(Unit) {
-        recognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onResults(results: Bundle) {
-                userSpeaking = false
-                val text = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                    ?: partialSpeech
-                partialSpeech = ""
-                // A chunk, not necessarily the whole turn. It joins what has been said so far and
-                // the mic reopens immediately, so a pause to think does not send half a question.
-                if (!text.isNullOrBlank()) {
-                    if (pendingUtterance.isBlank()) turnStartedAtMs = System.currentTimeMillis()
-                    pendingUtterance = (pendingUtterance + " " + text).trim()
-                    lastVoiceAtMs = System.currentTimeMillis()
-                }
-                restartListening()
-            }
-            override fun onError(error: Int) {
-                if (callState == CallState.SPEAKING || callState == CallState.THINKING) return
-                val capturedPartial = partialSpeech
-                userSpeaking = false
-                when (error) {
-                    SpeechRecognizer.ERROR_NO_MATCH,
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                        // Heard nothing THIS segment, which during a pause is normal rather than a
-                        // failure. Keep whatever was captured, reopen the mic, and let the turn
-                        // timer decide whether the parent has actually finished.
-                        if (capturedPartial.isNotBlank()) {
-                            partialSpeech = ""
-                            if (pendingUtterance.isBlank()) turnStartedAtMs = System.currentTimeMillis()
-                            pendingUtterance = (pendingUtterance + " " + capturedPartial).trim()
-                            lastVoiceAtMs = System.currentTimeMillis()
-                        }
-                        restartListening()
-                    }
-                    else -> restartListening()
-                }
-            }
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {
-                userSpeaking = true
-                lastVoiceAtMs = System.currentTimeMillis()
-                if (callState == CallState.SPEAKING) interruptAiAndListen()
-            }
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() { userSpeaking = false }
-            override fun onPartialResults(partialResults: Bundle?) {
-                partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    ?.firstOrNull()
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let {
-                        partialSpeech = it
-                        // Words are still arriving, so the parent is mid-sentence.
-                        lastVoiceAtMs = System.currentTimeMillis()
-                    }
-            }
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
-        onDispose { recognizer.destroy() }
-    }
-
-    LaunchedEffect(hasAudioPermission) { if (hasAudioPermission) restartListening() }
+    val recorder = remember { VoiceTurnRecorder() }
 
     /**
-     * Decides when the parent has finished, by asking how long ago speech was last heard.
+     * Stops the current recording so the AI can take its turn, or the parent can cut in.
      *
-     * This replaced a countdown that was cancelled and restarted from the recogniser callbacks.
-     * Android emits ERROR_NO_MATCH roughly once a second while nobody is talking, and each one
-     * restarted the countdown, so it never reached the end and the AI never took its turn. A clock
-     * cannot be reset by an event that carries no speech, which is the whole point: only real
-     * words move `lastVoiceAtMs`, and silence simply accumulates.
+     * Ending the recording is all it takes: the capture loop below sees the call is no longer
+     * LISTENING and starts a fresh turn once the AI has finished.
      */
-    LaunchedEffect(Unit) {
+    fun interruptAiAndListen() {
+        tts.stop()
+        recorder.stop()
+        callState = CallState.LISTENING
+    }
+
+    /**
+     * One turn at a time: record until the parent stops, send the audio, wait, repeat.
+     *
+     * The recogniser this replaced handed over its guess at the words, so the model never heard
+     * what it got wrong — and Thai transcription is exactly where it goes wrong. Sending the audio
+     * means the model hears the sentence, tone and all, and there is one fewer round trip before
+     * it can answer.
+     */
+    LaunchedEffect(hasAudioPermission) {
+        if (!hasAudioPermission) return@LaunchedEffect
         while (isActive) {
-            delay(120)
-            if (callState != CallState.LISTENING) continue
-            if (userSpeaking) continue
-            val text = pendingUtterance.trim()
-            if (text.isBlank()) continue
+            if (muted || callState == CallState.THINKING || callState == CallState.SPEAKING) {
+                delay(120)
+                continue
+            }
+            callState = CallState.LISTENING
+            val wav = withContext(Dispatchers.IO) {
+                recorder.recordTurn(TURN_END_SILENCE_MS) {
+                    // Abandon the turn the moment the call moves on without us.
+                    muted || callState == CallState.THINKING || callState == CallState.SPEAKING
+                }
+            }
+            // Null means silence or a noise too short to be a sentence — keep listening rather
+            // than sending the model something nobody said.
+            if (wav == null || callState != CallState.LISTENING) continue
 
-            val now = System.currentTimeMillis()
-            val quietFor = now - lastVoiceAtMs
-            val turnRanFor = now - turnStartedAtMs
-            if (quietFor < TURN_END_SILENCE_MS && turnRanFor < TURN_MAX_MS) continue
-
-            pendingUtterance = ""
-            partialSpeech = ""
-            lastVoiceAtMs = 0L
-            turnStartedAtMs = 0L
-            runCatching { recognizer.cancel() }
             callState = CallState.THINKING
             chatViewModel.sendMessage(
-                text,
-                // Naming a child in the sentence asks about THAT child, without making the parent
-                // hang up and switch first. The app's own selection is left alone.
-                com.lullabyai.app.util.ChildMention.resolve(
-                    text, childState.children, childState.child
-                ),
+                "",
+                childState.child,
                 imageBytes = latestFrame,
                 imageMime = if (latestFrame != null) "image/jpeg" else null,
                 spoken = true,
-                childAmbiguous = com.lullabyai.app.util.ChildMention.isAmbiguous(
-                    text, childState.children, childState.child
-                )
+                audioBytes = wav,
+                audioMime = VoiceTurnRecorder.MIME
             )
-        }
-    }
-
-    LaunchedEffect(callState) {
-        if (callState == CallState.SPEAKING || callState == CallState.THINKING) {
-            runCatching { recognizer.cancel() }
         }
     }
 
@@ -304,19 +203,20 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                     instant = true
                 )
             } else {
-                restartListening()
+                callState = CallState.LISTENING
             }
         }
     }
     // AI finished speaking → user's turn to speak.
     LaunchedEffect(tts.isSpeaking) {
         if (!tts.isSpeaking && callState == CallState.SPEAKING) {
-            callState = CallState.IDLE
-            restartListening()
+            // Straight back to listening rather than through IDLE: the capture loop starts a turn
+            // the moment the state says so, and a detour through IDLE just adds a gap.
+            callState = CallState.LISTENING
         }
     }
 
-    // Video mode: periodic frame capture, attached to the next message sent (see onResults above).
+    // Video mode: periodic frame capture, attached to the next message the capture loop sends.
     LaunchedEffect(imageCapture, videoEnabled) {
         val capture = imageCapture ?: return@LaunchedEffect
         while (isActive) {
@@ -328,11 +228,13 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     fun toggleMute() {
         muted = !muted
         if (muted) {
-            runCatching { recognizer.cancel() }
+            // The capture loop checks `muted` itself; stopping here just ends the turn already
+            // in progress instead of letting it run to its own silence timeout.
+            recorder.stop()
             if (callState == CallState.LISTENING) callState = CallState.IDLE
         } else {
             if (callState == CallState.SPEAKING) interruptAiAndListen()
-            else if (callState == CallState.IDLE) restartListening()
+            else if (callState == CallState.IDLE) callState = CallState.LISTENING
         }
     }
 
@@ -343,7 +245,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
 
     fun endCall() {
         tts.stop()
-        runCatching { recognizer.cancel() }
+        recorder.stop()
         onBack()
     }
 
@@ -641,7 +543,10 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                     IconButton(
                         onClick = {
                             speakerOn = !speakerOn
-                            if (!speakerOn) { tts.stop(); if (callState == CallState.SPEAKING) restartListening() }
+                            if (!speakerOn) {
+                                tts.stop()
+                                if (callState == CallState.SPEAKING) callState = CallState.LISTENING
+                            }
                         },
                         modifier = Modifier.size(48.dp).clip(CircleShape)
                             .background(if (speakerOn) Primary.copy(0.18f) else Color.Black.copy(0.06f))

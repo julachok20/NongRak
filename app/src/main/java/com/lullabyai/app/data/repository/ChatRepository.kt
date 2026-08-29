@@ -126,6 +126,14 @@ class ChatRepository {
         child: Child?,
         imageBytes: ByteArray? = null,
         imageMime: String? = null,
+        /**
+         * The parent's own voice, as a WAV, instead of a transcriber's guess at it.
+         *
+         * Rides the same inline-media path as an image — the model takes either the same way —
+         * but only Gemini accepts it, so ai-generate keeps audio off the other two providers.
+         */
+        audioBytes: ByteArray? = null,
+        audioMime: String? = null,
         relationship: String? = null,
         /** The chosen companion's voice. Null keeps the neutral house tone. */
         persona: String? = null,
@@ -172,10 +180,22 @@ class ChatRepository {
 
         // Persist the user's message FIRST so it survives even if the AI call fails
         // (no response caching for chat — every message is its own conversation turn).
-        runCatching { saveMessage(sessionId, "user", userMessage.ifBlank { if (imageBytes != null) (if (isThai) "[ส่งรูปภาพ]" else "[Sent an image]") else "" }) }
+        // A spoken turn has no text of its own: the model hears the audio, so nothing was
+        // transcribed on this side. The history keeps a marker rather than an empty bubble.
+        val historyText = userMessage.ifBlank {
+            when {
+                audioBytes != null -> if (isThai) "[ข้อความเสียง]" else "[Voice message]"
+                imageBytes != null -> if (isThai) "[ส่งรูปภาพ]" else "[Sent an image]"
+                else -> ""
+            }
+        }
+        runCatching { saveMessage(sessionId, "user", historyText) }
 
         // Encode an attached image (downscaled by the caller) for the vision-capable AI path.
-        val imageB64 = imageBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        // Audio wins when both are present: a call frame is context, the voice is the question.
+        val mediaBytes = audioBytes ?: imageBytes
+        val mediaMime = if (audioBytes != null) (audioMime ?: "audio/wav") else (imageMime ?: "image/jpeg")
+        val imageB64 = mediaBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
 
         val systemPrompt = if (isThai) {
             RelationshipLabels.chatSystemPrompt(relationship, isThai = true) +
@@ -205,7 +225,7 @@ class ChatRepository {
             prompt, useSearch = false, maxTokens = 4096,
             system = systemPrompt,
             jsonMode = false,
-            imageBase64 = imageB64, imageMimeType = imageMime ?: "image/jpeg"
+            imageBase64 = imageB64, imageMimeType = mediaMime
         )
 
         val response = aiText

@@ -30,7 +30,14 @@ const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash
 const CLAUDE_MODEL = "claude-3-5-haiku-20241022";
 const FALLBACK = "ขออภัยค่ะ ระบบผู้ช่วย AI ไม่พร้อมให้บริการในขณะนี้ กรุณาลองใหม่อีกครั้งในอีกสักครู่";
 
+// Inline media for the model: an image, a PDF, or — since the call screen started sending the
+// parent's own voice — a WAV. The name predates audio; the shape is the same either way.
 type ImageInput = { data: string; mimeType: string } | null;
+
+/** Audio is Gemini-only in this chain; see the fallback comment below. */
+function isAudio(media: ImageInput): boolean {
+  return !!media && media.mimeType.startsWith("audio/");
+}
 
 async function tryGemini(prompt: string, useSearch: boolean, maxTokens: number, system: string, jsonMode: boolean, image: ImageInput) {
   const raw = [
@@ -371,8 +378,12 @@ Deno.serve(async (req: Request) => {
   // -> PAID Claude (true last resort). tryLocal is a no-op until LOCAL_AI_URL is set.
   const result = (await tryLocal(prompt, useSearch, maxTokens, system, jsonMode, image))
     ?? (await tryGemini(prompt, useSearch, maxTokens, system, jsonMode, image))
-    ?? (await tryOpenRouter(prompt, maxTokens, system, image))
-    ?? (await tryClaude(prompt, maxTokens, system, image));
+    // Audio goes to Gemini or nowhere. The other two take images in shapes that cannot carry a
+    // sound file, so falling through would send them a question with the question missing — they
+    // would answer the prompt text alone, confidently, about nothing the parent said. A failure
+    // the client can see and fall back from beats a confident answer to a silent question.
+    ?? (isAudio(image) ? null : await tryOpenRouter(prompt, maxTokens, system, image))
+    ?? (isAudio(image) ? null : await tryClaude(prompt, maxTokens, system, image));
   const payload = result ?? { text: FALLBACK, provider: "" };
   return new Response(JSON.stringify(payload), { headers: { "Content-Type": "application/json" } });
 });

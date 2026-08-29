@@ -258,10 +258,16 @@ class ChatViewModel : ViewModel() {
          * child-specific answer as if the right one were obvious — with three children a
          * confident "the next vaccine is..." about the selected one is wrong two times in three.
          */
-        childAmbiguous: Boolean = false
+        childAmbiguous: Boolean = false,
+        /** The parent's voice as a WAV, sent instead of a transcript. See ChatRepository. */
+        audioBytes: ByteArray? = null,
+        audioMime: String? = null
     ) {
         val sessionId = _uiState.value.currentSessionId ?: return
-        val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = content, imageUri = imageUri)
+        val bubbleText = content.ifBlank {
+            if (audioBytes != null) (if (isThai) "[ข้อความเสียง]" else "[Voice message]") else content
+        }
+        val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = bubbleText, imageUri = imageUri)
         // Persona instruction rides along with the text (the system prompt is fixed inside
         // ChatRepository); the bubble above keeps the parent's raw wording. Empty for NORMAL, so
         // normal chat sends exactly what it always did.
@@ -273,7 +279,11 @@ class ChatViewModel : ViewModel() {
             isLoading = true
         )
         viewModelScope.launch {
-            repo.sendMessage(sessionId, outgoing, child, imageBytes, imageMime, _uiState.value.parentRelationship, persona ?: activePersona, isThai)
+            repo.sendMessage(
+                sessionId, outgoing, child, imageBytes, imageMime,
+                audioBytes, audioMime,
+                _uiState.value.parentRelationship, persona ?: activePersona, isThai
+            )
                 .onSuccess { response ->
                     // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
                     // RelationshipLabels.chatSystemPrompt) — strip it into structured data for the
