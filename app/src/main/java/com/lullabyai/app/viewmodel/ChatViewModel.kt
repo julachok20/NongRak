@@ -45,6 +45,8 @@ data class ChatUiState(
     val isRefreshing: Boolean = false,
     val analysisChildId: String? = null,  // which child the AI analyses below belong to (multi-child)
     val parentRelationship: String? = null, // profiles.relationship — how the chatbot addresses the user
+    /** profiles.full_name, for the one greeting. Null on accounts that never filled it in. */
+    val parentName: String? = null,
     val lastProvider: String = "",   // which AI model answered the latest message (debug indicator)
     val mode: ChatMode = ChatMode.NORMAL,  // persona/speech style: normal, เล่านิทาน, คุยกับเด็ก
     /** Mirrors the Auto Record setting; the screen pushes it in so the ViewModel needs no Context. */
@@ -59,17 +61,28 @@ class ChatViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
 
-    private fun welcomeMessage(relationship: String?, isThai: Boolean = true) = UiChatMessage(
+    private fun welcomeMessage(
+        relationship: String?,
+        isThai: Boolean = true,
+        name: String? = null
+    ) = UiChatMessage(
         id = "welcome",
         role = "model",
-        content = RelationshipLabels.chatWelcome(relationship, isThai)
+        content = RelationshipLabels.chatWelcome(relationship, isThai, name)
     )
 
     fun loadSessions(isThai: Boolean = true) {
         viewModelScope.launch {
-            val relationship = authRepo.getProfile().getOrNull()?.relationship
-            if (relationship != null) {
-                _uiState.value = _uiState.value.copy(parentRelationship = relationship)
+            val profile = authRepo.getProfile().getOrNull()
+            val relationship = profile?.relationship
+            // Prefer the real name; username is a fallback, and neither being set is normal.
+            val name = profile?.fullName?.takeIf { it.isNotBlank() }
+                ?: profile?.username?.takeIf { it.isNotBlank() }
+            if (relationship != null || name != null) {
+                _uiState.value = _uiState.value.copy(
+                    parentRelationship = relationship ?: _uiState.value.parentRelationship,
+                    parentName = name ?: _uiState.value.parentName
+                )
             }
             repo.getSessions().onSuccess { sessions ->
                 _uiState.value = _uiState.value.copy(sessions = sessions)
@@ -89,7 +102,7 @@ class ChatViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(
                     sessions = sessions,
                     currentSessionId = session.id,
-                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship, isThai))
+                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship, isThai, _uiState.value.parentName))
                 )
             }
         }
@@ -111,14 +124,14 @@ class ChatViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(currentSessionId = sessionId, isLoading = true)
         viewModelScope.launch {
             repo.getMessages(sessionId).onSuccess { msgs ->
-                val welcome = welcomeMessage(_uiState.value.parentRelationship, isThai)
+                val welcome = welcomeMessage(_uiState.value.parentRelationship, isThai, _uiState.value.parentName)
                 val ui = if (msgs.isEmpty()) listOf(welcome)
                 else msgs.map { UiChatMessage(it.id, it.role, it.content) }
                 _uiState.value = _uiState.value.copy(messages = ui, isLoading = false)
             }.onFailure {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship, isThai))
+                    messages = listOf(welcomeMessage(_uiState.value.parentRelationship, isThai, _uiState.value.parentName))
                 )
             }
         }

@@ -54,12 +54,21 @@ object RelationshipLabels {
         else -> "ผู้ปกครอง"
     }
 
-    fun chatWelcome(relationship: String?, isThai: Boolean = true): String {
+    /**
+     * The one greeting in a conversation.
+     *
+     * Uses the carer's own name when the profile has one, because "สวัสดีค่ะ คุณแม่" is what a form
+     * says and "สวัสดีค่ะ คุณจุฬจ๊อก" is what a person says. Falls back to the relationship term
+     * when the name is unknown, which is every account that never filled it in.
+     */
+    fun chatWelcome(relationship: String?, isThai: Boolean = true, name: String? = null): String {
+        val clean = name?.trim()?.takeIf { it.isNotEmpty() }
         val term = if (isThai) thaiAddress(relationship) else englishAddress(relationship)
+        val who = if (clean != null) (if (isThai) "คุณ$clean" else clean) else term
         return if (isThai) {
-            "สวัสดีค่ะ $term! มีอะไรให้ช่วยเกี่ยวกับลูกของคุณบ้างคะ?"
+            "สวัสดีค่ะ $who! มีอะไรให้ช่วยเกี่ยวกับลูกของคุณบ้างคะ?"
         } else {
-            "Hello, $term! How can I help with your little one today?"
+            "Hello, $who! How can I help with your little one today?"
         }
     }
 
@@ -78,6 +87,9 @@ object RelationshipLabels {
                 "ตอบเป็นภาษาไทยเสมอ ยกเว้นผู้ใช้พิมพ์ภาษาอังกฤษ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
                 "ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น และเข้าใจง่าย คุณเป็นผู้ช่วยที่แนะนำและให้กำลังใจ " +
                 POSITIVE_TONE_TH + " " +
+                "การทักทาย: ข้อความแรกของบทสนทนาได้ทักทายไปแล้ว ห้ามทักทายซ้ำอีกในทุกคำตอบถัดไป " +
+                "ห้ามขึ้นต้นด้วย สวัสดีค่ะ / ยินดีที่ได้ช่วย / ขอบคุณที่ถาม และไม่ต้องเอ่ยชื่อผู้ใช้ทุกครั้ง " +
+                "ให้เริ่มประโยคแรกด้วยคำตอบโดยตรง เช่น ถ้าถามเรื่องวัคซีน ให้ตอบว่า \"วัคซีนถัดไปคือ...\" ได้เลย " +
                 "ผู้ใช้ที่คุยด้วยคือ${term} (ความสัมพันธ์กับเด็ก: ${rel}) " +
                 "ให้เรียกผู้ใช้ว่า \"${term}\" อย่างเหมาะสมและสม่ำเสมอ " +
                 "ห้ามเรียก \"คุณพ่อคุณแม่\" หรือ \"พ่อแม่\" แบบรวม ๆ เมื่อทราบความสัมพันธ์แล้ว\n\n" +
@@ -142,6 +154,10 @@ object RelationshipLabels {
                 "Always respond in English (unless the user writes in another language). Never use special symbols, markdown formatting, or emojis. " +
                 "Use natural, warm, supportive, and clear language. " +
                 POSITIVE_TONE_EN + " " +
+                "Greeting: the first message of the conversation already said hello. Never greet " +
+                "again in later replies, never open with \"Hello\", \"Happy to help\" or \"Thanks for " +
+                "asking\", and do not use their name every time. Start the first sentence with the " +
+                "answer itself — asked about vaccines, open with \"The next vaccine is...\". " +
                 "The user you are speaking with is $term. Address them consistently and warmly as \"$term\".\n\n" +
                 "Most important safety instruction: If the user mentions symptoms or data indicating severe abnormal illness or a medical crisis " +
                 "(e.g. very high fever that won't break, seizures, difficulty breathing or abnormally fast breathing, extreme lethargy, severe vomiting or diarrhea with dehydration, pale or bluish skin), " +
