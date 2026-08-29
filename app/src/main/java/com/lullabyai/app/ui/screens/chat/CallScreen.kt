@@ -272,7 +272,10 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 ),
                 imageBytes = latestFrame,
                 imageMime = if (latestFrame != null) "image/jpeg" else null,
-                spoken = true
+                spoken = true,
+                childAmbiguous = com.lullabyai.app.util.ChildMention.isAmbiguous(
+                    text, childState.children, childState.child
+                )
             )
         }
     }

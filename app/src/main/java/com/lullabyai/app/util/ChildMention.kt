@@ -31,6 +31,19 @@ object ChildMention {
         return if (mentioned.size == 1) mentioned.first() else fallback
     }
 
+    /**
+     * True when the account has several children and this message names none of them.
+     *
+     * The selected child is still used, because answering with no child context at all is worse.
+     * But the AI must not present a guess as fact: with three children, "วัคซีนถัดไปคือ..." about
+     * whichever happened to be selected is confidently wrong two times in three. The caller passes
+     * this on so the reply asks which child instead.
+     */
+    fun isAmbiguous(text: String, children: List<Child>, current: Child?): Boolean {
+        if (children.size < 2 || text.isBlank()) return false
+        return resolve(text, children, null) == null && current != null
+    }
+
     /** The child named in [text] when it is NOT [current] — so the caller can say it switched. */
     fun switchedAwayFrom(text: String, children: List<Child>, current: Child?): Child? {
         val resolved = resolve(text, children, current)

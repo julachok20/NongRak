@@ -202,16 +202,36 @@ class ChatViewModel : ViewModel() {
     private fun spokenPrefix(spoken: Boolean, isThai: Boolean): String {
         if (!spoken) return ""
         return if (isThai)
-            "[คำสั่งการตอบ: ข้อความนี้มาจากการโทรคุยด้วยเสียง ตอบสั้นมาก 1-2 ประโยค " +
-                "คุยแบบเพื่อนคุยกับเพื่อน ใช้คำพูดธรรมดาสั้น ๆ " +
-                "ห้ามใช้หัวข้อ รายการ ตัวเลขนำหน้า หรือ markdown ห้ามตอบยาวเป็นย่อหน้า " +
+            "[คำสั่งการตอบ: ข้อความนี้มาจากการโทรคุยด้วยเสียง " +
+                "คุณยังเป็นผู้ช่วยที่ช่วยตรวจสอบข้อมูลและบันทึกข้อมูลของลูกเหมือนเดิมทุกอย่าง " +
+                "ถ้าผู้ใช้เล่าหรือขอให้บันทึกอะไร ให้สร้างบล็อก AGENT_ACTION ตามปกติเสมอ " +
+                "ความสั้นนี้ใช้กับ 'คำที่พูดออกเสียง' เท่านั้น ไม่ได้ยกเลิกความสามารถใด ๆ " +
+                "ส่วนที่พูด: สั้นมาก 1-2 ประโยค คุยแบบเพื่อนคุยกับเพื่อน ใช้คำพูดธรรมดา " +
+                "ไม่ต้องมีหัวข้อหรือรายการยาว ๆ " +
                 "ถ้าเรื่องนั้นต้องอธิบายยาว ให้ตอบใจความสำคัญก่อนแล้วถามกลับสั้น ๆ ว่าอยากฟังต่อไหม] "
         else
-            "[Reply instruction: this came from a voice call, so the answer will be spoken. " +
-                "Reply in at most 1-2 short sentences, like one friend talking to another. " +
-                "No headings, lists, numbering or markdown, and no paragraphs. " +
-                "If it genuinely needs a long answer, give the key point and ask briefly whether " +
-                "they want the rest.] "
+            "[Reply instruction: this came from a voice call. You are still the assistant that " +
+                "checks and records the child's information — if the parent reports or asks to " +
+                "record anything, still emit the AGENT_ACTION block exactly as usual. This " +
+                "brevity applies ONLY to the words that get spoken; it removes no capability. " +
+                "Spoken part: at most 1-2 short sentences, one friend talking to another, plain " +
+                "words, no headings or long lists. If it genuinely needs a long answer, give the " +
+                "key point and ask briefly whether they want the rest.] "
+    }
+
+    /** Empty unless the account has several children and this message named none of them. */
+    private fun ambiguousChildPrefix(ambiguous: Boolean, isThai: Boolean): String {
+        if (!ambiguous) return ""
+        return if (isThai)
+            "[หมายเหตุ: บัญชีนี้มีลูกมากกว่าหนึ่งคน และข้อความนี้ไม่ได้ระบุชื่อลูก " +
+                "ถ้าคำตอบขึ้นอยู่กับเด็กคนใดคนหนึ่ง ให้ถามสั้น ๆ ก่อนว่าหมายถึงคนไหน " +
+                "ห้ามตอบเจาะจงเด็กคนใดคนหนึ่งราวกับว่ารู้อยู่แล้ว " +
+                "ถ้าเป็นคำถามทั่วไปที่ไม่ขึ้นกับตัวเด็ก ก็ตอบได้เลยตามปกติ] "
+        else
+            "[Note: this account has more than one child and the message named none of them. " +
+                "If the answer depends on a specific child, ask briefly which one first, and do " +
+                "not answer about a particular child as though it were obvious. If the question " +
+                "does not depend on a specific child, just answer normally.] "
     }
 
     fun sendMessage(
@@ -230,14 +250,24 @@ class ChatViewModel : ViewModel() {
          * as [ChatMode.promptPrefix] — an instruction on the outgoing text, since the system prompt
          * is fixed in ChatRepository and the bubble keeps the parent's raw wording.
          */
-        spoken: Boolean = false
+        spoken: Boolean = false,
+        /**
+         * Several children on the account and this message named none of them.
+         *
+         * The selected child still goes along as context, but the reply must not state a
+         * child-specific answer as if the right one were obvious — with three children a
+         * confident "the next vaccine is..." about the selected one is wrong two times in three.
+         */
+        childAmbiguous: Boolean = false
     ) {
         val sessionId = _uiState.value.currentSessionId ?: return
         val userMsg = UiChatMessage(id = java.util.UUID.randomUUID().toString(), role = "user", content = content, imageUri = imageUri)
         // Persona instruction rides along with the text (the system prompt is fixed inside
         // ChatRepository); the bubble above keeps the parent's raw wording. Empty for NORMAL, so
         // normal chat sends exactly what it always did.
-        val outgoing = spokenPrefix(spoken, isThai) + _uiState.value.mode.promptPrefix(isThai) + content
+        val outgoing = spokenPrefix(spoken, isThai) +
+            ambiguousChildPrefix(childAmbiguous, isThai) +
+            _uiState.value.mode.promptPrefix(isThai) + content
         _uiState.value = _uiState.value.copy(
             messages = _uiState.value.messages.filterNot { it.id == "welcome" } + userMsg,
             isLoading = true
