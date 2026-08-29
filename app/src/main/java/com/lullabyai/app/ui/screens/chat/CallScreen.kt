@@ -66,6 +66,15 @@ private enum class CallState { LISTENING, THINKING, SPEAKING, IDLE }
 private const val TURN_END_SILENCE_MS = 900L
 
 /**
+ * Longest a turn may run before it is sent regardless.
+ *
+ * A backstop, not a policy. If speech detection keeps reporting activity — a television, a sibling,
+ * a fan — the silence clock never expires and the parent waits forever. Better to answer what was
+ * heard than to sit there.
+ */
+private const val TURN_MAX_MS = 12_000L
+
+/**
  * Full-screen "call" with the AI: continuous listen → send → speak → re-listen loop, so the parent
  * never has to type or tap during a turn. This is turn-based, not true low-latency streaming voice
  * (the AI chain is request/response, not a live audio stream) — see AiAvatar.kt's isSpeaking note.
@@ -115,8 +124,9 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     // mascot is something to dismiss rather than read. A button opens it.
     var showInstructions by remember { mutableStateOf(false) }
     var pendingUtterance by remember { mutableStateOf("") }
-    var commitJob by remember { mutableStateOf<Job?>(null) }
-    val callScope = rememberCoroutineScope()
+    /** When speech was last actually heard. A clock, not a countdown — see the ticker below. */
+    var lastVoiceAtMs by remember { mutableStateOf(0L) }
+    var turnStartedAtMs by remember { mutableStateOf(0L) }
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
     var userSpeaking by remember { mutableStateOf(false) }
     var partialSpeech by remember { mutableStateOf("") }
@@ -150,29 +160,10 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
         runCatching { recognizer.startListening(recognizerIntent) }
     }
 
-    /**
-     * Starts the clock on "have they finished?".
-     *
-     * Cancelled by [onBeginningOfSpeech], so a pause only ends the turn if no more speech follows.
-     * That is what lets a parent interrupt, add a second thought, and still have both halves
-     * arrive as one question.
-     */
-    fun scheduleTurnEnd(send: (String) -> Unit) {
-        commitJob?.cancel()
-        commitJob = callScope.launch {
-            delay(TURN_END_SILENCE_MS)
-            val text = pendingUtterance.trim()
-            if (text.isBlank()) return@launch
-            pendingUtterance = ""
-            runCatching { recognizer.cancel() }
-            callState = CallState.THINKING
-            send(text)
-        }
-    }
-
     fun interruptAiAndListen() {
         tts.stop()
-        commitJob?.cancel()
+        lastVoiceAtMs = 0L
+        turnStartedAtMs = 0L
         runCatching { recognizer.cancel() }
         partialSpeech = ""
         // Interrupting starts a fresh question, not an addition to the one just answered.
@@ -191,18 +182,11 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 // A chunk, not necessarily the whole turn. It joins what has been said so far and
                 // the mic reopens immediately, so a pause to think does not send half a question.
                 if (!text.isNullOrBlank()) {
+                    if (pendingUtterance.isBlank()) turnStartedAtMs = System.currentTimeMillis()
                     pendingUtterance = (pendingUtterance + " " + text).trim()
+                    lastVoiceAtMs = System.currentTimeMillis()
                 }
                 restartListening()
-                if (pendingUtterance.isNotBlank()) {
-                    scheduleTurnEnd { spoken ->
-                        chatViewModel.sendMessage(
-                            spoken, childState.child,
-                            imageBytes = latestFrame,
-                            imageMime = if (latestFrame != null) "image/jpeg" else null
-                        )
-                    }
-                }
             }
             override fun onError(error: Int) {
                 if (callState == CallState.SPEAKING || callState == CallState.THINKING) return
@@ -216,18 +200,11 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                         // timer decide whether the parent has actually finished.
                         if (capturedPartial.isNotBlank()) {
                             partialSpeech = ""
+                            if (pendingUtterance.isBlank()) turnStartedAtMs = System.currentTimeMillis()
                             pendingUtterance = (pendingUtterance + " " + capturedPartial).trim()
+                            lastVoiceAtMs = System.currentTimeMillis()
                         }
                         restartListening()
-                        if (pendingUtterance.isNotBlank()) {
-                            scheduleTurnEnd { spoken ->
-                                chatViewModel.sendMessage(
-                                    spoken, childState.child,
-                                    imageBytes = latestFrame,
-                                    imageMime = if (latestFrame != null) "image/jpeg" else null
-                                )
-                            }
-                        }
                     }
                     else -> restartListening()
                 }
@@ -235,8 +212,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {
                 userSpeaking = true
-                // Still talking, so the turn is not over — whatever comes next joins the question.
-                commitJob?.cancel()
+                lastVoiceAtMs = System.currentTimeMillis()
                 if (callState == CallState.SPEAKING) interruptAiAndListen()
             }
             override fun onRmsChanged(rmsdB: Float) {}
@@ -246,7 +222,11 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                     ?.takeIf { it.isNotBlank() }
-                    ?.let { partialSpeech = it }
+                    ?.let {
+                        partialSpeech = it
+                        // Words are still arriving, so the parent is mid-sentence.
+                        lastVoiceAtMs = System.currentTimeMillis()
+                    }
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
@@ -254,6 +234,42 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     }
 
     LaunchedEffect(hasAudioPermission) { if (hasAudioPermission) restartListening() }
+
+    /**
+     * Decides when the parent has finished, by asking how long ago speech was last heard.
+     *
+     * This replaced a countdown that was cancelled and restarted from the recogniser callbacks.
+     * Android emits ERROR_NO_MATCH roughly once a second while nobody is talking, and each one
+     * restarted the countdown, so it never reached the end and the AI never took its turn. A clock
+     * cannot be reset by an event that carries no speech, which is the whole point: only real
+     * words move `lastVoiceAtMs`, and silence simply accumulates.
+     */
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(120)
+            if (callState != CallState.LISTENING) continue
+            if (userSpeaking) continue
+            val text = pendingUtterance.trim()
+            if (text.isBlank()) continue
+
+            val now = System.currentTimeMillis()
+            val quietFor = now - lastVoiceAtMs
+            val turnRanFor = now - turnStartedAtMs
+            if (quietFor < TURN_END_SILENCE_MS && turnRanFor < TURN_MAX_MS) continue
+
+            pendingUtterance = ""
+            partialSpeech = ""
+            lastVoiceAtMs = 0L
+            turnStartedAtMs = 0L
+            runCatching { recognizer.cancel() }
+            callState = CallState.THINKING
+            chatViewModel.sendMessage(
+                text, childState.child,
+                imageBytes = latestFrame,
+                imageMime = if (latestFrame != null) "image/jpeg" else null
+            )
+        }
+    }
 
     LaunchedEffect(callState) {
         if (callState == CallState.SPEAKING || callState == CallState.THINKING) {
