@@ -229,29 +229,48 @@ fun SettingsScreen(
                         Divider52()
                         SettingsRow(Icons.Filled.Lock, s.changePassword, onClick = { navController.navigate(Screen.ChangePassword.route) })
                         Divider52()
-                        ToggleRow(
-                            icon = Icons.Filled.Security,
-                            label = if (isThai) "การยืนยันตัวตน 2 ขั้นตอน (2FA)" else "Two-Factor Authentication (2FA)",
-                            checked = authState.profile?.twoFactorEnabled ?: false
-                        ) { isChecked ->
-                            authViewModel.setTwoFactorEnabled(isChecked)
-                            settingsViewModel.setTwoFactorEnabled(isChecked)
+                        // 2FA is switched off at the surface until the server side exists.
+                        //
+                        // The toggle wrote `two_factor_enabled` and the app then showed a device
+                        // approval wall - but none of the RPCs behind it (register_device,
+                        // approve_device, my_device_status, …) are defined in any migration. They
+                        // failed, runCatching swallowed the failures, and the gate read the
+                        // resulting null as "approved". Turning it ON protected nothing while
+                        // telling the parent it did. An honest OFF is safer than a false ON.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Security,
+                                null,
+                                tint = Outline,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                if (isThai) "การยืนยันตัวตน 2 ขั้นตอน (2FA)"
+                                else "Two-Factor Authentication (2FA)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Outline,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                if (isThai) "ยังไม่เปิดให้ใช้" else "Not available yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Outline
+                            )
                         }
                         Text(
                             text = if (isThai)
-                                "เมื่อเปิดใช้งาน การเข้าสู่ระบบจากเครื่องใหม่จะต้องได้รับการยืนยันจากอุปกรณ์ที่ลงชื่อเข้าใช้ไว้แล้วก่อน"
+                                "ระบบยืนยันอุปกรณ์ยังพัฒนาไม่เสร็จ จึงปิดไว้ก่อน เพื่อไม่ให้เข้าใจผิดว่าบัญชีถูกป้องกันอยู่แล้ว"
                             else
-                                "Require approval on an existing signed-in device when logging in from a new device",
+                                "Device approval isn't finished yet, so it stays off rather than implying your account is already protected.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 50.dp, end = 16.dp, bottom = 10.dp)
-                        )
-                        Divider52()
-                        SettingsRow(
-                            icon = Icons.Filled.PhonelinkLock,
-                            label = if (isThai) "อุปกรณ์ที่เชื่อมต่อ (Trusted Devices)" else "Trusted Devices & Sessions",
-                            value = if (authState.profile?.twoFactorEnabled == true) (if (isThai) "2FA เปิดใช้งาน" else "2FA Active") else (if (isThai) "จัดการ" else "Manage"),
-                            onClick = { navController.navigate(Screen.TrustedDevices.route) }
                         )
                         Divider52()
                         // Graphify: Account Linking placeholder for Google OAuth & Line OA notification integration
