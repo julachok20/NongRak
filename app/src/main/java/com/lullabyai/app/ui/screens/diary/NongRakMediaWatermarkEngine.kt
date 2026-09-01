@@ -906,7 +906,11 @@ object NongRakMediaWatermarkEngine {
         val logo = runCatching {
             BitmapFactory.decodeResource(
                 context.resources,
-                R.drawable.nongrak_logo_horizontal,
+                // Its own asset, not the dashboard's. Both were named nongrak_logo_horizontal in
+                // different qualifier folders, so whichever won the match served both - and the
+                // watermark needs the copy cropped to its content, or a transparent margin makes
+                // the badge render smaller than the 30% of frame width it asks for.
+                R.drawable.nongrak_logo_watermark,
                 BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                     inScaled = false
