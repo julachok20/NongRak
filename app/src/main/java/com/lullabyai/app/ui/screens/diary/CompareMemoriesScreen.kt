@@ -39,6 +39,7 @@ import com.lullabyai.app.data.model.DiaryMemory
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.DiaryViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Compare Memory Screen:
@@ -66,8 +67,21 @@ fun CompareMemoriesScreen(
     var selectedEarlyMemory by remember(memoriesWithMedia) {
         mutableStateOf(memoriesWithMedia.minByOrNull { it.memoryDate } ?: memoriesWithMedia.firstOrNull())
     }
+    val scope = rememberCoroutineScope()
+
+    var growthCaption by remember { mutableStateOf<String?>(null) }
+    var captionError by remember { mutableStateOf<String?>(null) }
+    var isGeneratingCaption by remember { mutableStateOf(false) }
+
     var selectedRecentMemory by remember(memoriesWithMedia) {
         mutableStateOf(memoriesWithMedia.maxByOrNull { it.memoryDate } ?: memoriesWithMedia.lastOrNull())
+    }
+
+    // A caption written about one pair is simply wrong about the next, and a stale one is the most
+    // convincing kind of wrong - it reads as though the AI looked.
+    LaunchedEffect(selectedEarlyMemory?.id, selectedRecentMemory?.id) {
+        growthCaption = null
+        captionError = null
     }
 
     // Slider position (0.0f = full early, 1.0f = full recent, 0.5f = half-half)
@@ -301,15 +315,108 @@ fun CompareMemoriesScreen(
                             )
                         }
 
-                        Text(
-                            text = if (isThai)
-                                "✨ จากก้าวเล็กๆ ในวันแรก สู่ก้าวที่มั่นคงในวันนี้ ลูกน้อยเติบโตขึ้นอย่างงดงามด้วยความรักและการดูแลของคุณพ่อคุณแม่ 🥰"
-                            else
-                                "✨ From tiny beginnings to confident strides today, your baby has grown beautifully surrounded by love.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = OnSurfaceVariant,
-                            lineHeight = 22.sp
-                        )
+                        // This paragraph used to be a hardcoded sentence printed under a heading
+                        // reading "AI วิเคราะห์" - identical for every family and every pair of
+                        // photos. It now says nothing until the model has actually looked.
+                        when {
+                            isGeneratingCaption -> Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = Primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    if (isThai) "กำลังดูรูปทั้งสอง…" else "Looking at both photos…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = OnSurfaceVariant
+                                )
+                            }
+
+                            growthCaption != null -> Text(
+                                text = growthCaption.orEmpty(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = OnSurfaceVariant,
+                                lineHeight = 22.sp
+                            )
+
+                            captionError != null -> Text(
+                                text = captionError.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Error
+                            )
+
+                            else -> Text(
+                                text = if (isThai)
+                                    "เลือกรูปสองช่วงเวลา แล้วให้ AI เล่าให้ฟังว่าลูกเปลี่ยนไปอย่างไร"
+                                else
+                                    "Pick two moments and let the AI tell you how they've grown.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = OnSurfaceVariant,
+                                lineHeight = 22.sp
+                            )
+                        }
+
+                        val earlyUrlForAi = selectedEarlyMemory?.let { state.signedUrls[it.mediaPath] }
+                        val recentUrlForAi = selectedRecentMemory?.let { state.signedUrls[it.mediaPath] }
+                        val canDescribe = !earlyUrlForAi.isNullOrBlank() &&
+                            !recentUrlForAi.isNullOrBlank() &&
+                            selectedEarlyMemory?.id != selectedRecentMemory?.id
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isGeneratingCaption = true
+                                    captionError = null
+                                    val result = NongRakGrowthCaption.describe(
+                                        earlyUrl = earlyUrlForAi.orEmpty(),
+                                        recentUrl = recentUrlForAi.orEmpty(),
+                                        earlyDateText = formatMemoryDate(selectedEarlyMemory?.memoryDate, isThai),
+                                        recentDateText = formatMemoryDate(selectedRecentMemory?.memoryDate, isThai),
+                                        childName = state.child?.name,
+                                        isThai = isThai
+                                    )
+                                    isGeneratingCaption = false
+                                    result
+                                        .onSuccess { growthCaption = it }
+                                        .onFailure {
+                                            // Names what went wrong; a blank card taught the parent
+                                            // nothing about whether trying again was worth it.
+                                            captionError = if (isThai)
+                                                "เขียนคำบรรยายไม่สำเร็จ: ${it.message ?: "ไม่ทราบสาเหตุ"}"
+                                            else
+                                                "Could not write the caption: ${it.message ?: "unknown reason"}"
+                                        }
+                                }
+                            },
+                            enabled = canDescribe && !isGeneratingCaption,
+                            shape = RoundedCornerShape(100.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                when {
+                                    growthCaption != null && isThai -> "เขียนใหม่อีกครั้ง"
+                                    growthCaption != null -> "Write it again"
+                                    isThai -> "ให้ AI เล่าให้ฟัง"
+                                    else -> "Ask the AI"
+                                },
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (!canDescribe) {
+                            Text(
+                                if (isThai) "เลือกรูปสองรูปที่ต่างกันก่อนนะคะ"
+                                else "Choose two different photos first",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Outline
+                            )
+                        }
 
                         HorizontalDivider(color = OutlineVariant.copy(0.4f))
 
@@ -397,7 +504,13 @@ fun CompareMemoriesScreen(
                 // 4. Social Export Section
                 SocialExportSection(
                     title = if (isThai) "ย้อนดูความเปลี่ยนแปลงของลูกน้อย (Then vs Now)" else "Baby Growth Transformation (Then vs Now)",
-                    description = "👶 วันวาน: ${formatMemoryDate(selectedEarlyMemory?.memoryDate, isThai)}\n✨ วันนี้: ${formatMemoryDate(selectedRecentMemory?.memoryDate, isThai)}\nดูสิว่าลูกน้อยตัวเล็กแค่ไหนในวันนั้น!",
+                    // The generated line goes out with the share when there is one - it is about
+                    // these two photos, which the old fixed sentence never was.
+                    description = buildString {
+                        append("👶 วันวาน: ${formatMemoryDate(selectedEarlyMemory?.memoryDate, isThai)}\n")
+                        append("✨ วันนี้: ${formatMemoryDate(selectedRecentMemory?.memoryDate, isThai)}")
+                        growthCaption?.takeIf { it.isNotBlank() }?.let { append("\n\n$it") }
+                    },
                     date = null,
                     isThai = isThai
                 )

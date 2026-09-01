@@ -38,7 +38,11 @@ data class DiaryUiState(
     val yearStats: YearRewindStats? = null,
     val yearLoading: Boolean = false,
     val saveSuccess: Boolean = false,
-    val isChildOwner: Boolean = false
+    val isChildOwner: Boolean = false,
+    /** The chronicle's reflection, written from the real memories. Null until asked for. */
+    val chronicleReflection: String? = null,
+    val chronicleLoading: Boolean = false,
+    val chronicleError: String? = null
 )
 
 class DiaryViewModel(
@@ -287,6 +291,70 @@ class DiaryViewModel(
         val first = sorted.first().heightCm!!
         val last = sorted.last().heightCm!!
         return (last - first).takeIf { it >= 0 }
+    }
+
+    /**
+     * Writes the chronicle's reflection from the memories that actually exist.
+     *
+     * What stood here before was a fixed sentence claiming the child showed "การพัฒนาที่โดดเด่นใน
+     * ด้านการแสดงอารมณ์" and a blooming EQ - printed under an "Insights by NongRak AI" heading,
+     * identical for every child, derived from nothing. That is not a generic string problem: it
+     * reads as a developmental assessment, and a parent has every reason to believe one.
+     *
+     * The prompt below forbids that category outright. This app may describe what was recorded; it
+     * may not appraise a child.
+     */
+    fun generateChronicleReflection(isThai: Boolean) {
+        val memories = _uiState.value.memories
+        val childName = _uiState.value.child?.name?.ifBlank { null }
+            ?: if (isThai) "ลูกน้อย" else "your child"
+
+        if (memories.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    chronicleError = if (isThai)
+                        "ยังไม่มีบันทึกให้สรุป เริ่มเพิ่มความทรงจำได้เลยนะคะ"
+                    else
+                        "There are no memories to reflect on yet."
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(chronicleLoading = true, chronicleError = null) }
+
+            val bullets = memories.take(20).joinToString("\n") { m ->
+                "- ${m.memoryDate}: ${m.title ?: m.milestoneTag ?: "note"} — ${(m.description ?: "").take(80)}"
+            }
+            val prompt = if (isThai) {
+                "เขียนข้อความอบอุ่น 3-4 ประโยคให้ผู้ปกครองของ $childName จากบันทึกความทรงจำต่อไปนี้ " +
+                    "เล่าถึงช่วงเวลาที่บันทึกไว้จริง ๆ เท่านั้น " +
+                    "ห้ามประเมินพัฒนาการ ห้ามพูดถึง EQ IQ สุขภาพ น้ำหนัก หรือการเปรียบเทียบกับเด็กคนอื่น " +
+                    "ห้ามใช้สัญลักษณ์ *#- และห้ามใช้ emoji\n$bullets"
+            } else {
+                "Write 3-4 warm sentences for $childName's parents based only on the memories below. " +
+                    "Describe what was actually recorded. Do not assess development, EQ, IQ, health or " +
+                    "weight, and never compare to other children. No symbols *#- and no emoji.\n$bullets"
+            }
+
+            val text = runCatching {
+                ClaudeClient.generateContent(prompt, useSearch = false, maxTokens = 400)
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+
+            _uiState.update {
+                it.copy(
+                    chronicleLoading = false,
+                    chronicleReflection = text,
+                    // Names that the model gave nothing back, rather than leaving an empty card
+                    // that looks like the feature is still thinking.
+                    chronicleError = if (text == null) {
+                        if (isThai) "เขียนบทสรุปไม่สำเร็จ ลองใหม่อีกครั้งได้นะคะ"
+                        else "Could not write the reflection. Please try again."
+                    } else null
+                )
+            }
+        }
     }
 
     private suspend fun generateYearInsight(
