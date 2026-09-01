@@ -23,7 +23,7 @@ android {
         // Next after the newest artifact in Releases/ (v1.0.8-internal, vc21). This file had been
         // left on vc16/1.0.3-dev36 while five releases shipped from elsewhere, so read Releases/
         // rather than this line when picking the next number.
-        versionCode = 22
+        versionCode = 23
         versionName = "1.0.9"
         testInstrumentationRunner = "com.lullabyai.app.NongRakTestRunner"
 
