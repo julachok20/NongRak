@@ -4,6 +4,7 @@ package com.lullabyai.app.ui.screens.diary
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -113,6 +114,13 @@ fun ChildDiaryScreen(
                 onBack = onBack,
                 navController = navController,
                 actions = {
+                    IconButton(onClick = { navController.navigate(Screen.ChildDiaryReadBook.route) }) {
+                        Icon(
+                            Icons.Filled.MenuBook,
+                            contentDescription = if (isThai) "เปิดอ่านสมุดบันทึก" else "Read E-Book",
+                            tint = Primary
+                        )
+                    }
                     IconButton(onClick = { navController.navigate(Screen.Notifications.route) }) {
                         Icon(Icons.Filled.Notifications, if (isThai) "แจ้งเตือน" else "Notifications", tint = Primary)
                     }
@@ -160,20 +168,85 @@ fun ChildDiaryScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp)
         ) {
-            // Header Title
+            // Header Title & Quick Read E-Book Button
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = if (isThai) "ความทรงจำพิเศษ (Special Memories)" else "Special Memories",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                    Text(
-                        text = if (isThai) "บันทึกและรวบรวมทุกช่วงเวลาอันล้ำค่าของลูกน้อย" else "Capture and cherish every precious moment",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = OnSurfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = if (isThai) "ความทรงจำพิเศษ (Special Memories)" else "Special Memories",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Primary
+                        )
+                        Text(
+                            text = if (isThai) "บันทึกและรวบรวมทุกช่วงเวลาอันล้ำค่าของลูกน้อย" else "Capture and cherish every precious moment",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OnSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Quick Entry Card to Interactive E-Book & AI Recap Clip (Stitch c51b8fb19e234a369937a4c8d871c16e)
+            item {
+                Card(
+                    onClick = { navController.navigate(Screen.ChildDiaryReadBook.route) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.5.dp, Primary.copy(0.35f)),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(Primary.copy(0.1f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(24.dp))
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = if (isThai) "เปิดอ่านสมุดบันทึก & คลิปสรุป AI" else "Read Chronicle & AI Recap",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Primary
+                                )
+                                Text(
+                                    text = if (isThai) "เปิดดู E-Book ไฮไลท์ ตัดต่อคลิป และแชร์ IG / TikTok" else "Interactive E-Book, Cut Clip, & IG/TikTok Share",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OnSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Icon(
+                            Icons.Filled.ArrowForwardIos,
+                            contentDescription = null,
+                            tint = Primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
 
@@ -964,6 +1037,7 @@ private fun MemoryDetailDialog(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 var showStudio by remember { mutableStateOf(false) }
+                val studioContext = LocalContext.current
 
                 if (!signedUrl.isNullOrBlank()) {
                     Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
@@ -1077,7 +1151,7 @@ private fun MemoryDetailDialog(
                     Spacer(Modifier.height(8.dp))
                     Button(
                         onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         shape = RoundedCornerShape(100.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Primary)
                     ) {
@@ -1093,7 +1167,22 @@ private fun MemoryDetailDialog(
                         memoryDate = memory.memoryDate,
                         isThai = isThai,
                         onDismiss = { showStudio = false },
-                        onApply = { _, _, _ -> showStudio = false }
+                        onApply = { rendered, _ ->
+                            showStudio = false
+                            // The rendered clip lives in the cache. Handing it straight to the
+                            // share sheet is the only way the edit survives closing the dialog -
+                            // this screen is a viewer and has nowhere to save a new file.
+                            exportMemoryToSocial(
+                                context = studioContext,
+                                platform = "general",
+                                title = memory.title,
+                                description = memory.description,
+                                date = memory.memoryDate,
+                                mediaUri = rendered,
+                                mimeType = "video/mp4",
+                                isThai = isThai
+                            )
+                        }
                     )
                 }
             }

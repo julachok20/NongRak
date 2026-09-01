@@ -80,6 +80,11 @@ fun AddMemoryScreen(
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var showVideoStudio by remember { mutableStateOf(false) }
 
+    // Video is the only type with a choice to make: record it now, or pick one already on the
+    // phone. Photo and audio go straight to their picker, and neither ever reaches the studio.
+    var showVideoSourceSheet by remember { mutableStateOf(false) }
+    var showCamera by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) { vm.load() }
 
     fun clearAttachment() {
@@ -100,7 +105,11 @@ fun AddMemoryScreen(
             return
         }
         if (bytes.size > 10 * 1024 * 1024) {
-            formError = if (isThai) "ไฟล์ต้องไม่เกิน 10MB" else "File must be ≤ 10MB"
+            // Names the size that arrived, not just the rule. "ไฟล์ต้องไม่เกิน 10MB" on a 34MB
+            // clip leaves the parent guessing whether they missed by a little or a lot.
+            val actualMb = bytes.size / (1024 * 1024)
+            formError = if (isThai) "ไฟล์ใหญ่เกินไป (${actualMb}MB) — เก็บได้ไม่เกิน 10MB"
+            else "File is too large (${actualMb}MB) — the limit is 10MB"
             return
         }
         pendingBytes = bytes
@@ -120,6 +129,9 @@ fun AddMemoryScreen(
         uri?.let {
             mediaType = "video"
             ingestUri(it, asImage = false)
+            // Straight on into the studio. The parent picked "อัปโหลดคลิป และแก้ไข" - editing is
+            // the point of the choice, not an extra step they have to find afterwards.
+            if (pendingUri != null) showVideoStudio = true
         }
     }
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -189,7 +201,7 @@ fun AddMemoryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         mediaType = "video"
-                        videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                        showVideoSourceSheet = true
                     }
 
                     MediaTypeChoiceCard(
@@ -505,7 +517,7 @@ fun AddMemoryScreen(
                 enabled = !state.isSaving,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .heightIn(min = 56.dp)
                     .shadow(6.dp, RoundedCornerShape(18.dp), spotColor = Primary),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Primary)
@@ -526,7 +538,7 @@ fun AddMemoryScreen(
             // Cancel Button
             OutlinedButton(
                 onClick = { if (hasUnsavedWork) showDiscardConfirm = true else onBack() },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                 shape = RoundedCornerShape(18.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, OutlineVariant)
             ) {
@@ -630,6 +642,66 @@ fun AddMemoryScreen(
         }
     }
 
+    // Record now, or pick a clip already on the phone.
+    if (showVideoSourceSheet) {
+        ModalBottomSheet(onDismissRequest = { showVideoSourceSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    if (isThai) "เพิ่มวิดีโอความทรงจำ" else "Add a video memory",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                VideoSourceRow(
+                    icon = Icons.Filled.Videocam,
+                    title = if (isThai) "ถ่ายตอนนี้" else "Record now",
+                    subtitle = if (isThai) "เปิดกล้อง แล้วแก้ไขต่อในสตูดิโอ"
+                    else "Open the camera, then edit in the studio",
+                    onClick = {
+                        showVideoSourceSheet = false
+                        showCamera = true
+                    }
+                )
+                VideoSourceRow(
+                    icon = Icons.Filled.VideoLibrary,
+                    title = if (isThai) "อัปโหลดคลิป" else "Upload a clip",
+                    subtitle = if (isThai) "เลือกจากคลังวิดีโอ แล้วแก้ไขต่อ"
+                    else "Choose from your gallery, then edit",
+                    onClick = {
+                        showVideoSourceSheet = false
+                        videoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    if (showCamera) {
+        NongRakVideoCaptureScreen(
+            isThai = isThai,
+            onDismiss = { showCamera = false },
+            onCaptured = { uri ->
+                showCamera = false
+                mediaType = "video"
+                ingestUri(uri, asImage = false)
+                if (pendingUri != null) showVideoStudio = true
+            },
+            onPickInstead = {
+                showCamera = false
+                videoPicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+            }
+        )
+    }
+
     // Video Studio & Magic FX Dialog
     if (showVideoStudio && pendingUri != null) {
 
@@ -639,12 +711,25 @@ fun AddMemoryScreen(
             description = description.ifBlank { null },
             memoryDate = memoryDate,
             isThai = isThai,
+            // Lets the caption say "ก้าวแรกของน้องกีก้า" rather than "ก้าวแรกของลูก" - the whole
+            // point of calling it personalisation.
+            childName = state.child?.name,
             onDismiss = { showVideoStudio = false },
-            onApply = { effect, music, intro ->
+            onReRecord = {
+                // Back to the source sheet rather than straight to the camera: "บันทึกใหม่" after
+                // an upload should not silently become "record", which is a different decision.
+                showVideoStudio = false
+                clearAttachment()
+                showVideoSourceSheet = true
+            },
+            onApply = { rendered, edit ->
+                // The rendered clip replaces the source, so the memory that gets saved IS the
+                // edited video. Previously this only raised a toast and the original was stored.
+                pendingUri = rendered
                 Toast.makeText(
                     context,
-                    if (isThai) "นำเอฟเฟกต์ '${effect.titleTh}' และ '${music.titleTh}' มาใช้แล้ว ✨"
-                    else "Applied '${effect.titleEn}' and '${music.titleEn}' ✨",
+                    if (isThai) "ใส่ '${edit.effect.titleTh}' ลงในวิดีโอแล้ว ✨"
+                    else "'${edit.effect.titleEn}' is now part of the video ✨",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -652,6 +737,49 @@ fun AddMemoryScreen(
     }
 }
 
+
+/** One choice in the video source sheet. */
+@Composable
+private fun VideoSourceRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = Primary, modifier = Modifier.size(21.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceVariant
+                )
+            }
+            Icon(Icons.Filled.ChevronRight, null, tint = OnSurfaceVariant)
+        }
+    }
+}
 
 @Composable
 private fun MediaTypeChoiceCard(

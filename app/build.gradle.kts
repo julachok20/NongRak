@@ -20,8 +20,8 @@ android {
         applicationId = "com.publish.NongRak"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.0.3-dev36"
+        versionCode = 17
+        versionName = "1.0.4"
         testInstrumentationRunner = "com.lullabyai.app.NongRakTestRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${localProps["SUPABASE_URL"]}\"")
@@ -114,6 +114,7 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.video)
     implementation(libs.mlkit.barcode.scanning)
     // Real Guava, not just the empty listenablefuture shim CameraX normally relies on —
     // androidx.health.connect:connect-client forces listenablefuture to the empty

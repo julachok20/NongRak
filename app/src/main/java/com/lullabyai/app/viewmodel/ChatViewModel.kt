@@ -9,6 +9,7 @@ import com.lullabyai.app.data.model.UiChatMessage
 import com.lullabyai.app.data.repository.AiRepository
 import com.lullabyai.app.data.repository.AuthRepository
 import com.lullabyai.app.data.repository.ChatRepository
+import com.lullabyai.app.util.ChildMention
 import com.lullabyai.app.util.RelationshipLabels
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +58,8 @@ class ChatViewModel : ViewModel() {
     private val repo = ChatRepository()
     private val aiRepo = AiRepository()
     private val authRepo = AuthRepository()
+    /** Last family roster sent with a chat turn — used by need-info follow-ups. */
+    private var lastFamily: List<Child> = emptyList()
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
@@ -261,9 +264,13 @@ class ChatViewModel : ViewModel() {
         childAmbiguous: Boolean = false,
         /** The parent's voice as a WAV, sent instead of a transcript. See ChatRepository. */
         audioBytes: ByteArray? = null,
-        audioMime: String? = null
+        audioMime: String? = null,
+        /** Every child on the account. Empty = [child] alone. */
+        family: List<Child> = emptyList()
     ) {
         val sessionId = _uiState.value.currentSessionId ?: return
+        val roster = family.ifEmpty { listOfNotNull(child) }
+        lastFamily = roster
         val bubbleText = content.ifBlank {
             if (audioBytes != null) (if (isThai) "[ข้อความเสียง]" else "[Voice message]") else content
         }
@@ -271,8 +278,9 @@ class ChatViewModel : ViewModel() {
         // Persona instruction rides along with the text (the system prompt is fixed inside
         // ChatRepository); the bubble above keeps the parent's raw wording. Empty for NORMAL, so
         // normal chat sends exactly what it always did.
+        val many = roster.size > 1
         val outgoing = spokenPrefix(spoken, isThai) +
-            ambiguousChildPrefix(childAmbiguous, isThai) +
+            ambiguousChildPrefix(childAmbiguous || (many && ChildMention.isAmbiguous(content, roster, child)), isThai) +
             _uiState.value.mode.promptPrefix(isThai) + content
         _uiState.value = _uiState.value.copy(
             messages = _uiState.value.messages.filterNot { it.id == "welcome" } + userMsg,
@@ -282,7 +290,8 @@ class ChatViewModel : ViewModel() {
             repo.sendMessage(
                 sessionId, outgoing, child, imageBytes, imageMime,
                 audioBytes, audioMime,
-                _uiState.value.parentRelationship, persona ?: activePersona, isThai
+                _uiState.value.parentRelationship, persona ?: activePersona, isThai,
+                family = roster
             )
                 .onSuccess { response ->
                     // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
@@ -301,7 +310,12 @@ class ChatViewModel : ViewModel() {
                     // Auto Record mode: run the proposed write straight away instead of waiting
                     // for a tap. The card still appears and still reports the outcome, so the
                     // parent can see what was logged and undo it from the record screens.
-                    val childId = child?.id
+                    // With several children, only auto-write when this message named one —
+                    // otherwise the Child Info tab would silently record against the wrong baby.
+                    val actionChild = ChildMention.resolve(
+                        content, roster, fallback = if (roster.size <= 1) child else null
+                    )
+                    val childId = actionChild?.id
                     if (action != null && childId != null &&
                         _uiState.value.autoRecord && isAutoRecordable(action)
                     ) {
@@ -381,10 +395,131 @@ class ChatViewModel : ViewModel() {
     }
 
     /** Popup "Submit" — sends the answer as a normal chat message so the AI picks up straight from
-     *  where it left off (and can even log it via AgentAction itself, e.g. weight -> update_growth). */
+     *  where it left off, and immediately fills into the Child record and Health Book. */
     fun answerNeedInfo(messageId: String, answer: String, child: Child?) {
+        val request = _uiState.value.messages.find { it.id == messageId }?.needInfo
         dismissNeedInfo(messageId)
-        if (answer.isNotBlank()) sendMessage(answer, child)
+        if (child != null && request != null && answer.isNotBlank()) {
+            viewModelScope.launch {
+                autoFillHealthBookFromAnswer(child.id, request, answer)
+            }
+        }
+        if (answer.isNotBlank()) sendMessage(answer, child, family = lastFamily)
+    }
+
+    private suspend fun autoFillHealthBookFromAnswer(
+        childId: String,
+        request: com.lullabyai.app.data.model.NeedInfoRequest,
+        answer: String
+    ) {
+        val q = request.question.lowercase()
+        val lbl = request.fieldLabel.lowercase()
+        val combined = "$q $lbl"
+        val ans = answer.trim()
+        val childRepo = com.lullabyai.app.data.repository.ChildRepository()
+        val healthRepo = com.lullabyai.app.data.repository.HealthRepository()
+
+        // Extract first decimal or integer number if present
+        val numMatch = Regex("(\\d+(?:\\.\\d+)?)").find(ans)?.groupValues?.get(1)?.toDoubleOrNull()
+
+        when {
+            // Birth weight (น้ำหนักแรกเกิด)
+            "แรกเกิด" in combined && ("น้ำหนัก" in combined || "weight" in combined) -> {
+                if (numMatch != null) {
+                    val grams = if (numMatch < 100.0) numMatch * 1000.0 else numMatch
+                    childRepo.updateChild(childId, mapOf("birth_weight_g" to grams))
+                }
+            }
+            // Weight (น้ำหนักปัจจุบัน)
+            "น้ำหนัก" in combined || "weight" in combined -> {
+                if (numMatch != null) {
+                    val kg = if (numMatch > 100.0) numMatch / 1000.0 else numMatch
+                    childRepo.updateChild(childId, mapOf("weight_kg" to kg))
+                    healthRepo.addGrowthRecord(
+                        com.lullabyai.app.data.model.GrowthRecord(
+                            childId = childId, weightKg = kg, recordedAt = java.time.Instant.now().toString()
+                        )
+                    )
+                }
+            }
+            // Birth length (ส่วนสูงแรกเกิด)
+            "แรกเกิด" in combined && ("ส่วนสูง" in combined || "ยาว" in combined || "height" in combined || "length" in combined) -> {
+                if (numMatch != null) {
+                    childRepo.updateChild(childId, mapOf("birth_length_cm" to numMatch))
+                }
+            }
+            // Height (ส่วนสูงปัจจุบัน)
+            "ส่วนสูง" in combined || "ความสูง" in combined || "height" in combined -> {
+                if (numMatch != null) {
+                    childRepo.updateChild(childId, mapOf("height_cm" to numMatch))
+                    healthRepo.addGrowthRecord(
+                        com.lullabyai.app.data.model.GrowthRecord(
+                            childId = childId, heightCm = numMatch, recordedAt = java.time.Instant.now().toString()
+                        )
+                    )
+                }
+            }
+            // Head circumference (รอบศีรษะ)
+            "รอบศีรษะ" in combined || "รอบหัว" in combined || "head" in combined -> {
+                if (numMatch != null) {
+                    childRepo.updateChild(childId, mapOf("birth_head_cm" to numMatch))
+                }
+            }
+            // Blood group (กรุ๊ปเลือด)
+            "กรุ๊ปเลือด" in combined || "เลือด" in combined || "blood" in combined -> {
+                val group = when {
+                    "ab" in ans.lowercase() -> "AB"
+                    "a" in ans.lowercase() -> "A"
+                    "b" in ans.lowercase() -> "B"
+                    "o" in ans.lowercase() || "โอ" in ans -> "O"
+                    else -> ans.uppercase()
+                }
+                childRepo.updateChild(childId, mapOf("blood_group" to group))
+            }
+            // Delivery type (วิธีการคลอด)
+            "คลอด" in combined || "delivery" in combined -> {
+                val type = when {
+                    "ผ่า" in ans || "cesarean" in ans.lowercase() -> "cesarean"
+                    "ช่วย" in ans || "assisted" in ans.lowercase() -> "assisted"
+                    "ธรรมชาติ" in ans || "natural" in ans.lowercase() -> "natural"
+                    else -> "other"
+                }
+                childRepo.updateChild(childId, mapOf("delivery_type" to type))
+            }
+            // Place of birth (สถานที่คลอด / โรงพยาบาล)
+            "สถานที่คลอด" in combined || "โรงพยาบาล" in combined || "คลินิก" in combined || "place of birth" in combined -> {
+                childRepo.updateChild(childId, mapOf("place_of_birth" to ans))
+            }
+            // Gestational weeks (อายุครรภ์)
+            "อายุครรภ์" in combined || "gestational" in combined -> {
+                if (numMatch != null) {
+                    childRepo.updateChild(childId, mapOf("gestational_weeks" to numMatch.toInt()))
+                }
+            }
+            // Allergies (ประวัติการแพ้)
+            "แพ้" in combined || "allergy" in combined || "allergies" in combined -> {
+                val isNone = ans.contains("ไม่") || ans.contains("none", ignoreCase = true) || ans.contains("ปกติ")
+                if (isNone) {
+                    childRepo.updateChild(childId, mapOf("no_known_allergies" to true))
+                } else {
+                    healthRepo.addAllergy(
+                        childId, name = ans, type = "food", severity = "mild", symptoms = null
+                    )
+                    childRepo.updateChild(childId, mapOf("allergies" to ans))
+                }
+            }
+            // Chronic conditions (โรคประจำตัว)
+            "โรคประจำตัว" in combined || "chronic" in combined -> {
+                val isNone = ans.contains("ไม่") || ans.contains("none", ignoreCase = true) || ans.contains("ปกติ")
+                if (!isNone) {
+                    healthRepo.addChronicCondition(childId, name = ans, notes = null)
+                }
+            }
+            // Date of birth (วันเกิด)
+            "วันเกิด" in combined || "birthdate" in combined -> {
+                childRepo.updateChild(childId, mapOf("birthdate" to ans))
+            }
+        }
     }
 
     /** Popup "Skip" — no cooldown by design (see NeedInfoRequest); just hides this instance. */
@@ -476,12 +611,48 @@ class ChatViewModel : ViewModel() {
                     .addManualLog(childId, p.getCi("sleepType") ?: "main", "${today}T$start:00", endStamp)
                     .isSuccess
             }
+            "health_book" in t || "birth" in t || "child_info" in t -> {
+                val updates = mutableMapOf<String, Any?>()
+                p.getCi("deliveryType")?.let { updates["delivery_type"] = it }
+                p.getCi("placeOfBirth")?.let { updates["place_of_birth"] = it }
+                p.getCi("gestationalWeeks")?.toIntOrNull()?.let { updates["gestational_weeks"] = it }
+                p.getCi("birthWeightG")?.let { raw ->
+                    val g = raw.toDoubleOrNull()
+                    if (g != null) updates["birth_weight_g"] = if (g < 100) g * 1000.0 else g
+                }
+                p.getCi("birthLengthCm")?.toDoubleOrNull()?.let { updates["birth_length_cm"] = it }
+                p.getCi("birthHeadCm")?.toDoubleOrNull()?.let { updates["birth_head_cm"] = it }
+                p.getCi("bloodGroup")?.let { updates["blood_group"] = it }
+                p.getCi("birthdate")?.let { updates["birthdate"] = it }
+                p.getCi("allergies")?.let { updates["allergies"] = it }
+                if (updates.isNotEmpty()) {
+                    val ok = com.lullabyai.app.data.repository.ChildRepository().updateChild(childId, updates).isSuccess
+                    if (ok) {
+                        updates["birth_weight_g"]?.let { g ->
+                            val kg = (g as Double) / 1000.0
+                            com.lullabyai.app.data.repository.HealthRepository().addGrowthRecord(
+                                com.lullabyai.app.data.model.GrowthRecord(
+                                    childId = childId, weightKg = kg,
+                                    recordedAt = java.time.Instant.now().toString()
+                                )
+                            )
+                        }
+                    }
+                    ok
+                } else false
+            }
             "growth" in t || "weight" in t || "height" in t -> {
                 val weight = p.getCi("weightKg")?.toDoubleOrNull()
                 val height = p.getCi("heightCm")?.toDoubleOrNull()
                 if (weight == null && height == null) {
                     android.util.Log.w("AgentAction", "type='$t' had neither weightKg nor heightCm — keys: ${p.keys}")
                     return false
+                }
+                val childUpdates = mutableMapOf<String, Any?>()
+                if (weight != null) childUpdates["weight_kg"] = weight
+                if (height != null) childUpdates["height_cm"] = height
+                if (childUpdates.isNotEmpty()) {
+                    com.lullabyai.app.data.repository.ChildRepository().updateChild(childId, childUpdates)
                 }
                 com.lullabyai.app.data.repository.HealthRepository().addGrowthRecord(
                     com.lullabyai.app.data.model.GrowthRecord(

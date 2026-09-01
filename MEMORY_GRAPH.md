@@ -1,7 +1,7 @@
 # 🧠 NongRak AI — Memory Graph
 
 > Single source of truth for this project. I read & update THIS file instead of re-scanning full context.
-> Last updated: **2026-08-25 (Cursor — Welcome parent-only, doctor portal button removed)** · Branch **`track3`** · **`1.0.3-dev36`**
+> Last updated: **2026-08-31 (Cursor — Home info-ask all open questions in one mixed form)** · Branch **`Track-YSC.02`** · HEAD **`79d1df4`**
 
 ---
 
@@ -2766,3 +2766,109 @@ shirt sits is a design decision. Spec for the art is in `MascotWardrobe.items` K
 
 Compiles; unit tests green (`MascotWardrobeTest` pins Kotlin level maths to Postgres across
 0–5000 xp). **Not run on-device** — no screen has been seen rendering, no level seen moving.
+
+---
+
+## 2026-08-29 — Graphify synced from Claude Desktop “General Coding Session”
+
+Session `2f9d8e50-bfe9-4bbd-8907-0e26386a579e` (344 user messages). Digest:
+`docs/CLAUDE_GENERAL_CODING_SESSION.md`. Graph rebuilt incremental in `graphify-out/`
+(5475 nodes / 11305 edges, health OK). Live detail lives in the graph, not this file.
+
+Shipped there: Gemini WAV on call (`79d1df4`), closet on chat, greet-once, AGENT_ACTION kept.
+Next week: Typhoon 2 Audio. Open: transcript must not fatten the mascot; Community untracked.
+
+---
+
+## 2026-08-29 — Chat considers every child, not the Child Info tab
+
+The chat prompt only received `childState.child` (the tab selection). `ChildMention` existed
+but was never wired, so the model had no data for the other kids.
+
+- `ChatRepository.buildChatChildContext` sends a roster + per-child stats for the whole family.
+- Chat and Call pass `family = childState.children`.
+- Auto-record with several children only writes when the message named one.
+
+---
+
+## 2026-08-29 — Chat header name + short สวัสดี greeting
+
+The top bar title was `"คุยกับน้องรัก"` squeezed between the child-mode switch and three icons,
+so the companion name clipped like a truncated header. Opening bubble used the long
+"วันนี้ยังไม่มีอะไรต้องเป็นห่วงเลย…" line instead of a hello.
+
+- Header title is the companion name only (`น้องรัก` / `Coco`), with ellipsis if it still runs out of room.
+- First message is `สวัสดีค่ะ คุณ…` (name, else คุณแม่/คุณพ่อ). Reminders still use the brief when something is due.
+
+---
+
+## 2026-08-29 — Closet clothes + slide-from-top unlocks
+
+User: closet should show “you unlocked this” sliding from the top, with a full clothing system and level unlocks. Catalogue had been empty on purpose (no garment art).
+
+- Six pieces, four slots (shirt / scarf / hat / accessory), gated Lv.1–6. Overlays `wear_<id>_<skin>.png` in `drawable-nodpi`, same canvas as each mascot.
+- Level-up enqueues a top banner (`UnlockAnnouncer`) — “ปลดล็อกแล้ว!” for clothes, “เพื่อนใหม่!” for Bunny/Coco/Pingu. First read seeds silently so existing levels are not toasted all at once.
+- Closet grid shows each piece on the mascot, lock + **Lv.N** until earned. Chat companion wears what is equipped.
+
+---
+
+## 2026-08-30 — Enchanted Editor: the studio now changes the file
+
+User asked for the VDO editor to match the Stitch design (`03.NongRak Main Screen`, screens *Enchanted VDO Editor Pro* + *Timeline Editor*), and to drop NongRak Shorts entirely. Reading the code first turned up the real problem.
+
+**The studio was decoration.** All four call sites discarded its result — `AddMemoryScreen` raised a toast naming the chosen effect, the other three ran `onApply = { _, _, _ -> showStudio = false }`. `ChildDiaryReadBookScreen` did the same for trim (`"ตัดต่อคลิปสำเร็จ! (0s - 12s)"`). Nothing reached the encoder; only the watermark path ever re-encoded.
+
+- `NongRakStudioEdit` + `NongRakMediaWatermarkEngine.renderStudioEdit` — trim (`ClippingConfiguration`), speed (`SpeedChangeEffect` + `SonicAudioProcessor`, or the audio drifts out of sync), colour grades, particle/mascot/caption overlays, aspect ratio. Returns `Result<Uri>`; the failure message names what the encoder reported.
+- `changesAnything` short-circuits a no-op export. Re-encoding to apply nothing costs a minute and a generation of quality. Covered by `NongRakStudioEditTest`.
+- Particles are one bitmap moved by `DriftingOverlay` rather than a per-frame system, seeded from the effect id so the same edit renders identically twice. **The preview calls the same `particleFrame`** — the old `VideoStudioParticleCanvas` was a second implementation that could drift from the export, so it went.
+- `NongRakEnchantedEditor.kt` (shell + preview, 665) and `NongRakEnchantedEditorControls.kt` (timeline + the five tabs, 545) are the Stitch screen: light `#020229` ink, filmstrip with draggable trim handles and playhead, undo/redo over an edit history, tabs Edit / Magic / Audio / Text / Mascot. Split across two files to stay under the 800-line ceiling, which is why the shared tokens are `internal` rather than `private`. `NongRakVideoStudio.kt` keeps only the enums and the badges — 1471 → 362 lines.
+- **Deleted, not restyled:** the time capsule (collected a letter and target date, stored neither, no unlock anywhere), the outro toggle (the outro is appended unconditionally at export), and `NongRakMusicPreset` (six lullabies, zero audio files in the project). Music needs licensed tracks in `res/raw` before the picker comes back.
+- Colour grades are GL shaders with no cheap Compose equivalent, so the Magic tab says out loud that they appear after saving. Sparkles preview immediately.
+- Shorts: nothing to delete — no feed existed. Every "Shorts" reference in the tree is YouTube Shorts share-out in `DiaryUtils`.
+
+Not verified: no device was attached, so nothing here has been run on hardware. Compiles, 100 unit tests pass, `assembleDebug` succeeds.
+
+---
+
+## 2026-08-31 — Studio Part 1: source choice, camera, tool row, auto-edit, export preview
+
+Five steps, built to the *Speed Adjustment Popup* design rather than the tab-bar one shipped the day before.
+
+- **Media gating made explicit.** Photo and audio never reach the studio; that was previously true only by accident of where the button sat.
+- **วิดีโอ opens a source sheet** — ถ่ายตอนนี้ / อัปโหลดคลิป — and both land in the editor automatically.
+- **`NongRakVideoCaptureScreen`** — in-app CameraX recorder. No capture-speed control despite the design: CameraX records at the sensor's rate, and a recording made at the wrong speed cannot be undone, so retiming lives in the editor. Beauty/เทมเพลต deferred.
+- **15s cap at 4 Mbps.** `diary-media` has a hard 10MB `file_size_limit`, so a 60s clip records fine and is then refused on upload. Shortening alone was not enough — 15s at the encoder's default 5–8 Mbps still straddles the ceiling. Capping bitrate keeps 720p; dropping to SD would not have.
+- **Tool row + modal popups**, ปรับความเร็ว opening first. The preview keeps full height because nothing is docked under it.
+- **`NongRakVideoFilter` split from `NongRakVideoEffect`.** The design gives ฟิลเตอร์ and เอฟเฟกต์ separate tools, which exposed that both wrote one field — choosing a tone silently discarded the sparkles. They now compose; a test pins it.
+- **`NongRakAutoEditor`** — auto-cut decided on-device from audio RMS (`MediaExtractor` + `MediaCodec`) and 32×32 grey frame diffs, weighted **0.65 sound / 0.35 motion**: a still laugh must outrank a silent pan. Mood square picks the preset. Only an 8-frame contact sheet leaves the phone, once, through the existing `AiProxyClient`, to write a Thai caption using the child's name. It proposes onto the undo stack; it never applies itself.
+- **`NongRakExportPreview`** — real resolution / fps / MB / duration read off the rendered file, never predicted. fps is omitted below API 28 rather than guessed. Renders are cached by edit, so แก้ไขเพิ่มเติม and straight back does not re-encode.
+
+Still blocked: **เพลง**. Pixabay's licence bars distributing tracks "on a Standalone basis"; Epidemic/Artlist publish no app tier. Viable routes are Musopen/Chosic CC0 (verify the *recording*, not just the composition — that is the usual trap) or commissioning originals.
+
+Not verified: no device attached for any of it. The audio decoder has never met a real MP4, the camera has never been opened, and the 0.5 mood thresholds are reasoned rather than tuned. Compiles; 109 unit tests pass.
+
+---
+
+## 2026-08-31 — Home info-ask: big banner + typed catalog (replaces daily-question popup)
+
+User: renew the one-question Home ask as a **large banner** + **full page** (not a popup). Ask any useful info (Health Book, sleep, activity, feeding, visits, parent). If it matches NongRak Health Book, write it there too.
+
+- **Banner:** `InfoAskBanner` on Dashboard (above the chat card) and Child Info. Names the subject (`เกี่ยวกับ {child}` / `เกี่ยวกับคุณ`), shows the question, Health Book note, **ตอบเลย**. Dismiss X does not navigate.
+- **Page:** `Screen.InfoAsk` → `InfoAskScreen` — chips / text / number / date. Save / Skip. 3/day cap kept (`SettingsManager.aiDailyQuestionCountToday`). Same field is not reshown the same day.
+- **Catalog:** `InfoAskCatalog` picks the next open gap. Health Book blanks first, then sleep / play / feeding / visits, then `open_notes` (AI-phrased). Structured answers go to the owning repo (`children` columns, `profiles`, `sleep_logs`, `child_activities`, `milk_logs`, `doctor_visits`). Only `open_notes` (and nap=no) append notes.
+- **Health Book:** `HealthBookFields` maps birth columns + guardian (mother/father from `profiles.relationship`). `HealthBookBuilder` reads them. Incomplete-info card (weight/height/allergies) and chat NEED_INFO are unchanged.
+- **Migration file:** `supabase/migrations/20260831_info_ask_birth_and_address.sql` (`children.delivery_type` / birth measures, `profiles.address`). Apply on project `rdylsezwjdujvllyjhqb` before those Save paths work remotely. `explicitNulls = false` so `createChild` still omits the new keys until the columns exist.
+
+Not verified on-device.
+
+---
+
+## 2026-08-31 — Home info-ask: all open questions in one mixed form
+
+User: if there are many questions, show **all of them at once**; also make sure they get **different** questions (not the same one-at-a-time Health Book field).
+
+- **Catalog:** `InfoAskCatalog.openAll` returns every open gap, round-robin across topic groups (birth / guardian / sleep / activity / feeding+visit) then shuffled with today's epoch day so the first question changes day to day. `open_notes` only if the batch is empty.
+- **Page:** `InfoAskScreen` is a scrollable form of every prompt. Save writes filled answers only; blanks stay open. Skip marks the whole batch shown-today so the banner does not return until tomorrow.
+- **Banner:** count + mixed subject (`Fifa และคุณ` when both) + first two question teasers; CTA **ตอบทั้งหมด**.
+- **Cap:** the old 3/day one-question counter is no longer used for this form. `ChildUiState.infoAsks` replaced `infoAsk`.
+- Incomplete-info card and chat NEED_INFO still unchanged.

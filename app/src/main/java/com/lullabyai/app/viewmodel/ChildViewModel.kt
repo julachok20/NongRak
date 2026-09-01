@@ -99,8 +99,11 @@ data class ChildUiState(
     val pendingSyncRequests: List<com.lullabyai.app.data.model.ChildSyncRequest> = emptyList(),
     /** One-shot popup when a doctor sends vaccine verification to this account. */
     val doctorVaccineInboxPopup: DoctorVaccineInboxItem? = null,
-    // --- AI daily question (Dashboard popup, capped 3/day via SettingsManager) ---
+    // --- Home info-ask (replaces the daily-question popup) ------------------------------------
+
     val dailyQuestion: String? = null,
+    val infoAsks: List<com.lullabyai.app.data.infoask.InfoAskPrompt> = emptyList(),
+    val infoAskSaving: Boolean = false,
     // --- Stitch "AI Suggestions & Guidance" (#11) ---
     val aiGuidance: AiGuidance? = null,
     val aiGuidanceLoading: Boolean = false,
@@ -151,6 +154,8 @@ class ChildViewModel : ViewModel() {
     private val doctorVisitRepo = com.lullabyai.app.data.repository.DoctorVisitRepository()
     private val medicationRepo = com.lullabyai.app.data.repository.MedicationRepository()
     private val sleepRepo = com.lullabyai.app.data.repository.SleepRepository()
+    private val nutritionRepo = com.lullabyai.app.data.repository.NutritionRepository()
+    private val authRepo = com.lullabyai.app.data.repository.AuthRepository()
     private val aiRepo = AiRepository()
     private val chatRepo = com.lullabyai.app.data.repository.ChatRepository()
     private val notifRepo = com.lullabyai.app.data.repository.NotificationRepository()
@@ -229,6 +234,7 @@ class ChildViewModel : ViewModel() {
             sleepSchedules = emptyList(),
             doctorVisits = emptyList(),
             dailyQuestion = null,
+            infoAsks = emptyList(),
             pendingSyncRequests = emptyList(),
             doctorVaccineInboxPopup = null
         )
@@ -341,6 +347,7 @@ class ChildViewModel : ViewModel() {
         sleepSchedules = emptyList(),
         doctorVisits = emptyList(),
         dailyQuestion = null,
+        infoAsks = emptyList(),
         pendingSyncRequests = emptyList(),
         doctorVaccineInboxPopup = null
     )
@@ -488,37 +495,7 @@ class ChildViewModel : ViewModel() {
 
     /** Doctor → parent vaccine verification deliveries (popup on home). */
     fun loadDoctorVaccineInbox(context: android.content.Context) {
-        viewModelScope.launch {
-            val children = _uiState.value.children.ifEmpty { childRepo.getChildren().getOrDefault(emptyList()) }
-            if (children.isEmpty()) return@launch
-            val settings = com.lullabyai.app.data.settings.SettingsManager(context)
-            val dismissed = settings.getDismissedDoctorVaccineInboxIds()
-            if (_uiState.value.doctorVaccineInboxPopup != null) return@launch
-            for (child in children) {
-                val requests = doctorRepo.getVaccineVerifications(childId = child.id).getOrDefault(emptyList())
-                val vaccines = healthRepo.getVaccineRecords(child.id).getOrDefault(emptyList())
-                val hit = requests.firstOrNull { req ->
-                    req.status == "verified" &&
-                        req.notes?.startsWith("doctor_sent:", ignoreCase = true) == true &&
-                        req.id !in dismissed
-                } ?: continue
-                val record = vaccines.find { it.id == hit.vaccineRecordId }
-                // Only popup when the certificate PDF is actually on file — avoids "verified"
-                // notifications from doctor-side actions that never uploaded a cert.
-                if (record?.certificateUrl.isNullOrBlank()) continue
-                val message = hit.notes?.removePrefix("doctor_sent:")?.trim()
-                _uiState.value = _uiState.value.copy(
-                    doctorVaccineInboxPopup = DoctorVaccineInboxItem(
-                        requestId = hit.id,
-                        childId = child.id,
-                        childName = child.name,
-                        vaccineName = record?.vaccineName ?: "-",
-                        message = message?.takeIf { it.isNotBlank() }
-                    )
-                )
-                return@launch
-            }
-        }
+        // Temporarily cancelled/disabled per user request
     }
 
     fun dismissDoctorVaccineInbox(context: android.content.Context, openVaccineBook: Boolean = false) {
@@ -532,41 +509,243 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    // --- AI daily question ---------------------------------------------------------------------
+    // --- Home info-ask (typed catalog; replaces the daily-question popup) ---------------------
 
-    /** Generates one AI question for the Dashboard popup, if today's 3-question cap isn't hit yet. */
-    fun loadDailyQuestion(context: android.content.Context, isThai: Boolean) {
+    /** Surfaces every currently open gap on Home / Child Info as one mixed form. */
+    fun loadDailyQuestion(context: android.content.Context, isThai: Boolean) = loadInfoAsk(context, isThai)
+
+    fun loadInfoAsk(context: android.content.Context, isThai: Boolean) {
+        if (isGuest()) return
+        if (_uiState.value.infoAsks.isNotEmpty()) return
+        viewModelScope.launch { loadInfoAskInternal(context, isThai) }
+    }
+
+    private suspend fun loadInfoAskInternal(context: android.content.Context, isThai: Boolean) {
         val child = _uiState.value.child ?: return
-        if (_uiState.value.dailyQuestion != null) return // one already showing
+        val settings = com.lullabyai.app.data.settings.SettingsManager(context)
+        val from = java.time.OffsetDateTime.now().minusDays(7)
+        val to = java.time.OffsetDateTime.now().plusDays(1)
+        val snapshot = com.lullabyai.app.data.infoask.InfoAskSnapshot(
+            child = child,
+            profile = authRepo.getProfile().getOrNull(),
+            authEmail = supabase.auth.currentUserOrNull()?.email,
+            sleepLogs = _uiState.value.sleepLogs.ifEmpty { sleepRepo.getLogs(child.id).getOrDefault(emptyList()) },
+            sleepSchedules = _uiState.value.sleepSchedules.ifEmpty { sleepRepo.getSchedules(child.id).getOrDefault(emptyList()) },
+            milkLogs = nutritionRepo.getMilkLogs(child.id),
+            activities = childRepo.listActivities(child.id, from.toString(), to.toString()).getOrDefault(emptyList()),
+            visits = _uiState.value.doctorVisits.ifEmpty { doctorVisitRepo.getVisits(child.id).getOrDefault(emptyList()) },
+            shownToday = settings.infoAskShownFieldIdsToday(child.id),
+            answeredEver = settings.infoAskAnsweredFieldIds(child.id)
+        )
+        val catalog = com.lullabyai.app.data.infoask.InfoAskCatalog
+        var prompts = catalog.openAll(snapshot)
+        if (prompts.isEmpty()) {
+            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null)
+            return
+        }
+        if (prompts.size == 1 && prompts.first().fieldId == "open_notes") {
+            chatRepo.generateDailyQuestion(child, isThai).getOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { q ->
+                prompts = listOf(prompts.first().copy(questionTh = q, questionEn = q))
+            }
+        }
+        _uiState.value = _uiState.value.copy(infoAsks = prompts, dailyQuestion = null)
+    }
+
+    /**
+     * Writes every filled answer into the repo that owns that field. Unfilled questions stay open
+     * so the banner can come back the same day. Structured fields never dump into notes; only
+     * `open_notes` (and nap=no) append a dated Q/A line.
+     */
+    fun answerInfoAsk(
+        context: android.content.Context,
+        answers: List<com.lullabyai.app.data.infoask.InfoAskAnswer>,
+        isThai: Boolean = true,
+        onDone: () -> Unit = {}
+    ) {
+        val prompts = _uiState.value.infoAsks
+        if (prompts.isEmpty()) return
+        val catalog = com.lullabyai.app.data.infoask.InfoAskCatalog
+        val byId = prompts.associateBy { it.fieldId }
+        val filled = answers.filter { a -> byId[a.fieldId]?.let { catalog.isFilled(it, a) } == true }
+        if (filled.isEmpty()) return
+        if (isGuest()) { promptRegistration(); onDone(); return }
+
         viewModelScope.launch {
-            val settingsManager = com.lullabyai.app.data.settings.SettingsManager(context)
-            if (settingsManager.aiDailyQuestionCountToday() >= 3) return@launch
-            chatRepo.generateDailyQuestion(child, isThai).onSuccess { q ->
-                if (q.isNotBlank()) {
-                    settingsManager.recordAiDailyQuestionShown()
-                    _uiState.value = _uiState.value.copy(dailyQuestion = q)
+            _uiState.value = _uiState.value.copy(infoAskSaving = true, error = null)
+            val settings = com.lullabyai.app.data.settings.SettingsManager(context)
+            var firstError: String? = null
+            for (answer in filled) {
+                val prompt = byId[answer.fieldId] ?: continue
+                val result = runCatching { writeInfoAskAnswer(settings, prompt, answer) }
+                if (result.isFailure) {
+                    firstError = result.exceptionOrNull()?.message
+                    break
                 }
             }
+            if (firstError != null) {
+                _uiState.value = _uiState.value.copy(infoAskSaving = false, error = firstError)
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null, infoAskSaving = false)
+            loadChild()
+            loadInfoAskInternal(context, isThai)
+            onDone()
         }
     }
 
-    /** Saves the answer onto the child's notes (already part of the AI's context on every future
-     *  chat turn — see ChatRepository.buildChildContext) so it actually feeds future analysis. */
-    fun answerDailyQuestion(answer: String) {
+    private suspend fun writeInfoAskAnswer(
+        settings: com.lullabyai.app.data.settings.SettingsManager,
+        prompt: com.lullabyai.app.data.infoask.InfoAskPrompt,
+        answer: com.lullabyai.app.data.infoask.InfoAskAnswer
+    ) {
         val child = _uiState.value.child ?: return
-        val question = _uiState.value.dailyQuestion ?: return
-        if (answer.isBlank()) return
+        val chip = answer.chipId?.takeIf { it.isNotBlank() }
+        val value = answer.text.trim()
+        val catalog = com.lullabyai.app.data.infoask.InfoAskCatalog
+        when (prompt.fieldId) {
+            "birthdate" -> patchChild(child.id, mapOf("birthdate" to value), child.copy(birthdate = value))
+            "delivery_type" -> patchChild(child.id, mapOf("delivery_type" to chip), child.copy(deliveryType = chip))
+            "place_of_birth" -> patchChild(child.id, mapOf("place_of_birth" to value), child.copy(placeOfBirth = value))
+            "gestational_weeks" -> {
+                val weeks = catalog.parsePositiveNumber(value)?.toInt() ?: error("invalid")
+                patchChild(child.id, mapOf("gestational_weeks" to weeks), child.copy(gestationalWeeks = weeks))
+            }
+            "birth_weight_g" -> {
+                val g = catalog.parseBirthWeightG(value) ?: error("invalid")
+                patchChild(child.id, mapOf("birth_weight_g" to g), child.copy(birthWeightG = g))
+            }
+            "birth_length_cm" -> {
+                val n = catalog.parsePositiveNumber(value) ?: error("invalid")
+                patchChild(child.id, mapOf("birth_length_cm" to n), child.copy(birthLengthCm = n))
+            }
+            "birth_head_cm" -> {
+                val n = catalog.parsePositiveNumber(value) ?: error("invalid")
+                patchChild(child.id, mapOf("birth_head_cm" to n), child.copy(birthHeadCm = n))
+            }
+            "blood_group" -> {
+                val stored = if (chip == "unknown") "unknown" else chip
+                patchChild(child.id, mapOf("blood_group" to stored), child.copy(bloodGroup = stored))
+            }
+            "allergies" -> {
+                val isNone = value.contains("ไม่มี") || value.contains("ไม่แพ้") || value.contains("none", ignoreCase = true)
+                if (isNone) {
+                    patchChild(child.id, mapOf("no_known_allergies" to true), child.copy(noKnownAllergies = true))
+                } else {
+                    val name = value.ifBlank { chip ?: "" }
+                    if (name.isNotBlank()) {
+                        healthRepo.addAllergy(child.id, name, "food", "mild", symptoms = null)
+                        patchChild(child.id, mapOf("allergies" to name), child.copy(allergies = name))
+                        refreshHealthRecords(child.id)
+                    }
+                }
+            }
+            "guardian_name" -> authRepo.updateProfile(null, value, null).getOrThrow()
+            "guardian_relation" -> authRepo.updateProfile(null, null, null, relationship = chip).getOrThrow()
+            "guardian_phone" -> {
+                val phone = com.lullabyai.app.data.repository.ThaiPhone.normalize(value) ?: value
+                authRepo.updateProfile(null, null, null, phone = phone).getOrThrow()
+            }
+            "guardian_address" -> authRepo.updateProfile(null, null, null, address = value).getOrThrow()
+            "sleep_last_night" -> {
+                val stars = chip!!.toIntOrNull()?.coerceIn(1, 5) ?: 3
+                val end = java.time.LocalDateTime.now().withHour(7).withMinute(0).withSecond(0).withNano(0)
+                val start = end.minusHours(10)
+                sleepRepo.addManualLog(child.id, "main", start.toString(), end.toString(), qualityStars = stars).getOrThrow()
+                loadSleep()
+            }
+            "typical_bedtime" -> {
+                val start = chip ?: value
+                sleepRepo.createSchedule(child.id, "นอนหลัก", "main", start, "06:00", "ALL").getOrThrow()
+            }
+            "nap_today" -> {
+                if (chip == "yes") {
+                    val start = java.time.LocalDateTime.now().minusHours(2).withSecond(0).withNano(0)
+                    val end = start.plusMinutes(90)
+                    sleepRepo.addManualLog(child.id, "nap", start.toString(), end.toString()).getOrThrow()
+                    loadSleep()
+                } else {
+                    appendNotes(child, prompt.question(true), "ไม่ได้นอนกลางวัน")
+                }
+            }
+            "activity_level" -> {
+                patchChild(child.id, mapOf("activity_level" to chip), child.copy(activityLevel = chip ?: "moderate"))
+                settings.recordInfoAskFieldAnswered(child.id, "activity_level")
+            }
+            "play_today" -> {
+                val title = prompt.chips.find { it.id == chip }?.labelTh ?: "กิจกรรม"
+                val now = java.time.OffsetDateTime.now()
+                childRepo.addActivity(
+                    childId = child.id,
+                    title = title,
+                    category = "family",
+                    startsAt = now.toString(),
+                    allDay = true
+                ).getOrThrow()
+            }
+            "feeding_type" -> {
+                when (chip) {
+                    "both" -> {
+                        nutritionRepo.addMilkLog(child.id, "breast", 0, null, "จากแบบถามข้อมูล").getOrThrow()
+                        nutritionRepo.addMilkLog(child.id, "formula", 0, null, "จากแบบถามข้อมูล").getOrThrow()
+                    }
+                    else -> nutritionRepo.addMilkLog(child.id, chip ?: "formula", 0, null, "จากแบบถามข้อมูล").getOrThrow()
+                }
+            }
+            "recent_facility" -> {
+                val whenIso = com.lullabyai.app.util.TimeUtils.toUtcIso(java.time.LocalDateTime.now())
+                doctorVisitRepo.saveVisit(
+                    id = null, childId = child.id, visitType = "completed", visitDatetime = whenIso,
+                    facilityName = value, doctorName = null, doctorSpecialty = null, reason = null,
+                    symptoms = null, diagnosis = null, treatmentPlan = null, doctorAdvice = null,
+                    weightKg = null, heightCm = null, temperatureC = null, bloodPressure = null,
+                    nextAppointmentDate = null, preparationNotes = null, reminders = null,
+                    status = "completed"
+                ).getOrThrow()
+                loadDoctorVisits()
+            }
+            "mood_after_sleep" -> {
+                val latest = _uiState.value.sleepLogs.firstOrNull()
+                if (latest != null && latest.id.isNotBlank()) {
+                    sleepRepo.updateMood(latest.id, chip!!).getOrThrow()
+                } else {
+                    val start = java.time.LocalDateTime.now().minusHours(10)
+                    val end = java.time.LocalDateTime.now()
+                    sleepRepo.addManualLog(child.id, "main", start.toString(), end.toString(), mood = chip).getOrThrow()
+                }
+                loadSleep()
+            }
+            "open_notes" -> appendNotes(child, prompt.question(true), value)
+            else -> appendNotes(child, prompt.question(true), value.ifBlank { chip ?: "" })
+        }
+    }
+
+    private suspend fun patchChild(childId: String, updates: Map<String, Any?>, local: com.lullabyai.app.data.model.Child) {
+        childRepo.updateChild(childId, updates).getOrThrow()
+        _uiState.value = _uiState.value.copy(
+            child = local,
+            children = _uiState.value.children.map { if (it.id == local.id) local else it }
+        )
+    }
+
+    private suspend fun appendNotes(child: com.lullabyai.app.data.model.Child, question: String, answer: String) {
         val entry = "[${java.time.LocalDate.now()}] Q: $question A: $answer"
         val newNotes = (child.notes?.takeIf { it.isNotBlank() }?.plus("\n") ?: "") + entry
-        viewModelScope.launch {
-            childRepo.updateChildNotes(child.id, newNotes).onSuccess {
-                _uiState.value = _uiState.value.copy(child = child.copy(notes = newNotes), dailyQuestion = null)
-            }
-        }
+        childRepo.updateChildNotes(child.id, newNotes).getOrThrow()
+        _uiState.value = _uiState.value.copy(child = child.copy(notes = newNotes))
     }
 
-    fun dismissDailyQuestion() {
-        _uiState.value = _uiState.value.copy(dailyQuestion = null)
+    fun dismissDailyQuestion(context: android.content.Context? = null) = dismissInfoAsk(context)
+
+    /** Skip the whole form for today — remaining fields will mix in again tomorrow. */
+    fun dismissInfoAsk(context: android.content.Context? = null) {
+        val child = _uiState.value.child
+        val ids = _uiState.value.infoAsks.map { it.fieldId }
+        _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null, infoAskSaving = false)
+        if (context != null && child != null && ids.isNotEmpty()) {
+            viewModelScope.launch {
+                com.lullabyai.app.data.settings.SettingsManager(context).recordInfoAskFieldsShown(child.id, ids)
+            }
+        }
     }
 
     /**

@@ -428,7 +428,7 @@ fun RewindMemoryScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .heightIn(min = 56.dp)
                     .shadow(8.dp, RoundedCornerShape(100.dp), spotColor = Primary),
                 shape = RoundedCornerShape(100.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Primary)
