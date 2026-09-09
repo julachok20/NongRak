@@ -28,31 +28,43 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lullabyai.app.ui.components.HCaptchaVerifyButton
+import com.lullabyai.app.ui.components.LanguageToggleButton
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.ForgotPasswordViewModel
 import com.lullabyai.app.viewmodel.ForgotStep
+import com.lullabyai.app.viewmodel.SettingsViewModel
 import kotlinx.coroutines.delay
 
 @Composable
 fun ForgotPasswordScreen(
     viewModel: ForgotPasswordViewModel,
-    onBackToLogin: () -> Unit
+    onBackToLogin: () -> Unit,
+    settingsViewModel: SettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val s = com.lullabyai.app.ui.localization.LocalStrings.current
+    val isThai = s.isThai
 
     Scaffold(
         topBar = {
             com.lullabyai.app.ui.components.LullabyTopBar(
                 title = when (state.step) {
-                    ForgotStep.EMAIL -> "ลืมรหัสผ่าน"
-                    ForgotStep.OTP -> "ยืนยันรหัส OTP"
-                    ForgotStep.TEMP_PASSWORD -> "ลืมรหัสผ่าน"
+                    ForgotStep.EMAIL -> if (isThai) "ลืมรหัสผ่าน" else "Forgot Password"
+                    ForgotStep.OTP -> if (isThai) "ยืนยันรหัส OTP" else "Verify OTP"
+                    ForgotStep.TEMP_PASSWORD -> if (isThai) "รหัสผ่านชั่วคราว" else "Temporary Password"
                 },
                 onBack = {
                     when (state.step) {
                         ForgotStep.OTP -> viewModel.back()
                         else -> onBackToLogin()
                     }
+                },
+                actions = {
+                    LanguageToggleButton(
+                        isThai = isThai,
+                        onToggle = { settingsViewModel.toggleLanguage() },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
                 }
             )
         },

@@ -32,7 +32,7 @@ data class ProactiveBrief(
         val GREETING = ProactiveBrief(
             BriefKind.NONE,
             "สวัสดีค่ะ",
-            "สวัสดีค่ะ วันนี้ยังไม่มีอะไรต้องเป็นห่วงเลย อยากเล่าเรื่องอะไรให้ฟังไหมคะ"
+            "สวัสดีค่ะ"
         )
     }
 }

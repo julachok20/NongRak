@@ -84,7 +84,7 @@ fun ParticleLayer(
                     "z",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = StitchPrimary,
+                    color = LocalChatColors.current.primary,
                     modifier = Modifier
                         .offset(x = (particle.dx + progress * 14).dp, y = (-52 * progress).dp)
                         .alpha(fadeInOut(progress))

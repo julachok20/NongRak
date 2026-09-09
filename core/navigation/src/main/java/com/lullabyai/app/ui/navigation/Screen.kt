@@ -106,6 +106,8 @@ sealed class Screen(val route: String) {
     /** ตู้เสื้อผ้า — companion level, unlocks and outfits. Added 2026-08-27. */
     object MascotCloset : Screen("mascot_closet")
     object HealthBook : Screen("health_book")
+    /** Home / Child Info “fill more info” — one typed question. Added 2026-08-31. */
+    object InfoAsk : Screen("info_ask")
     object MilkRecord : Screen("milk_record")
     object NutritionInsights : Screen("nutrition_insights")
     object SleepActivityInsights : Screen("sleep_activity_insights")
@@ -197,6 +199,7 @@ sealed class Screen(val route: String) {
 
     // --- Diary / Special Memories (#10, 2026-07-25) — append-only ---
     object ChildDiary : Screen("child_diary")
+    object ChildDiaryReadBook : Screen("child_diary_read_book")
     object RewindMemory : Screen("rewind_memory")
     object SpecialMemoriesGallery : Screen("special_memories_gallery")
     object AddMemory : Screen("add_memory")
@@ -229,6 +232,9 @@ sealed class Screen(val route: String) {
     object ActivitySchedule : Screen("activity_schedule")
     object AddActivity : Screen("add_activity")
     object CareCircle : Screen("care_circle")
+    object CareHandoff : Screen("care_handoff/{childId}") {
+        fun route(childId: String) = "care_handoff/${android.net.Uri.encode(childId)}"
+    }
     /**
      * `quote` is optional context carried in from an activity entry, so a reply arrives saying
      * which update it is about instead of a bare "?".
@@ -260,4 +266,3 @@ sealed class Screen(val route: String) {
         fun route(authorName: String) = "community_user_profile/" + java.net.URLEncoder.encode(authorName, "UTF-8")
     }
 }
-

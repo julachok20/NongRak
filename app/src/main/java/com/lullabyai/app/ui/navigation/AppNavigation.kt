@@ -569,6 +569,7 @@ fun AppNavigation(
                     }
                     navController.navigate(Screen.OnboardingStep3.route)
                 },
+                onNavigateToInfoAsk = { navController.navigate(Screen.InfoAsk.route) },
                 isTourActive = tourActive
             )
         }
@@ -868,6 +869,13 @@ fun AppNavigation(
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(Screen.InfoAsk.route) {
+            com.lullabyai.app.ui.screens.child.InfoAskScreen(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(Screen.PermissionAccess.route) {
             com.lullabyai.app.ui.components.GuestLockGuard(
                 childViewModel = childViewModel,
@@ -913,6 +921,11 @@ fun AppNavigation(
                     onOpenChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) }
                 )
             }
+        }
+        composable(Screen.CareHandoff.route, arguments = listOf(navArgument("childId") { type = NavType.StringType })) { entry ->
+            com.lullabyai.app.ui.screens.access.HandoffScreen(
+                childId = entry.arguments?.getString("childId").orEmpty(), navController = navController
+            )
         }
         composable(
             Screen.CareChat.route,
@@ -1663,6 +1676,20 @@ fun AppNavigation(
                 com.lullabyai.app.ui.screens.diary.ChildDiaryScreen(
                     navController = navController,
                     onBack = { navController.popBackStack() }
+                )
+            }
+        }
+        composable(Screen.ChildDiaryReadBook.route) {
+            com.lullabyai.app.ui.components.GuestLockGuard(
+                childViewModel = childViewModel,
+                navController = navController,
+                onBack = { navController.popBackStack() },
+                title = if (lang == "th") "สมุดบันทึกความทรงจำ (E-Book & AI Recap)" else "Child Diary & Recap"
+            ) {
+                com.lullabyai.app.ui.screens.diary.ChildDiaryReadBookScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() },
+                    childViewModel = childViewModel
                 )
             }
         }

@@ -28,9 +28,10 @@ import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.SettingsViewModel
 
 /**
- * "Modern Doctor Welcome Screen (Redesign)" — the doctor-side landing/marketing screen. Reached
- * from the parent WelcomeScreen's "I'm a doctor" link. Leads to Doctor Sign In ("เข้าสู่ระบบแพทย์")
- * and Doctor Sign Up ("ลงทะเบียนพาร์ทเนอร์"), and back down to the parent flow via the mode toggle.
+ * "Modern Doctor Welcome Screen (Redesign)" — the doctor-side landing/marketing screen.
+ * Parent Welcome no longer links here (parent-only). Route `doctor_welcome` still exists for
+ * in-flow navigation. Leads to Doctor Sign In and Doctor Sign Up, and back to parent Welcome
+ * via the mode toggle.
  */
 @Composable
 fun DoctorWelcomeScreen(navController: NavController, settingsViewModel: SettingsViewModel) {

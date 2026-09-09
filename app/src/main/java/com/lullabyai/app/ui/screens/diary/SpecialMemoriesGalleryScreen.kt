@@ -440,6 +440,7 @@ private fun SpecialMemoryDetailDialog(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 var showStudio by remember { mutableStateOf(false) }
+                val studioContext = LocalContext.current
 
                 if (!signedUrl.isNullOrBlank()) {
                     Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
@@ -568,7 +569,21 @@ private fun SpecialMemoryDetailDialog(
                         memoryDate = memory.memoryDate,
                         isThai = isThai,
                         onDismiss = { showStudio = false },
-                        onApply = { _, _, _ -> showStudio = false }
+                        onApply = { rendered, _ ->
+                            showStudio = false
+                            // Viewer screen: the cache file has nowhere to be saved, so it goes
+                            // straight to the share sheet rather than being silently dropped.
+                            exportMemoryToSocial(
+                                context = studioContext,
+                                platform = "general",
+                                title = memory.title,
+                                description = memory.description,
+                                date = memory.memoryDate,
+                                mediaUri = rendered,
+                                mimeType = "video/mp4",
+                                isThai = isThai
+                            )
+                        }
                     )
                 }
             }

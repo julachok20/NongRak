@@ -332,13 +332,29 @@ class AuthViewModel : ViewModel() {
         }
     }
 
-    fun updateProfile(username: String?, fullName: String?, avatarUrl: String?, onSuccess: () -> Unit) {
+    fun updateProfile(
+        username: String?,
+        fullName: String?,
+        avatarUrl: String?,
+        relationship: String? = null,
+        phone: String? = null,
+        onSuccess: () -> Unit
+    ) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            repo.updateProfile(username, fullName, avatarUrl)
-                .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false); onSuccess() }
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            repo.updateProfile(username, fullName, avatarUrl, relationship, phone, address = null)
+                .onSuccess {
+                    loadProfile()
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onSuccess()
+                }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
         }
+    }
+
+    /** Overload for backwards compatibility */
+    fun updateProfile(username: String?, fullName: String?, avatarUrl: String?, onSuccess: () -> Unit) {
+        updateProfile(username, fullName, avatarUrl, null, null, onSuccess)
     }
 
     /** Toggle the separate AI-training-data opt-in, then refresh the profile so the Settings
@@ -346,6 +362,18 @@ class AuthViewModel : ViewModel() {
     fun setAiTrainingConsent(value: Boolean) {
         viewModelScope.launch {
             repo.setAiTrainingConsent(value).onSuccess { loadProfile() }
+        }
+    }
+
+    /**
+     * Toggles 2FA on the user's profile and refreshes the profile state.
+     */
+    fun setTwoFactorEnabled(value: Boolean, onSuccess: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            repo.setTwoFactorEnabled(value).onSuccess {
+                loadProfile()
+                onSuccess?.invoke()
+            }
         }
     }
 

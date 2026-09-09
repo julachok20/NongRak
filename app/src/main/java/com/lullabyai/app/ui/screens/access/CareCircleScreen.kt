@@ -87,6 +87,11 @@ fun CareCircleScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
+                Button(onClick = { state.childId?.let { navController.navigate(com.lullabyai.app.ui.navigation.Screen.CareHandoff.route(it)) } }, enabled = state.childId != null) {
+                    Text(if (isThai) "ส่งต่อการดูแล" else "Caregiver handoff")
+                }
+            }
+            item {
                 OutlinedTextField(
                     value = state.query,
                     onValueChange = viewModel::setQuery,

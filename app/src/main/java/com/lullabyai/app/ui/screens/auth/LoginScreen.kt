@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -93,11 +94,6 @@ fun LoginScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        LanguageToggleButton(
-            isThai = settings.language == AppLanguage.TH,
-            onToggle = { settingsViewModel.toggleLanguage() },
-            modifier = Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(20.dp)
-        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -106,7 +102,7 @@ fun LoginScreen(
                 .systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(56.dp))
 
             // Logo
             Box(
@@ -272,12 +268,27 @@ fun LoginScreen(
             Spacer(Modifier.height(32.dp))
         }
 
-        // Back to Welcome — placed last so it draws on top of the scrollable Column and gets taps
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.TopStart).systemBarsPadding().padding(4.dp)
+        // Top bar actions: Back and Language Toggle — placed last so they draw on top of the scrollable Column and receive all taps
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "กลับ", tint = Primary)
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = if (isThai) "ย้อนกลับ" else "Back",
+                    tint = Primary
+                )
+            }
+            LanguageToggleButton(
+                isThai = settings.language == AppLanguage.TH,
+                onToggle = { settingsViewModel.toggleLanguage() }
+            )
         }
     }
 }

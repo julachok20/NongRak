@@ -444,9 +444,28 @@ fun SyncChildProfileScreen(
                         )
                     }
                 }
-            } else {
-                AccessRequestStrings.error(state.error, isThai)?.let {
-                    Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
+                AccessRequestStrings.error(state.error, isThai)?.let { errorText ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
+                            Text(
+                                errorText,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     PrimaryButton(

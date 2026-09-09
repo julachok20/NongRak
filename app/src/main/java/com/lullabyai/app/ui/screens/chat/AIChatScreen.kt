@@ -34,10 +34,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,13 +50,20 @@ import com.lullabyai.app.data.brief.ProactiveBriefUseCase
 import com.lullabyai.app.data.model.ChatMode
 import com.lullabyai.app.data.model.ChatSession
 import com.lullabyai.app.data.model.UiChatMessage
+import com.lullabyai.app.data.repository.MascotBondRepository
+import com.lullabyai.app.data.repository.UnlockAnnouncer
 import com.lullabyai.app.data.settings.AppSettings
 import com.lullabyai.app.data.settings.SettingsManager
+import com.lullabyai.app.ui.mascot.MascotWardrobe
+import com.lullabyai.app.ui.mascot.UnlockBannerHost
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.Error
+import com.lullabyai.app.util.RelationshipLabels
 import com.lullabyai.app.viewmodel.ChatViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import kotlinx.coroutines.launch
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 // Same normalization ChatViewModel.dispatchAgentAction uses — models don't reproduce a literal
 // type string reliably ("Navigate" / "navigate-to" instead of "navigate").
@@ -147,6 +156,22 @@ fun AIChatScreen(
     // Which companion the parent picked during onboarding.
     val mascotKey by remember { SettingsManager(context).selectedMascot }.collectAsState(initial = null)
     val mascot = MascotId.fromKey(mascotKey)
+    var wornGarments by remember { mutableStateOf<List<Int>>(emptyList()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, mascot) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    val bond = MascotBondRepository().get(mascot.assetPrefix).getOrNull() ?: return@launch
+                    wornGarments = MascotWardrobe.garmentsFor(mascot.rigArt(), bond.equipped, bond.level)
+                    UnlockAnnouncer.consider(SettingsManager(context), mascot.assetPrefix, bond.level)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Switching companion switches voice: each one answers in its own manner from the next message
     // onward. Set here rather than at each send, so every path through the screen picks it up.
@@ -227,7 +252,7 @@ fun AIChatScreen(
             else com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, it)
         }
         val mime = if (selectedIsDocument) "application/pdf" else "image/jpeg"
-        chatViewModel.sendMessage(text, childState.child, imageBytes = bytes, imageUri = uri?.toString(), imageMime = mime, isThai = isThai)
+        chatViewModel.sendMessage(text, childState.child, imageBytes = bytes, imageUri = uri?.toString(), imageMime = mime, isThai = isThai, family = childState.children)
         inputText = ""
         selectedImageUri = null
         selectedIsDocument = false
@@ -255,9 +280,15 @@ fun AIChatScreen(
         }
     }
 
+    val isDark = com.lullabyai.app.ui.theme.LocalDarkTheme.current || appSettings.darkMode
+    val chatColors = rememberChatColors(isDark = isDark)
+
     // Stitch puts the history drawer on the right. ModalNavigationDrawer only opens from the
     // layout-direction start edge, so the drawer is built RTL and the content flipped back.
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Rtl,
+        LocalChatColors provides chatColors
+    ) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
@@ -282,7 +313,7 @@ fun AIChatScreen(
                             onChildModeChange = { on ->
                                 chatViewModel.setMode(if (on) ChatMode.CHILD else ChatMode.NORMAL)
                             },
-                            title = if (isThai) "คุยกับ${mascot.thaiName}" else "Chat with ${mascot.englishName}",
+                            title = if (isThai) mascot.thaiName else mascot.englishName,
                             onSwitchMascot = { onNavigate(Screen.MascotSwitch.route) },
                             onCloset = { onNavigate(Screen.MascotCloset.route) },
                             voiceEnabled = voiceEnabled,
@@ -301,14 +332,14 @@ fun AIChatScreen(
                                     Text(
                                         "อุปกรณ์นี้ยังไม่มีเสียงพูดภาษาไทย ติดตั้งได้ที่ ตั้งค่า > ภาษาและการป้อนข้อมูล > เสียงพูด",
                                         fontSize = 11.sp,
-                                        color = StitchInkSoft,
+                                        color = chatColors.inkSoft,
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
                                     )
                                 }
                             }
                             // Selected image/document preview (above the input) with a remove button.
                             selectedImageUri?.let { uri ->
-                                Surface(color = Color.White) {
+                                Surface(color = chatColors.cardBg) {
                                     Row(
                                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -317,10 +348,10 @@ fun AIChatScreen(
                                         if (selectedIsDocument) {
                                             Box(
                                                 Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                                                    .background(StitchPrimaryLight),
+                                                    .background(chatColors.primaryLight),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Icon(Icons.Filled.PictureAsPdf, null, tint = StitchPrimary)
+                                                Icon(Icons.Filled.PictureAsPdf, null, tint = chatColors.primary)
                                             }
                                         } else {
                                             AsyncImage(
@@ -331,20 +362,20 @@ fun AIChatScreen(
                                         }
                                         Text(
                                             if (selectedIsDocument) "แนบเอกสารแล้ว" else "แนบรูปภาพแล้ว",
-                                            fontSize = 12.sp, color = StitchInkSoft, modifier = Modifier.weight(1f)
+                                            fontSize = 12.sp, color = chatColors.inkSoft, modifier = Modifier.weight(1f)
                                         )
                                         IconButton(onClick = { selectedImageUri = null; selectedIsDocument = false }) {
-                                            Icon(Icons.Filled.Close, "ลบไฟล์แนบ", tint = StitchInkFaint)
+                                            Icon(Icons.Filled.Close, "ลบไฟล์แนบ", tint = chatColors.inkFaint)
                                         }
                                     }
                                 }
                             }
                             if (isGuest) {
                                 Surface(
-                                    color = Color(0xFFF3E8FF),
+                                    color = if (chatColors.isDark) Color(0xFF231C33) else Color(0xFFF3E8FF),
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                                     shape = RoundedCornerShape(16.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8B4FE))
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (chatColors.isDark) Color(0xFF5B3E8A) else Color(0xFFD8B4FE))
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(14.dp),
@@ -352,19 +383,19 @@ fun AIChatScreen(
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Filled.Lock, contentDescription = null, tint = StitchPrimary, modifier = Modifier.size(18.dp))
+                                            Icon(Icons.Filled.Lock, contentDescription = null, tint = chatColors.primary, modifier = Modifier.size(18.dp))
                                             Spacer(Modifier.width(6.dp))
                                             Text(
                                                 if (isThai) "บัญชีทดลอง (Test) — ต้องสมัครสมาชิกก่อนใช้งาน AI" else "Test Account — Sign up required for AI",
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp,
-                                                color = StitchPrimary
+                                                color = chatColors.primary
                                             )
                                         }
                                         Text(
                                             if (isThai) "ระบบ AI ผู้ช่วยส่วนตัวเปิดให้ใช้งานสำหรับสมาชิกที่ลงทะเบียนเท่านั้น" else "AI companion features are available to registered members only.",
                                             fontSize = 12.sp,
-                                            color = StitchInkSoft,
+                                            color = chatColors.inkSoft,
                                             textAlign = TextAlign.Center
                                         )
                                         Row(
@@ -374,7 +405,7 @@ fun AIChatScreen(
                                             Button(
                                                 onClick = { onNavigate(Screen.SignUp.route) },
                                                 shape = RoundedCornerShape(100.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = StitchPrimary),
+                                                colors = ButtonDefaults.buttonColors(containerColor = chatColors.primary),
                                                 modifier = Modifier.weight(1f).height(38.dp)
                                             ) {
                                                 Text(if (isThai) "สมัครสมาชิก (ฟรี)" else "Sign up (Free)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -384,7 +415,7 @@ fun AIChatScreen(
                                                 shape = RoundedCornerShape(100.dp),
                                                 modifier = Modifier.weight(1f).height(38.dp)
                                             ) {
-                                                Text(if (isThai) "เข้าสู่ระบบ" else "Sign in", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = StitchPrimary)
+                                                Text(if (isThai) "เข้าสู่ระบบ" else "Sign in", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = chatColors.primary)
                                             }
                                         }
                                     }
@@ -420,7 +451,7 @@ fun AIChatScreen(
                             )
                         }
                     },
-                    containerColor = StitchSurface
+                    containerColor = chatColors.surface
                 ) { padding ->
                     if (showGuestRequirementDialog) {
                         com.lullabyai.app.ui.components.RequireRegistrationDialog(
@@ -452,6 +483,7 @@ fun AIChatScreen(
                                     statusText = brief.headline,
                                     bondingLevel = bondingLevel,
                                     bondingPercent = bondingPercent,
+                                    garments = wornGarments,
                                     onPlay = {
                                         if (isGuest) {
                                             showGuestRequirementDialog = true
@@ -459,7 +491,8 @@ fun AIChatScreen(
                                         }
                                         chatViewModel.sendMessage(
                                             "มาเล่นเกมทายคำกับ${mascot.thaiName}กันหน่อย",
-                                            childState.child
+                                            childState.child,
+                                            family = childState.children
                                         )
                                     },
                                     onFood = { onNavigate(Screen.Nutrition.route) },
@@ -492,6 +525,7 @@ fun AIChatScreen(
                                     statusText = brief.headline,
                                     bondingLevel = bondingLevel,
                                     bondingPercent = bondingPercent,
+                                    garments = wornGarments,
                                     onCall = {
                                         if (isGuest) {
                                             showGuestRequirementDialog = true
@@ -510,28 +544,37 @@ fun AIChatScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         if (showCompanion) {
-                            // The companion opens with the brief rather than a generic hello — this
-                            // is the "medicine in 30 minutes" line the parent came for.
+                            // Opening line: a short สวัสดี when nothing is due, else the reminder.
                             item {
                                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    CompanionBubble(mascot = mascot, text = brief.detail)
+                                    // Reminders keep the brief. A quiet open is just สวัสดี — with
+                                    // the parent's name when we have one, not a long "nothing to worry
+                                    // about" pitch that reads as a form.
+                                    val opening = if (brief.kind == BriefKind.NONE) {
+                                        RelationshipLabels.chatWelcome(
+                                            chatState.parentRelationship, isThai, chatState.parentName
+                                        )
+                                    } else {
+                                        brief.detail
+                                    }
+                                    CompanionBubble(mascot = mascot, text = opening)
                                     Row(
                                         Modifier.fillMaxWidth().padding(start = 44.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         if (chatState.mode == ChatMode.STORY) {
                                             SuggestionChip(Icons.Filled.PlayCircle, "อยากฟังต่อ!") {
-                                                chatViewModel.sendMessage("อยากฟังต่อ!", childState.child)
+                                                chatViewModel.sendMessage("อยากฟังต่อ!", childState.child, family = childState.children)
                                             }
                                             SuggestionChip(Icons.Filled.ChangeCircle, "ขอเรื่องอื่น") {
-                                                chatViewModel.sendMessage("ขอเรื่องอื่น", childState.child)
+                                                chatViewModel.sendMessage("ขอเรื่องอื่น", childState.child, family = childState.children)
                                             }
                                         } else {
                                             SuggestionChip(Icons.Filled.EditNote, "บันทึกให้หน่อย") {
-                                                chatViewModel.sendMessage("ช่วยบันทึกให้หน่อย", childState.child)
+                                                chatViewModel.sendMessage("ช่วยบันทึกให้หน่อย", childState.child, family = childState.children)
                                             }
                                             SuggestionChip(Icons.Filled.Article, "สรุปบันทึกวันนี้") {
-                                                chatViewModel.sendMessage("สรุปบันทึกของวันนี้ให้หน่อย", childState.child)
+                                                chatViewModel.sendMessage("สรุปบันทึกของวันนี้ให้หน่อย", childState.child, family = childState.children)
                                             }
                                         }
                                     }
@@ -561,7 +604,7 @@ fun AIChatScreen(
                                 Text(
                                     "ตอบโดย ${chatState.lastProvider}",
                                     fontSize = 10.sp,
-                                    color = StitchInkFaint,
+                                    color = chatColors.inkFaint,
                                     modifier = Modifier.fillMaxWidth().padding(start = 44.dp)
                                 )
                             }
@@ -576,7 +619,7 @@ fun AIChatScreen(
                                     MascotAvatar(mascot)
                                     Surface(
                                         shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp),
-                                        color = Color.White,
+                                        color = chatColors.aiBubble,
                                         shadowElevation = 1.dp
                                     ) {
                                         Row(
@@ -586,7 +629,7 @@ fun AIChatScreen(
                                             repeat(3) { i ->
                                                 Box(
                                                     Modifier.size(6.dp).background(
-                                                        StitchPrimary.copy(if (i == 0) 1f else 0.5f), CircleShape
+                                                        chatColors.primary.copy(if (i == 0) 1f else 0.5f), CircleShape
                                                     )
                                                 )
                                             }
@@ -607,7 +650,7 @@ fun AIChatScreen(
         var answer by remember(message.id) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { chatViewModel.dismissNeedInfo(message.id) },
-            icon = { Icon(Icons.Filled.HelpOutline, null, tint = StitchPrimary) },
+            icon = { Icon(Icons.Filled.HelpOutline, null, tint = chatColors.primary) },
             title = { Text(request.question) },
             text = {
                 OutlinedTextField(
@@ -620,7 +663,7 @@ fun AIChatScreen(
                 TextButton(
                     onClick = { chatViewModel.answerNeedInfo(message.id, answer, childState.child) },
                     enabled = answer.isNotBlank()
-                ) { Text("ส่ง", color = StitchPrimary, fontWeight = FontWeight.Bold) }
+                ) { Text("ส่ง", color = chatColors.primary, fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { chatViewModel.dismissNeedInfo(message.id) }) { Text("ข้าม") } }
         )
@@ -644,9 +687,16 @@ fun AIChatScreen(
     // leaves by itself — a meal is worth a moment's acknowledgement, not a dialog to dismiss.
     chatState.bondFeed?.let { bond ->
         LaunchedEffect(bond) {
+            UnlockAnnouncer.consider(SettingsManager(context), mascot.assetPrefix, bond.level)
+            val dressed = MascotBondRepository().get(mascot.assetPrefix).getOrNull()
+            if (dressed != null) {
+                wornGarments = MascotWardrobe.garmentsFor(mascot.rigArt(), dressed.equipped, dressed.level)
+            }
             kotlinx.coroutines.delay(2600)
             chatViewModel.clearBondFeed()
         }
+        val pendingUnlock by UnlockAnnouncer.current.collectAsState()
+        if (pendingUnlock == null) {
         Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.TopCenter) {
             androidx.compose.animation.AnimatedVisibility(
                 visible = true,
@@ -657,7 +707,7 @@ fun AIChatScreen(
             ) {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
-                    color = StitchPrimaryLight,
+                    color = chatColors.primaryLight,
                     shadowElevation = 6.dp,
                     modifier = Modifier.padding(top = 56.dp, start = 24.dp, end = 24.dp)
                 ) {
@@ -677,25 +727,28 @@ fun AIChatScreen(
                                 else "${mascot.thaiName}อิ่มแล้ว!",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = StitchInk
+                                color = chatColors.ink
                             )
                             Text(
                                 "ความผูกพัน ${bond.xp} แต้ม",
                                 fontSize = 11.sp,
-                                color = StitchInkSoft
+                                color = chatColors.inkSoft
                             )
                         }
                     }
                 }
             }
         }
+        }
     }
+
+    UnlockBannerHost(isThai)
 
     sessionToRename?.let { (id, currentTitle) ->
         var newTitle by remember(id) { mutableStateOf(currentTitle) }
         AlertDialog(
             onDismissRequest = { sessionToRename = null },
-            icon = { Icon(Icons.Filled.Edit, null, tint = StitchPrimary) },
+            icon = { Icon(Icons.Filled.Edit, null, tint = chatColors.primary) },
             title = { Text("เปลี่ยนชื่อแชท") },
             text = {
                 OutlinedTextField(
@@ -708,7 +761,7 @@ fun AIChatScreen(
                 TextButton(
                     onClick = { chatViewModel.renameSession(id, newTitle); sessionToRename = null },
                     enabled = newTitle.isNotBlank()
-                ) { Text("บันทึก", color = StitchPrimary, fontWeight = FontWeight.Bold) }
+                ) { Text("บันทึก", color = chatColors.primary, fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { sessionToRename = null }) { Text("ยกเลิก") } }
         )
@@ -731,7 +784,8 @@ private fun CompanionTopBar(
     onSwitchMascot: () -> Unit,
     onCloset: () -> Unit
 ) {
-    Surface(color = Color.White) {
+    val chatColors = LocalChatColors.current
+    Surface(color = chatColors.topBarBg) {
         // The app draws edge to edge; without this the header sits under the phone's clock and
         // battery. Material's TopAppBar applied this itself — a hand-built bar has to say so.
         Column(Modifier.statusBarsPadding()) {
@@ -746,57 +800,59 @@ private fun CompanionTopBar(
                         modifier = Modifier.scale(0.7f),
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
-                            checkedTrackColor = StitchPrimary,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color(0xFFE5E7EB),
-                            uncheckedBorderColor = Color(0xFFE5E7EB)
+                            checkedTrackColor = chatColors.primary,
+                            uncheckedThumbColor = if (chatColors.isDark) chatColors.inkSoft else Color.White,
+                            uncheckedTrackColor = chatColors.hairline,
+                            uncheckedBorderColor = chatColors.border
                         )
                     )
-                    Text("คุยกับเด็ก", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = StitchInkSoft, maxLines = 1)
+                    Text("คุยกับเด็ก", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = chatColors.inkSoft, maxLines = 1)
                 }
                 // The companion's name is the switcher, and the caret is what says so — a
                 // tappable title with no affordance is a feature nobody finds.
                 Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onSwitchMascot)
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            title,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = StitchInk,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center
-                        )
-                        Icon(
-                            Icons.Filled.KeyboardArrowDown,
-                            contentDescription = "เปลี่ยนเพื่อนคู่ใจ",
-                            tint = StitchInkSoft,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onSwitchMascot)
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        title,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = chatColors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Icon(
+                        Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "เปลี่ยนเพื่อนคู่ใจ",
+                        tint = chatColors.inkSoft,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 // The closet sits with the companion, not in Settings: this screen is where the
                 // parent already thinks about who they are talking to.
                 IconButton(onClick = onCloset) {
-                    Icon(Icons.Filled.Checkroom, "ตู้เสื้อผ้าน้องรัก", tint = StitchInkSoft)
+                    Icon(Icons.Filled.Checkroom, "ตู้เสื้อผ้าน้องรัก", tint = chatColors.inkSoft)
                 }
                 IconButton(onClick = onToggleVoice) {
                     Icon(
                         if (voiceEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
                         "อ่านคำตอบออกเสียง",
-                        tint = if (voiceEnabled) StitchPrimary else StitchInkSoft
+                        tint = if (voiceEnabled) chatColors.primary else chatColors.inkSoft
                     )
                 }
                 IconButton(onClick = onHistory) {
-                    Icon(Icons.Filled.History, "ประวัติการแชท", tint = StitchInkSoft)
+                    Icon(Icons.Filled.History, "ประวัติการแชท", tint = chatColors.inkSoft)
                 }
             }
-            HorizontalDivider(color = StitchHairline)
+            HorizontalDivider(color = chatColors.hairline)
         }
     }
 }
@@ -812,21 +868,22 @@ private fun HistoryDrawer(
     onNewChat: () -> Unit,
     onClose: () -> Unit
 ) {
-    ModalDrawerSheet(drawerContainerColor = StitchSurface, modifier = Modifier.width(300.dp)) {
+    val chatColors = LocalChatColors.current
+    ModalDrawerSheet(drawerContainerColor = chatColors.surface, modifier = Modifier.width(300.dp)) {
         Column(Modifier.fillMaxSize()) {
-            Surface(color = Color.White) {
+            Surface(color = chatColors.topBarBg) {
                 Row(
                     Modifier.fillMaxWidth().padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("ประวัติการแชท", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = StitchInk)
+                    Text("ประวัติการแชท", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = chatColors.ink)
                     Spacer(Modifier.weight(1f))
                     Box(
-                        Modifier.size(32.dp).clip(CircleShape).background(StitchHairline)
+                        Modifier.size(32.dp).clip(CircleShape).background(chatColors.hairline)
                             .clickable(onClick = onClose),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Filled.Close, "ปิด", tint = StitchInkSoft, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.Close, "ปิด", tint = chatColors.inkSoft, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -841,10 +898,10 @@ private fun HistoryDrawer(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
+                            .background(chatColors.cardBg)
                             .border(
                                 1.dp,
-                                if (selected) StitchPrimary.copy(0.35f) else Color.Transparent,
+                                if (selected) chatColors.primary.copy(0.35f) else Color.Transparent,
                                 RoundedCornerShape(16.dp)
                             )
                             .clickable { onOpen(session.id) }
@@ -855,12 +912,12 @@ private fun HistoryDrawer(
                             session.title,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (selected) StitchPrimary else StitchInk,
+                            color = if (selected) chatColors.primary else chatColors.ink,
                             maxLines = 1,
                             modifier = Modifier.weight(1f)
                         )
                         Icon(
-                            Icons.Filled.Edit, "เปลี่ยนชื่อแชท", tint = StitchPrimary,
+                            Icons.Filled.Edit, "เปลี่ยนชื่อแชท", tint = chatColors.primary,
                             modifier = Modifier.size(18.dp).clickable { onRename(session.id, session.title) }
                         )
                         Spacer(Modifier.width(12.dp))
@@ -871,21 +928,21 @@ private fun HistoryDrawer(
                     }
                 }
             }
-            Surface(color = Color.White) {
+            Surface(color = chatColors.bottomBarBg) {
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .padding(20.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(StitchPrimaryLight)
+                        .background(chatColors.primaryLight)
                         .clickable(onClick = onNewChat)
                         .padding(vertical = 14.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.AddCircle, null, tint = StitchPrimary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.AddCircle, null, tint = chatColors.primary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("เริ่มสนทนาใหม่", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = StitchPrimary)
+                    Text("เริ่มสนทนาใหม่", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = chatColors.primary)
                 }
             }
         }
@@ -906,9 +963,10 @@ private fun ChatInputBar(
     placeholder: String,
     sendEnabled: Boolean
 ) {
-    Surface(color = Color.White) {
+    val chatColors = LocalChatColors.current
+    Surface(color = chatColors.bottomBarBg) {
         Column {
-            HorizontalDivider(color = StitchHairline)
+            HorizontalDivider(color = chatColors.hairline)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalAlignment = Alignment.Bottom,
@@ -919,25 +977,25 @@ private fun ChatInputBar(
                         .weight(1f)
                         .heightIn(min = 52.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(StitchSurface)
-                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(24.dp))
+                        .background(chatColors.inputBg)
+                        .border(1.dp, chatColors.inputBorder, RoundedCornerShape(24.dp))
                         .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box {
                         IconButton(onClick = { onAttachMenu(true) }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Filled.Add, "แนบไฟล์", tint = StitchInkFaint, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Filled.Add, "แนบไฟล์", tint = chatColors.inkFaint, modifier = Modifier.size(22.dp))
                         }
                         DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { onAttachMenu(false) }) {
                             DropdownMenuItem(
                                 text = { Text("อัพโหลดรูปภาพ", fontWeight = FontWeight.SemiBold) },
                                 onClick = onPickImage,
-                                leadingIcon = { Icon(Icons.Filled.Image, null, tint = StitchPrimary) }
+                                leadingIcon = { Icon(Icons.Filled.Image, null, tint = chatColors.primary) }
                             )
                             DropdownMenuItem(
                                 text = { Text("อัพโหลดเอกสาร", fontWeight = FontWeight.SemiBold) },
                                 onClick = onPickDocument,
-                                leadingIcon = { Icon(Icons.Filled.Description, null, tint = StitchPrimary) }
+                                leadingIcon = { Icon(Icons.Filled.Description, null, tint = chatColors.primary) }
                             )
                         }
                     }
@@ -946,27 +1004,27 @@ private fun ChatInputBar(
                         contentAlignment = Alignment.CenterStart
                     ) {
                         if (value.isEmpty()) {
-                            Text(placeholder, fontSize = 14.sp, color = StitchInkFaint, maxLines = 1)
+                            Text(placeholder, fontSize = 14.sp, color = chatColors.inkFaint, maxLines = 1)
                         }
                         BasicTextField(
                             value = value,
                             onValueChange = onValueChange,
-                            textStyle = TextStyle(fontSize = 14.sp, color = StitchInkSoft),
-                            cursorBrush = Brush.verticalGradient(listOf(StitchPrimary, StitchPrimary)),
+                            textStyle = TextStyle(fontSize = 14.sp, color = chatColors.ink),
+                            cursorBrush = Brush.verticalGradient(listOf(chatColors.primary, chatColors.primary)),
                             maxLines = 5,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     IconButton(onClick = onMic, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Filled.Mic, "พูดเพื่อพิมพ์", tint = StitchInkFaint, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.Mic, "พูดเพื่อพิมพ์", tint = chatColors.inkFaint, modifier = Modifier.size(20.dp))
                     }
                 }
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .shadow(6.dp, CircleShape, spotColor = StitchPrimary.copy(0.4f))
+                        .shadow(6.dp, CircleShape, spotColor = chatColors.primary.copy(0.4f))
                         .clip(CircleShape)
-                        .background(if (sendEnabled) StitchPrimary else StitchPrimary.copy(0.4f))
+                        .background(if (sendEnabled) chatColors.primary else chatColors.primary.copy(0.4f))
                         .clickable(enabled = sendEnabled, onClick = onSend),
                     contentAlignment = Alignment.Center
                 ) {
@@ -980,12 +1038,13 @@ private fun ChatInputBar(
 /** The companion's 32dp round avatar beside each of its replies. */
 @Composable
 private fun MascotAvatar(mascot: MascotId) {
+    val chatColors = LocalChatColors.current
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(CircleShape)
-            .background(StitchPrimaryLight)
-            .border(2.dp, Color.White, CircleShape),
+            .background(chatColors.primaryLight)
+            .border(2.dp, chatColors.border, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         // The live pet rather than a still: it breathes, sways and blinks beside every reply, so
@@ -1016,18 +1075,20 @@ private fun MascotAvatar(mascot: MascotId) {
 /** A companion-voiced bubble with no stored message behind it (the proactive brief). */
 @Composable
 private fun CompanionBubble(mascot: MascotId, text: String) {
+    val chatColors = LocalChatColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         MascotAvatar(mascot)
         Surface(
             shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp),
-            color = Color.White,
-            shadowElevation = 1.dp,
+            color = chatColors.aiBubble,
+            shadowElevation = if (chatColors.isDark) 0.dp else 1.dp,
+            border = if (chatColors.isDark) androidx.compose.foundation.BorderStroke(1.dp, chatColors.border) else null,
             modifier = Modifier.fillMaxWidth(0.9f)
         ) {
             Text(
                 text,
                 fontSize = 14.sp,
-                color = StitchInkSoft,
+                color = chatColors.aiBubbleText,
                 lineHeight = 22.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
             )
@@ -1042,6 +1103,7 @@ private fun ChatBubble(
     onConfirmAction: () -> Unit = {},
     onCancelAction: () -> Unit = {}
 ) {
+    val chatColors = LocalChatColors.current
     val isUser = message.role == "user"
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -1053,8 +1115,9 @@ private fun ChatBubble(
             Surface(
                 shape = if (isUser) RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)
                         else RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp),
-                color = if (isUser) StitchPrimary else Color.White,
-                shadowElevation = 1.dp,
+                color = if (isUser) chatColors.userBubble else chatColors.aiBubble,
+                shadowElevation = if (chatColors.isDark) 0.dp else 1.dp,
+                border = if (!isUser && chatColors.isDark) androidx.compose.foundation.BorderStroke(1.dp, chatColors.border) else null,
                 modifier = Modifier.fillMaxWidth(0.82f)
             ) {
                 Column(modifier = Modifier.padding(if (message.imageUri != null) 6.dp else 0.dp)) {
@@ -1074,7 +1137,7 @@ private fun ChatBubble(
                             ),
                             fontSize = 14.sp,
                             lineHeight = 22.sp,
-                            color = if (isUser) Color.White else StitchInkSoft
+                            color = if (isUser) chatColors.userBubbleText else chatColors.aiBubbleText
                         )
                     }
                 }
@@ -1087,23 +1150,28 @@ private fun ChatBubble(
             Row(Modifier.fillMaxWidth().padding(start = 44.dp, top = 8.dp), horizontalArrangement = Arrangement.Start) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = StitchPrimaryLight,
+                    color = chatColors.primaryLight,
+                    border = if (chatColors.isDark) androidx.compose.foundation.BorderStroke(1.dp, chatColors.border) else null,
                     modifier = Modifier.fillMaxWidth(0.82f)
                 ) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.Bolt, null, tint = StitchPrimary, modifier = Modifier.size(16.dp))
-                            Text(action.confirmText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = StitchPrimary)
+                            Icon(Icons.Filled.Bolt, null, tint = chatColors.primary, modifier = Modifier.size(16.dp))
+                            Text(action.confirmText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = chatColors.primary)
                         }
                         when (message.actionStatus) {
                             null -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = onCancelAction, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
-                                    Text("ยกเลิก", fontSize = 12.sp)
+                                OutlinedButton(
+                                    onClick = onCancelAction,
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, chatColors.border)
+                                ) {
+                                    Text("ยกเลิก", fontSize = 12.sp, color = chatColors.inkSoft)
                                 }
                                 Button(
                                     onClick = onConfirmAction,
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = StitchPrimary)
+                                    colors = ButtonDefaults.buttonColors(containerColor = chatColors.primary)
                                 ) {
                                     Text("ยืนยัน", fontSize = 12.sp, color = Color.White)
                                 }
@@ -1112,7 +1180,7 @@ private fun ChatBubble(
                                 Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF22C55E), modifier = Modifier.size(14.dp))
                                 Text("ดำเนินการแล้ว", fontSize = 12.sp, color = Color(0xFF22C55E))
                             }
-                            "cancelled" -> Text("ยกเลิกแล้ว", fontSize = 12.sp, color = StitchInkFaint)
+                            "cancelled" -> Text("ยกเลิกแล้ว", fontSize = 12.sp, color = chatColors.inkFaint)
                             "failed" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Icon(Icons.Filled.ErrorOutline, null, tint = Error, modifier = Modifier.size(14.dp))
                                 Text("ดำเนินการไม่สำเร็จ", fontSize = 12.sp, color = Error)

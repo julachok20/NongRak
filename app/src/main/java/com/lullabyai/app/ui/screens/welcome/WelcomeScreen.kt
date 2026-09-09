@@ -51,8 +51,8 @@ import kotlinx.coroutines.delay
  * Stitch: "Pro Health-Tech Welcome - Clinical Variant".
  *
  * The first screen anyone sees, so it has one job: say what this is and get a parent to sign up.
- * The clinical framing — trust badge, HIPAA/AES/ISO row, a separate doctor entrance — is the
- * design saying "this is a medical tool, not a toy" before a word of copy is read.
+ * Trust marks (privacy / encrypted / WHO) do the clinical framing. Doctor / Pedia Connect
+ * entry is not on this screen — Welcome is parent-only.
  *
  * ponytail: the new copy is inline bilingual rather than added to LocalStrings — it appears
  * nowhere else, and that strings file is shared by ~90 screens.
@@ -62,9 +62,6 @@ fun WelcomeScreen(
     onSignUp: () -> Unit,
     onLogin: () -> Unit,
     settingsViewModel: SettingsViewModel,
-    // Default no-op keeps this screen wireable today — AppNavigation.kt passes the real
-    // navigation to Screen.DoctorWelcome.route once the doctor flow is hooked up centrally.
-    onDoctorMode: () -> Unit = {},
     onGuestMode: () -> Unit = {}
 ) {
     val s = LocalStrings.current
@@ -274,60 +271,6 @@ fun WelcomeScreen(
                             color = Primary
                         )
                     }
-
-                    Spacer(Modifier.height(14.dp))
-
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        HorizontalDivider(Modifier.weight(1f), color = Outline.copy(0.35f))
-                        Text(
-                            if (isThai) "หรือ" else "or",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
-                        HorizontalDivider(Modifier.weight(1f), color = Outline.copy(0.35f))
-                    }
-
-                    Spacer(Modifier.height(22.dp))
-
-                    // Doctors get their own entrance rather than a buried text link — a separate
-                    // audience with a separate account type, not a footnote.
-                    Surface(
-                        onClick = onDoctorMode,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                        color = Color.White,
-                        shadowElevation = 1.dp
-                    ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(48.dp)
-                                    .background(Primary.copy(0.10f), RoundedCornerShape(14.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.MedicalServices, null,
-                                    tint = Primary, modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    if (isThai) "เข้าสู่ระบบสำหรับบุคลากร & ผู้เชี่ยวชาญ" else "Sign in as a clinician / specialist",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Primary
-                                )
-                                Text(
-                                    "Doctor & Provider Portal",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Icon(Icons.Filled.ChevronRight, null, tint = Outline)
-                        }
-                    }
                 }
             }
 
@@ -339,7 +282,8 @@ fun WelcomeScreen(
                 TrustMark(Icons.Filled.ChildCare, "WHO STANDARDS")
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.navigationBarsPadding())
         }
     }
 }

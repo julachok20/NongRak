@@ -13,7 +13,6 @@ import com.lullabyai.app.work.VaccineReminderWorker
 import com.lullabyai.app.work.MedicineReminderWorker
 import com.lullabyai.app.work.WeeklyHealthReportWorker
 import com.lullabyai.app.work.SleepBedtimeRecommendationWorker
-import com.lullabyai.app.work.DeviceSyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,26 +37,13 @@ class NongRakApp : Application() {
         rescheduleSleepReminders()
         scheduleWeeklyHealthReport()
         scheduleSleepBedtimeRecommendation()
-        scheduleDeviceSync()
         // Retry any growth-log writes that failed while offline last session.
         CoroutineScope(Dispatchers.IO).launch { com.lullabyai.app.data.offline.PendingWriteQueue.flush() }
     }
 
-    /** Pull Health Connect / IoT metrics into device_readings + parent WARNING notifications. */
-    private fun scheduleDeviceSync() {
-        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        val wm = WorkManager.getInstance(this)
-        wm.enqueueUniquePeriodicWork(
-            "device_sync",
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<DeviceSyncWorker>(6, TimeUnit.HOURS).setConstraints(constraints).build()
-        )
-        wm.enqueueUniqueWork(
-            "device_sync_now",
-            ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<DeviceSyncWorker>().setConstraints(constraints).build()
-        )
-    }
+    // scheduleDeviceSync() pulled Health Connect metrics into device_readings every six hours.
+    // Health Connect was removed with the feature it served; readings from a smart crib or baby
+    // monitor still arrive through WearableRepository, which never needed a background pull.
 
     /** Proactive bedtime-recommendation nudge, gated by the same 3-day cooldown the in-app
      *  SleepScheduleScreen prompt uses (checked inside the worker via SettingsManager). */

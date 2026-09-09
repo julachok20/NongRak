@@ -78,6 +78,8 @@ private val DarkColors = darkColorScheme(
     surfaceTint = DarkSurfaceTint
 )
 
+val LocalDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 fun NongRakTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     val colorScheme = if (darkTheme) DarkColors else LightColors
@@ -90,9 +92,11 @@ fun NongRakTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
             insetsController.isAppearanceLightNavigationBars = !darkTheme
         }
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = AppTypography,
-        content = content
-    )
+    androidx.compose.runtime.CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = AppTypography,
+            content = content
+        )
+    }
 }

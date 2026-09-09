@@ -19,6 +19,7 @@ import com.lullabyai.app.ui.components.BirthDatePickerField
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.viewmodel.AccessRequestStrings
 import com.lullabyai.app.viewmodel.ChildViewModel
 
 /**
@@ -91,22 +92,27 @@ fun SyncChildScreen(childViewModel: ChildViewModel, onDone: () -> Unit, onBack: 
                 Spacer(Modifier.height(16.dp))
                 if (state.syncSearching) {
                     Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Primary) }
-                } else if (state.syncError != null) {
-                    Text(state.syncError ?: "", color = Error, style = MaterialTheme.typography.bodySmall)
-                } else if (state.syncSearchResults.isEmpty() && name.isNotBlank()) {
-                    Text(
-                        if (isThai) "ไม่พบข้อมูลลูกที่ตรงกัน ตรวจสอบชื่อและวันเกิดอีกครั้ง" else "No matching child found. Double-check the name and birthdate.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(state.syncSearchResults) { match ->
-                            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Icon(Icons.Filled.Search, null, tint = Primary)
-                                    Text(match.childName, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                                    TextButton(onClick = { childViewModel.requestSyncBySearch(match.childId) }) {
-                                        Text(if (isThai) "ขอเชื่อมข้อมูล" else "Request sync")
+                    state.syncError?.let { err ->
+                        val errorMsg = AccessRequestStrings.error(err, isThai) ?: err
+                        Text(errorMsg, color = Error, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(10.dp))
+                    }
+                    if (state.syncSearchResults.isEmpty() && name.isNotBlank()) {
+                        Text(
+                            if (isThai) "ไม่พบข้อมูลลูกที่ตรงกัน ตรวจสอบชื่อและวันเกิดอีกครั้ง" else "No matching child found. Double-check the name and birthdate.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(state.syncSearchResults) { match ->
+                                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Icon(Icons.Filled.Search, null, tint = Primary)
+                                        Text(match.childName, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                        TextButton(onClick = { childViewModel.requestSyncBySearch(match.childId) }) {
+                                            Text(if (isThai) "ขอเชื่อมข้อมูล" else "Request sync")
+                                        }
                                     }
                                 }
                             }
@@ -128,9 +134,10 @@ fun SyncChildScreen(childViewModel: ChildViewModel, onDone: () -> Unit, onBack: 
                     onClick = { childViewModel.requestSyncByCode(code) },
                     enabled = code.isNotBlank()
                 )
-                state.syncError?.let {
+                state.syncError?.let { err ->
                     Spacer(Modifier.height(12.dp))
-                    Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
+                    val errorMsg = AccessRequestStrings.error(err, isThai) ?: err
+                    Text(errorMsg, color = Error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

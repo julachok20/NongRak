@@ -12,7 +12,6 @@ import com.lullabyai.app.data.repository.WearableMetric
 import com.lullabyai.app.data.repository.WearablePlatform
 import com.lullabyai.app.data.repository.WearableRepository
 import com.lullabyai.app.data.settings.ChildSelection
-import com.lullabyai.app.data.wearables.HealthConnectSync
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,8 +42,10 @@ class WearableViewModel(app: Application) : AndroidViewModel(app) {
             val childId = ChildSelection.current()
             val connections = repo.getConnections()
             val readings = childId?.let { repo.getReadings(it) }.orEmpty()
-            val available = HealthConnectSync.isAvailable(ctx)
-            val granted = if (available) HealthConnectSync.hasAllPermissions(ctx) else false
+            // Health Connect was removed; nothing to probe. Kept false so any remaining
+            // UI branch reads as "not connected" rather than guessing.
+            val available = false
+            val granted = false
             _state.update {
                 it.copy(
                     loading = false,
@@ -83,22 +84,8 @@ class WearableViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Connect a Health-Connect-backed platform (Google Fit / Samsung / Fitbit / Garmin / HC).
-     * Caller should request HC permissions first when the SDK is available.
-     */
-    fun connectHcPlatform(platform: String, displayName: String, isThai: Boolean) {
-        viewModelScope.launch {
-            val childId = ChildSelection.current()
-            repo.upsertConnection(platform, childId, displayName, status = "connected")
-            if (platform != WearablePlatform.HEALTH_CONNECT) {
-                repo.upsertConnection(
-                    WearablePlatform.HEALTH_CONNECT, childId, "Health Connect", status = "connected"
-                )
-            }
-            syncNow(isThai)
-        }
-    }
+    // connectHcPlatform() registered Google Fit / Samsung / Fitbit / Garmin as Health Connect
+    // bridges. Health Connect is gone, and with it the only thing those connections did.
 
     fun disconnectPlatform(platform: String) {
         viewModelScope.launch {
@@ -107,57 +94,9 @@ class WearableViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun syncNow(isThai: Boolean) {
-        viewModelScope.launch {
-            val childId = ChildSelection.current()
-            if (childId == null) {
-                _state.update {
-                    it.copy(error = if (isThai) "ยังไม่ได้เลือกโปรไฟล์เด็ก" else "No child selected")
-                }
-                return@launch
-            }
-            _state.update { it.copy(syncing = true, error = null, message = null) }
-            val ctx = getApplication<Application>()
-            if (!HealthConnectSync.isAvailable(ctx)) {
-                _state.update {
-                    it.copy(
-                        syncing = false,
-                        error = if (isThai) "อุปกรณ์นี้ยังไม่มี Health Connect — กรุณาติดตั้งจาก Play Store"
-                        else "Health Connect is not available — install it from the Play Store"
-                    )
-                }
-                refresh()
-                return@launch
-            }
-            if (!HealthConnectSync.hasAllPermissions(ctx)) {
-                _state.update {
-                    it.copy(
-                        syncing = false,
-                        error = if (isThai) "ยังไม่ได้ให้สิทธิ์อ่านข้อมูลสุขภาพ" else "Health permissions not granted yet"
-                    )
-                }
-                refresh()
-                return@launch
-            }
-            val rows = HealthConnectSync.readRecent(ctx, childId, hours = 48)
-            repo.insertReadingsBatch(rows)
-            repo.markSynced(WearablePlatform.HEALTH_CONNECT, childId)
-
-            // Immediate parent warnings for freshly synced abnormal samples.
-            val notif = NotificationRepository()
-            rows.filter { it.isWarning }.take(3).forEach { r ->
-                notif.notify(NotifCategory.WARNING, if (isThai) "แจ้งเตือนจากอุปกรณ์" else "Device warning", r.warningReason)
-            }
-
-            _state.update {
-                it.copy(
-                    syncing = false,
-                    message = if (isThai) "ซิงค์แล้ว ${rows.size} รายการ" else "Synced ${rows.size} readings"
-                )
-            }
-            refresh()
-        }
-    }
+    // syncNow() pulled the last 48 hours out of Health Connect. Health Connect was removed
+    // with the feature it served, and nothing else fed this path - a smart crib or baby monitor
+    // writes into device_readings directly, so there is no pull step to trigger.
 
     /**
      * Pair a child IoT device. Storage + warning path is live; BLE vendor SDKs can replace the

@@ -58,7 +58,9 @@ class SleepRepository {
         childId: String,
         sleepType: String,
         start: String,
-        end: String? = null
+        end: String? = null,
+        mood: String? = null,
+        qualityStars: Int? = null
     ): Result<Unit> = runCatching {
         supabase.from("sleep_logs").insert(
             buildJsonObject {
@@ -66,6 +68,8 @@ class SleepRepository {
                 put("sleep_type", JsonPrimitive(sleepType))
                 put("start_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(start))))
                 end?.let { put("end_time", JsonPrimitive(TimeUtils.toUtcIso(LocalDateTime.parse(it)))) }
+                mood?.takeIf { it.isNotBlank() }?.let { put("mood", JsonPrimitive(it)) }
+                qualityStars?.let { put("quality_stars", JsonPrimitive(it.coerceIn(1, 5))) }
             }
         )
     }

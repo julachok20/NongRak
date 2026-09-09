@@ -67,7 +67,8 @@ object MascotRewards {
                 // No companion chosen yet (onboarding unfinished) means there is nothing to
                 // raise. Not an error, just nothing to do.
                 val mascot = SettingsManager(app).selectedMascot.first() ?: return@runCatching
-                repo.award(mascot, kind, refId)
+                val feed = repo.award(mascot, kind, refId).getOrNull() ?: return@runCatching
+                UnlockAnnouncer.consider(SettingsManager(app), mascot, feed.level)
             }
         }
     }

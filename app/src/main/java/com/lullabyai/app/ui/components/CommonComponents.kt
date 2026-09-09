@@ -2,6 +2,8 @@ package com.lullabyai.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,6 +68,7 @@ private fun tabRootRoute(tab: BottomTab): String = when (tab) {
     BottomTab.CHILD -> Screen.ChildSummary.route
     BottomTab.CHATBOT -> Screen.AiChat.route
     BottomTab.CONNECT -> Screen.ConnectServicesSelection.route
+    BottomTab.COMMUNITY -> Screen.Community.route
     BottomTab.SETTINGS -> Screen.Settings.route
     // Stats belongs to the Child tab now, so its root is the Child root.
     BottomTab.STATS -> Screen.ChildSummary.route
@@ -120,7 +123,7 @@ fun NavController.clearSavedTabStacks() {
 }
 
 /** The tabs of the app-wide bottom navigation. CHATBOT is launched from the center floating button, not a bar item. */
-enum class BottomTab { HOME, CHATBOT, CHILD, STATS, CONNECT, SETTINGS }
+enum class BottomTab { HOME, CHATBOT, CHILD, STATS, CONNECT, COMMUNITY, SETTINGS }
 
 /** Small pill button showing the language you'd switch TO (e.g. shows "EN" while on Thai) — used
  *  on the pre-login screens (Welcome/Login/SignUp) where there's no Settings screen to reach yet. */
@@ -134,61 +137,82 @@ fun LanguageToggleButton(isThai: Boolean, onToggle: () -> Unit, modifier: Modifi
     }
 }
 
-/** Dismissible banner nudging the user to answer the AI's daily question — tapping it opens the
- *  actual question dialog rather than popping the dialog up unprompted. Shared between Dashboard
- *  and Child Info so the same question/state (ChildViewModel.uiState.dailyQuestion) surfaces on both. */
+/** Large Home / Child Info card for the open info-ask form. Tap or CTA opens [Screen.InfoAsk]. */
 @Composable
-fun DailyQuestionBanner(isThai: Boolean, onClick: () -> Unit, onDismiss: () -> Unit) {
-    Surface(
-        onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-        color = Primary.copy(0.08f)
+fun InfoAskBanner(
+    isThai: Boolean,
+    subjectName: String,
+    questionCount: Int,
+    preview: String,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Primary.copy(0.08f))
     ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(Icons.Filled.HelpOutline, null, tint = Primary, modifier = Modifier.size(20.dp))
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape).background(Primary.copy(0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.HelpOutline, null, tint = Primary, modifier = Modifier.size(26.dp))
+                }
+                Column(Modifier.weight(1f).clickable(onClick = onClick)) {
+                    Text(
+                        if (isThai) "ขอข้อมูลเพิ่มเติม" else "Asking more information",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (questionCount <= 1) {
+                            if (isThai) "เกี่ยวกับ $subjectName" else "on $subjectName"
+                        } else {
+                            if (isThai) "$questionCount คำถามเกี่ยวกับ $subjectName"
+                            else "$questionCount questions on $subjectName"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.Close, null, tint = Primary, modifier = Modifier.size(18.dp))
+                }
+            }
             Text(
-                if (isThai) "ตอบคำถามเพื่อช่วยการวิเคราะห์" else "Answer a question to help analysis",
-                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Primary, modifier = Modifier.weight(1f)
+                preview,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 4,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.clickable(onClick = onClick)
             )
-            androidx.compose.material3.IconButton(onClick = onDismiss, modifier = Modifier.size(22.dp)) {
-                Icon(Icons.Filled.Close, null, tint = Primary, modifier = Modifier.size(16.dp))
+            Text(
+                if (isThai) "กรอกเพิ่มเพื่อให้วิเคราะห์แม่นขึ้น — ช่องที่ตรงกับสมุดสุขภาพน้องรักจะถูกเขียนลงสมุดด้วย"
+                else "Fill more so analysis is better. Fields that match the NongRak Health Book are written there too.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clickable(onClick = onClick)
+            )
+            Button(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                shape = RoundedCornerShape(100.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Text(
+                    if (questionCount > 1) {
+                        if (isThai) "ตอบทั้งหมด" else "Answer all"
+                    } else {
+                        if (isThai) "ตอบเลย" else "Answer now"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
-}
-
-/** The daily-question dialog itself — shared between Dashboard and Child Info so both trigger the
- *  same answer/skip flow via [DailyQuestionBanner] instead of duplicating this markup. */
-@Composable
-fun DailyQuestionDialog(question: String, isThai: Boolean, onAnswer: (String) -> Unit, onSkip: () -> Unit, onDismiss: () -> Unit) {
-    var dailyAnswer by remember(question) { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.HelpOutline, null, tint = Primary) },
-        title = { Text(question) },
-        text = {
-            Column {
-                Text(
-                    if (isThai) "คำถามจาก AI เพื่อช่วยวิเคราะห์ลูกของคุณได้แม่นยำขึ้น (สูงสุด 3 คำถาม/วัน)"
-                    else "A question from the AI to analyze your child more accurately (max 3/day)",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = dailyAnswer, onValueChange = { dailyAnswer = it },
-                    label = { Text(if (isThai) "คำตอบ" else "Answer") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onAnswer(dailyAnswer) }, enabled = dailyAnswer.isNotBlank()) {
-                Text(if (isThai) "ส่ง" else "Submit", color = Primary, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onSkip) { Text(if (isThai) "ข้าม" else "Skip") }
-        }
-    )
 }
 
 /**
@@ -210,21 +234,21 @@ fun AppBottomNav(
     onSettings: () -> Unit,
     // Only child-family screens (via ChildBottomNav) pass this — when present it replaces the Stats
     // slot with Connect, since those screens already offer Stats via the dashboard's button grid.
-    onConnect: (() -> Unit)? = null
+    onConnect: (() -> Unit)? = null,
+    onCommunity: (() -> Unit)? = null
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
     val nav = LocalNavController.current
 
-    // Stats now lives inside the Child tab, so the bar is the same four tabs everywhere
-    // instead of swapping Stats↔Connect depending on which screen you're on.
+    // 4 standard footer tabs + center floating AI chatbot
     data class NavItem(val tab: BottomTab, val icon: ImageVector, val label: String, val fallback: () -> Unit)
     val leftItems = listOf(
-        NavItem(BottomTab.HOME, Icons.Filled.Home, s.navHome, onHome),
-        NavItem(BottomTab.CHILD, Icons.Filled.ChildCare, s.navChild, onChild)
+        NavItem(BottomTab.HOME, Icons.Filled.Home, if (s.isThai) "หน้าแรก" else s.navHome, onHome),
+        NavItem(BottomTab.CHILD, Icons.Filled.ChildCare, if (s.isThai) "ข้อมูลลูก" else s.navChild, onChild)
     )
     val rightItems = listOf(
-        NavItem(BottomTab.CONNECT, Icons.Filled.Hub, if (s.isThai) "เชื่อมต่อ" else "Connect", onConnect ?: {}),
-        NavItem(BottomTab.SETTINGS, Icons.Filled.Settings, s.navSettings, onSettings)
+        NavItem(BottomTab.COMMUNITY, Icons.Filled.Groups, if (s.isThai) "ชุมชน" else "Community", onCommunity ?: { nav?.navigate(Screen.Community.route); Unit }),
+        NavItem(BottomTab.SETTINGS, Icons.Filled.Settings, if (s.isThai) "ตั้งค่า" else s.navSettings, onSettings)
     )
 
     // With a NavController in scope we own the tab transition (save/restore per tab, and
@@ -237,8 +261,11 @@ fun AppBottomNav(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
+        val isDark = com.lullabyai.app.ui.theme.LocalDarkTheme.current
+        val barBg = if (isDark) MaterialTheme.colorScheme.surface else Color.White
+
         NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = barBg,
             tonalElevation = 0.dp,
             // navigationBarsPadding lifts the footer above the system gesture bar for proper margin;
             // windowInsets(0) prevents double-padding from the bar's own default insets.
@@ -250,10 +277,10 @@ fun AppBottomNav(
             NavigationBarItem(
                 selected = false,
                 onClick = {
-                val n = nav
-                if (n != null) n.switchToTab(BottomTab.CHATBOT, isReselect = selected == BottomTab.CHATBOT)
-                else onChatbot()
-            },
+                    val n = nav
+                    if (n != null) n.switchToTab(BottomTab.CHATBOT, isReselect = selected == BottomTab.CHATBOT)
+                    else onChatbot()
+                },
                 icon = { Spacer(Modifier.size(24.dp)) },
                 label = { Spacer(Modifier.height(12.dp)) },
                 enabled = false,
@@ -270,12 +297,27 @@ fun AppBottomNav(
             shape = CircleShape,
             containerColor = Primary,
             contentColor = Color.White,
+            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
             modifier = Modifier
                 .tourAnchor("nav_ai_fab")
                 .align(Alignment.TopCenter)
-                .offset(y = (-22).dp)
+                .offset(y = (-20).dp)
+                .border(2.5.dp, barBg, CircleShape)
         ) {
-            Icon(Icons.Filled.SmartToy, s.navChatbot, modifier = Modifier.size(26.dp))
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF173DB8)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(com.lullabyai.app.R.drawable.ic_nongrak_chatbot_footer),
+                    contentDescription = s.navChatbot,
+                    modifier = Modifier.size(32.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                )
+            }
         }
     }
 }

@@ -78,8 +78,6 @@ class MascotWardrobeTest {
 
     @Test
     fun `garments drop anything not earned or not drawn`() {
-        // The catalogue is empty until the garment art exists, so every id is unknown — which is
-        // the case that must not crash: a save naming an item this build does not have.
         val worn = mapOf("shirt" to "tee_that_does_not_exist")
 
         for (skin in MascotArt.entries) {
@@ -89,6 +87,24 @@ class MascotWardrobeTest {
             )
         }
         assertTrue(MascotWardrobe.garmentsFor(MascotArt.NONGRAK, emptyMap(), level = 1).isEmpty())
+    }
+
+    @Test
+    fun `catalogue has clothes and unlocks them by level`() {
+        assertTrue(MascotWardrobe.items.isNotEmpty())
+        assertTrue(MascotWardrobe.byId("bow")!!.unlockedAt(1))
+        assertTrue(!MascotWardrobe.byId("scarf")!!.unlockedAt(1))
+        assertTrue(MascotWardrobe.byId("scarf")!!.unlockedAt(2))
+        val gained = MascotWardrobe.itemsUnlockedBetween(1, 2)
+        assertTrue(gained.any { it.id == "scarf" })
+        assertTrue(gained.none { it.id == "bow" })
+        assertEquals(
+            listOf(MascotArt.BUNNY),
+            MascotWardrobe.skinsUnlockedBetween(1, 2)
+        )
+        val worn = mapOf("accessory" to "bow")
+        assertTrue(MascotWardrobe.garmentsFor(MascotArt.NONGRAK, worn, level = 1).isNotEmpty())
+        assertTrue(MascotWardrobe.garmentsFor(MascotArt.NONGRAK, mapOf("scarf" to "scarf"), level = 1).isEmpty())
     }
 
     @Test

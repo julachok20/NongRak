@@ -18,7 +18,10 @@ import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -35,9 +38,105 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Stitch "Premium AI Companion Chat (Tamagotchi Style)" palette. Kept local and literal rather
-// than folded into the app theme: this screen is the only one built to that spec, and the app
-// theme's Primary (#3757AE) is a different blue the rest of the app depends on.
+@Immutable
+data class ChatColors(
+    val surface: Color,
+    val cardBg: Color,
+    val cardBgElevated: Color,
+    val topBarBg: Color,
+    val bottomBarBg: Color,
+    val hairline: Color,
+    val border: Color,
+    val primary: Color,
+    val primaryLight: Color,
+    val ink: Color,
+    val inkSoft: Color,
+    val inkFaint: Color,
+    val userBubble: Color,
+    val userBubbleText: Color,
+    val aiBubble: Color,
+    val aiBubbleText: Color,
+    val inputBg: Color,
+    val inputBorder: Color,
+    val isDark: Boolean
+)
+
+val LocalChatColors = staticCompositionLocalOf {
+    ChatColors(
+        surface = Color(0xFFF8F9FF),
+        cardBg = Color.White,
+        cardBgElevated = Color.White,
+        topBarBg = Color.White,
+        bottomBarBg = Color.White,
+        hairline = Color(0xFFF3F4F6),
+        border = Color(0xFFE5E7EB),
+        primary = Color(0xFF3858D1),
+        primaryLight = Color(0xFFEFF4FF),
+        ink = Color(0xFF1F2937),
+        inkSoft = Color(0xFF4B5563),
+        inkFaint = Color(0xFF9CA3AF),
+        userBubble = Color(0xFF3858D1),
+        userBubbleText = Color.White,
+        aiBubble = Color.White,
+        aiBubbleText = Color(0xFF4B5563),
+        inputBg = Color(0xFFF8F9FF),
+        inputBorder = Color(0xFFE5E7EB),
+        isDark = false
+    )
+}
+
+@Composable
+fun rememberChatColors(isDark: Boolean = com.lullabyai.app.ui.theme.LocalDarkTheme.current): ChatColors {
+    return remember(isDark) {
+        if (isDark) {
+            ChatColors(
+                surface = Color(0xFF12141C),
+                cardBg = Color(0xFF1C202B),
+                cardBgElevated = Color(0xFF242938),
+                topBarBg = Color(0xFF171A23),
+                bottomBarBg = Color(0xFF171A23),
+                hairline = Color(0xFF2A303F),
+                border = Color(0xFF343B4E),
+                primary = Color(0xFF7B96FF),
+                primaryLight = Color(0xFF1E2845),
+                ink = Color(0xFFF3F5FA),
+                inkSoft = Color(0xFFCBD1DE),
+                inkFaint = Color(0xFF8F96A8),
+                userBubble = Color(0xFF3858D1),
+                userBubbleText = Color.White,
+                aiBubble = Color(0xFF1C202B),
+                aiBubbleText = Color(0xFFE5E8F2),
+                inputBg = Color(0xFF161922),
+                inputBorder = Color(0xFF2E3546),
+                isDark = true
+            )
+        } else {
+            ChatColors(
+                surface = Color(0xFFF8F9FF),
+                cardBg = Color.White,
+                cardBgElevated = Color.White,
+                topBarBg = Color.White,
+                bottomBarBg = Color.White,
+                hairline = Color(0xFFF3F4F6),
+                border = Color(0xFFE5E7EB),
+                primary = Color(0xFF3858D1),
+                primaryLight = Color(0xFFEFF4FF),
+                ink = Color(0xFF1F2937),
+                inkSoft = Color(0xFF4B5563),
+                inkFaint = Color(0xFF9CA3AF),
+                userBubble = Color(0xFF3858D1),
+                userBubbleText = Color.White,
+                aiBubble = Color.White,
+                aiBubbleText = Color(0xFF4B5563),
+                inputBg = Color(0xFFF8F9FF),
+                inputBorder = Color(0xFFE5E7EB),
+                isDark = false
+            )
+        }
+    }
+}
+
+// Backward-compatible fallback references
 internal val StitchPrimary = Color(0xFF3858D1)
 internal val StitchPrimaryLight = Color(0xFFEFF4FF)
 internal val StitchSurface = Color(0xFFF8F9FF)
@@ -65,8 +164,10 @@ fun CompanionCard(
     onFood: () -> Unit,
     onSleep: () -> Unit,
     modifier: Modifier = Modifier,
-    onPet: () -> Unit = {}
+    onPet: () -> Unit = {},
+    garments: List<Int> = emptyList()
 ) {
+    val chatColors = LocalChatColors.current
     val transition = rememberInfiniteTransition(label = "companion")
     // Stitch: @keyframes pulse-soft — the tint behind the mascot breathes over 3s.
     val pulse by transition.animateFloat(
@@ -79,9 +180,10 @@ fun CompanionCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(10.dp, RoundedCornerShape(40.dp), spotColor = StitchPrimary.copy(0.18f))
+                .shadow(if (chatColors.isDark) 0.dp else 10.dp, RoundedCornerShape(40.dp), spotColor = chatColors.primary.copy(0.18f))
                 .clip(RoundedCornerShape(40.dp))
-                .background(Color.White)
+                .background(chatColors.cardBg)
+                .border(if (chatColors.isDark) 1.dp else 0.dp, chatColors.border, RoundedCornerShape(40.dp))
                 .padding(16.dp)
                 .padding(bottom = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -91,15 +193,15 @@ fun CompanionCard(
                     modifier = Modifier
                         .size(128.dp)
                         .clip(RoundedCornerShape(32.dp))
-                        .background(Brush.linearGradient(listOf(StitchPrimaryLight, Color.White)))
-                        .border(4.dp, Color.White, RoundedCornerShape(32.dp)),
+                        .background(Brush.linearGradient(listOf(chatColors.primaryLight, chatColors.cardBg)))
+                        .border(4.dp, chatColors.cardBg, RoundedCornerShape(32.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         Modifier
                             .matchParentSize()
                             .alpha(pulse)
-                            .background(StitchPrimary.copy(0.05f))
+                            .background(chatColors.primary.copy(0.05f))
                     )
                     // น้องรัก is the only mascot with measured mouth coordinates, so it is the only
                     // one that can wear the painted talking face while TTS speaks (see AiAvatar.kt).
@@ -112,6 +214,7 @@ fun CompanionCard(
                         art = mascot.rigArt(),
                         mood = emotion.toMood(isSpeaking),
                         speaking = isSpeaking,
+                        garments = garments,
                         onTap = onPet,
                         modifier = Modifier.size(132.dp)
                     )
@@ -146,13 +249,14 @@ private fun CareButton(
     border: Color,
     onClick: () -> Unit
 ) {
+    val chatColors = LocalChatColors.current
     Box(
         modifier = Modifier
             .size(36.dp)
-            .shadow(3.dp, CircleShape)
+            .shadow(if (chatColors.isDark) 0.dp else 3.dp, CircleShape)
             .clip(CircleShape)
-            .background(Color.White)
-            .border(1.dp, border, CircleShape)
+            .background(chatColors.cardBg)
+            .border(1.dp, if (chatColors.isDark) chatColors.border else border, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -162,41 +266,42 @@ private fun CareButton(
 
 @Composable
 private fun BondingMeter(level: Int, percent: Int) {
+    val chatColors = LocalChatColors.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(
-                    Modifier.size(24.dp).clip(CircleShape).background(Color(0xFFFDF2F8)),
+                    Modifier.size(24.dp).clip(CircleShape).background(if (chatColors.isDark) Color(0xFF3B1E2B) else Color(0xFFFDF2F8)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Filled.Favorite, null, tint = Color(0xFFEC4899), modifier = Modifier.size(14.dp))
                 }
-                Text("ความผูกพัน", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = StitchInkSoft)
+                Text("ความผูกพัน", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = chatColors.inkSoft)
             }
             Spacer(Modifier.weight(1f))
-            Text("Lv.", fontSize = 12.sp, color = StitchInkFaint, fontWeight = FontWeight.Medium)
+            Text("Lv.", fontSize = 12.sp, color = chatColors.inkFaint, fontWeight = FontWeight.Medium)
             Spacer(Modifier.width(3.dp))
-            Text("$level", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = StitchPrimary)
+            Text("$level", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = chatColors.primary)
         }
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(10.dp)
                 .clip(RoundedCornerShape(50))
-                .background(StitchHairline)
+                .background(chatColors.hairline)
         ) {
             Box(
                 Modifier
                     .fillMaxWidth(percent.coerceIn(0, 100) / 100f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(50))
-                    .background(Brush.horizontalGradient(listOf(StitchPrimary, Color(0xFF60A5FA))))
+                    .background(Brush.horizontalGradient(listOf(chatColors.primary, Color(0xFF60A5FA))))
             )
         }
         Text(
             "รู้ใจน้องไปแล้ว $percent%",
             fontSize = 10.sp,
-            color = StitchInkFaint,
+            color = chatColors.inkFaint,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -206,6 +311,7 @@ private fun BondingMeter(level: Int, percent: Int) {
 
 @Composable
 private fun StatusPill(text: String, modifier: Modifier = Modifier) {
+    val chatColors = LocalChatColors.current
     val transition = rememberInfiniteTransition(label = "ping")
     val pingScale by transition.animateFloat(
         initialValue = 1f, targetValue = 2f,
@@ -220,10 +326,10 @@ private fun StatusPill(text: String, modifier: Modifier = Modifier) {
 
     Row(
         modifier = modifier
-            .shadow(4.dp, RoundedCornerShape(50))
+            .shadow(if (chatColors.isDark) 0.dp else 4.dp, RoundedCornerShape(50))
             .clip(RoundedCornerShape(50))
-            .background(Color.White)
-            .border(1.dp, StitchHairline, RoundedCornerShape(50))
+            .background(chatColors.cardBg)
+            .border(1.dp, chatColors.border, RoundedCornerShape(50))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -235,7 +341,7 @@ private fun StatusPill(text: String, modifier: Modifier = Modifier) {
             )
             Box(Modifier.size(10.dp).background(Color(0xFF22C55E), CircleShape))
         }
-        Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = StitchInkSoft, maxLines = 1)
+        Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = chatColors.inkSoft, maxLines = 1)
     }
 }
 
@@ -254,14 +360,17 @@ fun CompanionStrip(
     bondingLevel: Int,
     bondingPercent: Int,
     onCall: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    garments: List<Int> = emptyList()
 ) {
+    val chatColors = LocalChatColors.current
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(4.dp, RoundedCornerShape(24.dp), spotColor = StitchPrimary.copy(0.15f))
+            .shadow(if (chatColors.isDark) 0.dp else 4.dp, RoundedCornerShape(24.dp), spotColor = chatColors.primary.copy(0.15f))
             .clip(RoundedCornerShape(24.dp))
-            .background(Color.White)
+            .background(chatColors.cardBg)
+            .border(if (chatColors.isDark) 1.dp else 0.dp, chatColors.border, RoundedCornerShape(24.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -270,7 +379,7 @@ fun CompanionStrip(
             Modifier
                 .size(56.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(Brush.linearGradient(listOf(StitchPrimaryLight, Color.White)))
+                .background(Brush.linearGradient(listOf(chatColors.primaryLight, chatColors.cardBg)))
         ) {
             // The minimised bar is the same living companion as the big card, not a thumbnail of
             // it — same rig, same moods, so greeting still reads as a greeting down here.
@@ -278,29 +387,30 @@ fun CompanionStrip(
                 art = mascot.rigArt(),
                 mood = emotion.toMood(isSpeaking),
                 speaking = isSpeaking,
+                garments = garments,
                 modifier = Modifier.fillMaxSize()
             )
         }
 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(statusText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = StitchInk, maxLines = 1)
+            Text(statusText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = chatColors.ink, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(
                     Modifier
                         .weight(1f)
                         .height(6.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(StitchHairline)
+                        .background(chatColors.hairline)
                 ) {
                     Box(
                         Modifier
                             .fillMaxWidth(bondingPercent.coerceIn(0, 100) / 100f)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(50))
-                            .background(Brush.horizontalGradient(listOf(StitchPrimary, Color(0xFF60A5FA))))
+                            .background(Brush.horizontalGradient(listOf(chatColors.primary, Color(0xFF60A5FA))))
                     )
                 }
-                Text("Lv.$bondingLevel", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = StitchPrimary)
+                Text("Lv.$bondingLevel", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = chatColors.primary)
             }
         }
 
@@ -308,7 +418,7 @@ fun CompanionStrip(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(StitchPrimary)
+                .background(chatColors.primary)
                 .clickable(onClick = onCall),
             contentAlignment = Alignment.Center
         ) {
@@ -325,11 +435,12 @@ fun CompanionCtaRow(
     onCall: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val chatColors = LocalChatColors.current
     Row(modifier = modifier.widthIn(max = 280.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         GradientCta(
             gradient = listOf(Color(0xFFA855F7), Color(0xFF4F46E5)),
-            iconBg = Color(0xFFF5F3FF),
-            iconTint = Color(0xFF9333EA),
+            iconBg = if (chatColors.isDark) Color(0xFF2E1C4E) else Color(0xFFF5F3FF),
+            iconTint = if (chatColors.isDark) Color(0xFFC084FC) else Color(0xFF9333EA),
             icon = Icons.Filled.MenuBook,
             label = "โหมดเล่านิทาน",
             // The gradient border is the affordance; a filled interior marks it as the active mode.
@@ -338,9 +449,9 @@ fun CompanionCtaRow(
             modifier = Modifier.weight(1f)
         )
         GradientCta(
-            gradient = listOf(StitchPrimary, Color(0xFF2563EB)),
-            iconBg = StitchPrimaryLight,
-            iconTint = StitchPrimary,
+            gradient = listOf(chatColors.primary, Color(0xFF2563EB)),
+            iconBg = chatColors.primaryLight,
+            iconTint = chatColors.primary,
             icon = Icons.Filled.Call,
             label = "โทรคุย",
             active = false,
@@ -361,6 +472,7 @@ private fun GradientCta(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val chatColors = LocalChatColors.current
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
@@ -372,7 +484,7 @@ private fun GradientCta(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(if (active) iconBg else Color.White)
+                .background(if (active) iconBg else chatColors.cardBg)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -383,7 +495,7 @@ private fun GradientCta(
             ) {
                 Icon(icon, null, tint = iconTint, modifier = Modifier.size(18.dp))
             }
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = StitchInk, maxLines = 1)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = chatColors.ink, maxLines = 1)
         }
     }
 }
@@ -395,18 +507,19 @@ fun SuggestionChip(
     label: String,
     onClick: () -> Unit
 ) {
+    val chatColors = LocalChatColors.current
     Row(
         modifier = Modifier
-            .shadow(1.dp, RoundedCornerShape(50))
+            .shadow(if (chatColors.isDark) 0.dp else 1.dp, RoundedCornerShape(50))
             .clip(RoundedCornerShape(50))
-            .background(Color.White)
-            .border(1.dp, StitchHairline, RoundedCornerShape(50))
+            .background(chatColors.cardBg)
+            .border(1.dp, chatColors.border, RoundedCornerShape(50))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(icon, null, tint = StitchInkSoft, modifier = Modifier.size(14.dp))
-        Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = StitchInkSoft)
+        Icon(icon, null, tint = chatColors.inkSoft, modifier = Modifier.size(14.dp))
+        Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = chatColors.inkSoft)
     }
 }

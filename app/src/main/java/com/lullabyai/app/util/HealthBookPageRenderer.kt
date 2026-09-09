@@ -39,8 +39,8 @@ object HealthBookPageRenderer {
     private const val INK = "#17307A"       // filled-in values
     private const val INK_SOFT = "#33477F"  // table cell text
 
-    /** Decoded once per process: eight sheets each decoding a background is eight needless copies. */
-    private val bitmapCache = mutableMapOf<Int, Bitmap?>()
+    /** Decoded and cached with LRU eviction to prevent OutOfMemory on lower-RAM devices. */
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(6) {}
 
     fun draw(c: Canvas, ctx: Context, book: HealthBook, index: Int) {
         val page = book.pages.getOrNull(index) ?: return
@@ -201,13 +201,13 @@ object HealthBookPageRenderer {
     // =========================================================================================
 
     private fun background(c: Canvas, ctx: Context, resId: Int) {
-        val bmp = bitmapCache.getOrPut(resId) {
-            runCatching {
-                BitmapFactory.decodeResource(ctx.resources, resId, BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.RGB_565   // opaque page art: half the memory
-                })
-            }.getOrNull()
-        }
+        val bmp = bitmapCache.get(resId) ?: runCatching {
+            BitmapFactory.decodeResource(ctx.resources, resId, BitmapFactory.Options().apply {
+                inScaled = false                            // Exact native pixels, prevent density blow-up on xxxhdpi
+                inPreferredConfig = Bitmap.Config.RGB_565   // opaque page art: half the memory
+            })
+        }.getOrNull()?.also { bitmapCache.put(resId, it) }
+
         if (bmp == null) {
             // Never leave a blank sheet: without the artwork the data would print onto nothing.
             c.drawColor(Color.WHITE)

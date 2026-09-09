@@ -2872,3 +2872,59 @@ User: if there are many questions, show **all of them at once**; also make sure 
 - **Banner:** count + mixed subject (`Fifa และคุณ` when both) + first two question teasers; CTA **ตอบทั้งหมด**.
 - **Cap:** the old 3/day one-question counter is no longer used for this form. `ChildUiState.infoAsks` replaced `infoAsk`.
 - Incomplete-info card and chat NEED_INFO still unchanged.
+
+---
+
+## 2026-09-07 — Caregiver Handoff (Codex, implementation awaiting rollout)
+
+User approved Caregiver Handoff. Added `data/handoff/CareHandoff.kt`,
+`HandoffRepository`, `HandoffViewModel`, `HandoffScreen`, `HandoffHomeCard`,
+and a child-ID route linked from Child Home and Care Circle. Existing uncommitted
+work was preserved. Send/accept/decline/cancel/checklist/complete/acknowledge states,
+local drafts, optional return presets, recent-care context and participant history.
+
+Migration `20260907074602_caregiver_handoff.sql`: two RLS tables, server-validated
+RPC transitions, per-child open-handoff uniqueness, retry idempotency, audit events,
+inbox notifications. Context uses current view_health/view_appointments permissions;
+no copied health snapshots. Direct handoff writes are denied to clients. A revoked
+participant's stale open handoff can be cancelled by the next valid send.
+
+SQL lifecycle/access test ran with synthetic fixtures in a rolled-back transaction.
+Final Gradle unit-test/build run passed after all UI changes (124 tests, zero failures/errors).
+No device connected; no two-device or
+visual QA. Production migration NOT applied; app NOT published. No FCM exists in
+this project, so notifications here are inbox entries, not closed-app push delivery.
+Read `docs/CAREGIVER_HANDOFF.md` for rollout steps and remaining limitations.
+
+### BATCH BG — nongrak-web type system + section bands (2026-08-24, Claude)
+
+**Two separate live sites — do not confuse them:**
+- `nongrak-ai.vercel.app` — the static marketing site (`Child-Project/Website/Site/index.html`, Vercel project `nongrak-ai`).
+- `nongrak-web.vercel.app` — the Next.js 16 **app** built in a later ChatGPT session (`D:\Claude-Access\nongrak-web`, Vercel project `nongrak-web`, org `team_gfRqbcv5oOWtNyTcHpFvfwho`). Supabase auth + LINE LIFF login, dashboard, child records/health/booking, plus its own Thai landing page (`src/app/page.tsx` 475 lines + `home.module.css`).
+
+This batch touched **nongrak-web only** (user picked it).
+
+| # | Change |
+|---|--------|
+| 1 | **Display font added.** Was Noto Sans Thai alone for everything. Added **Anuphan** (geometric Thai/Latin, weights 500/600/700) via `next/font/google` as `--font-display`; Noto Sans Thai kept as `--font-body`. Both exposed as CSS variables on `<body>`. h1–h3 + `.eyebrow` use the display face; body copy unchanged. h2 now `clamp(28px,3.4vw,44px)`. |
+| 2 | **Section separation (the "big company" ask).** Page was one continuous `#f6f8fe` wash with every section at `padding:86px 40px` — nothing marked where one section ended. Now alternating **full-bleed bands**: white (`.featureSection`,`.getStarted`), tinted `--nr-blue-soft` (`.faq`), dark `--nr-ink` with inverted text (`.release`). Vertical rhythm `clamp(72px,8vw,128px)`. Hairline top rule on light bands so light-on-light seams stay visible. |
+| 3 | **Full-bleed technique (no JSX edits):** section keeps its 1200px measure; background bleeds edge-to-edge via `box-shadow:0 0 0 100vmax <color>` + `clip-path:inset(0 -100vmax)`. The clip stops horizontal overflow. Rules **appended at the end of `home.module.css`** deliberately, so they beat the earlier mobile media-query blocks at equal specificity — keep new overrides at the bottom. |
+
+**Gotcha hit:** `launch.json` keeps a dev server on **port 3000**, so `npm run start` fails `EADDRINUSE` and curl silently hits the *old* dev build. Verify prod builds on a free port (used 3100).
+
+**Verified:** `npm run build` green (15 routes); live CSS chunks show Anuphan/`--font-display` (19 refs) and `100vmax` bands (7 refs); `nongrak-web.vercel.app` HTTP 200.
+
+### BATCH BH — nongrak-web contact section + motion polish (2026-09-09, Claude)
+
+Applies to **nongrak-web** (Next.js app), not the static marketing site.
+
+| # | Change |
+|---|--------|
+| 1 | **New `src/components/landing/ContactSection.tsx`** (client component) — the landing had no contact section at all, only a footer. Three *separate question-led* destinations, ported from the old static site's pattern: "อยากเป็นผู้ทดสอบใช่ไหม? สมัครตรงนี้เลย" (accent/pink, the primary action), "มีคำถามหรือข้อเสนอแนะ? เขียนมาได้เลย" (name/email/message), "อยากคุยกับแอดมินโดยตรง? อีเมลหาเราได้" (mailto). Rendered before `<footer>`; `#contact` added to nav + footer links. |
+| 2 | **Forms are real, reusing proven endpoints.** Email via FormSubmit AJAX (`formsubmit.co/ajax/julachok2@gmail.com`, subjects "NongRak Tester Signup" / "NongRak Contact") — CORS-safe, so plain `fetch` works. Sheet logging via the SAME hidden-iframe form POST trick as the static site (Apps Script 302 makes browsers replay the POST as GET and drop the body — `fetch` records nothing). Sheet write is fire-and-forget so a sheet failure never costs the user their message. |
+| 3 | **Animations.** Reused ChatGPT's existing `MotionShell` (IntersectionObserver reveal, honors `prefers-reduced-motion`, has a pause toggle) rather than adding a library — the three cards use `data-reveal` + `data-delay` 0/90/180 for a staggered entrance. Added hover language: card lift + shadow, icon `scale(1.08) rotate(-6deg)`, button lift/press, focus rings on inputs, nav/login hover — all inside `@media (prefers-reduced-motion: no-preference)`. |
+| 4 | `.contact` uses the same full-bleed band technique as BATCH BG (`box-shadow: 0 0 0 100vmax` + `clip-path`), tinted `--nr-blue-soft`, with a hairline top rule. |
+
+**Verified:** `npm run build` compiled clean; prod server on port 3200 (NOT 3000 — see BG gotcha, launch.json holds a dev server there) rendered 1 contact section, 3 cards, 23 reveal targets; live `nongrak-web.vercel.app` 200 with the same counts.
+
+**Still open:** the Apps Script v3 (Reviews tab + moderation) was never confirmed redeployed by the user, so sheet rows may land in the older flat tab. Email delivery is unaffected.

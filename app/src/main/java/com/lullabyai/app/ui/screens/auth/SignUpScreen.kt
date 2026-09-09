@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -75,11 +76,6 @@ fun SignUpScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        LanguageToggleButton(
-            isThai = settings.language == AppLanguage.TH,
-            onToggle = { settingsViewModel.toggleLanguage() },
-            modifier = Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(20.dp)
-        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -88,7 +84,7 @@ fun SignUpScreen(
                 .systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(56.dp))
 
             Box(
                 modifier = Modifier.size(72.dp).clip(CircleShape).background(Primary),
@@ -120,7 +116,7 @@ fun SignUpScreen(
                         OutlinedTextField(
                             value = fullName, onValueChange = { fullName = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("ป้อนชื่อและนามสกุลของคุณ", color = Outline) },
+                            placeholder = { Text(if (s.isThai) "ป้อนชื่อและนามสกุลของคุณ" else "Enter your full name", color = Outline) },
                             leadingIcon = { Icon(Icons.Filled.Person, null, tint = Outline) },
                             singleLine = true, shape = RoundedCornerShape(12.dp),
                             colors = fieldColors()
@@ -158,7 +154,7 @@ fun SignUpScreen(
                         OutlinedTextField(
                             value = password, onValueChange = { password = it; passwordMismatch = false },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("อย่างน้อย 8 ตัวอักษร", color = Outline) },
+                            placeholder = { Text(if (s.isThai) "อย่างน้อย 8 ตัวอักษร" else "At least 8 characters", color = Outline) },
                             leadingIcon = { Icon(Icons.Filled.Lock, null, tint = Outline) },
                             trailingIcon = {
                                 IconButton(onClick = { showPassword = !showPassword }) {
@@ -179,7 +175,7 @@ fun SignUpScreen(
                         OutlinedTextField(
                             value = confirmPassword, onValueChange = { confirmPassword = it; passwordMismatch = false },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("ยืนยันรหัสผ่านอีกครั้ง", color = Outline) },
+                            placeholder = { Text(if (s.isThai) "ยืนยันรหัสผ่านอีกครั้ง" else "Re-enter your password", color = Outline) },
                             leadingIcon = { Icon(Icons.Filled.LockReset, null, tint = Outline) },
                             trailingIcon = {
                                 IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
@@ -310,12 +306,27 @@ fun SignUpScreen(
             Spacer(Modifier.height(32.dp))
         }
 
-        // Back to Welcome — placed last so it draws on top of the scrollable Column and gets taps
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.TopStart).systemBarsPadding().padding(4.dp)
+        // Top bar actions: Back and Language Toggle — placed last so they draw on top of the scrollable Column and receive all taps
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "กลับ", tint = Primary)
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = if (s.isThai) "ย้อนกลับ" else "Back",
+                    tint = Primary
+                )
+            }
+            LanguageToggleButton(
+                isThai = settings.language == AppLanguage.TH,
+                onToggle = { settingsViewModel.toggleLanguage() }
+            )
         }
     }
 }

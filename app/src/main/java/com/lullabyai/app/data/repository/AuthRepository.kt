@@ -388,13 +388,22 @@ class AuthRepository {
         }.decodeSingle<Profile>()
     }
 
-    suspend fun updateProfile(username: String?, fullName: String?, avatarUrl: String?, relationship: String? = null): Result<Unit> = runCatching {
+    suspend fun updateProfile(
+        username: String?,
+        fullName: String?,
+        avatarUrl: String?,
+        relationship: String? = null,
+        phone: String? = null,
+        address: String? = null
+    ): Result<Unit> = runCatching {
         val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
-        val updates = buildMap<String, Any?> {
-            username?.let { put("username", it) }
-            fullName?.let { put("full_name", it) }
-            avatarUrl?.let { put("avatar_url", it) }
-            relationship?.let { put("relationship", it) }
+        val updates = buildJsonObject {
+            username?.let { put("username", JsonPrimitive(it)) }
+            fullName?.let { put("full_name", JsonPrimitive(it)) }
+            avatarUrl?.let { put("avatar_url", JsonPrimitive(it)) }
+            relationship?.let { put("relationship", JsonPrimitive(it)) }
+            phone?.let { put("phone", JsonPrimitive(it)) }
+            address?.let { put("address", JsonPrimitive(it)) }
         }
         supabase.from("profiles").update(updates) {
             filter { eq("id", userId) }
@@ -432,6 +441,19 @@ class AuthRepository {
         supabase.from("profiles").update(buildJsonObject {
             put("ai_training_consent", JsonPrimitive(value))
             put("ai_training_consent_at", if (value) JsonPrimitive(java.time.Instant.now().toString()) else JsonNull)
+        }) {
+            filter { eq("id", userId) }
+        }
+    }
+
+    /**
+     * Toggles 2FA on the user's profile in Supabase.
+     */
+    suspend fun setTwoFactorEnabled(value: Boolean): Result<Unit> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        supabase.from("profiles").update(buildJsonObject {
+            put("two_factor_enabled", JsonPrimitive(value))
+            put("two_factor_enabled_at", if (value) JsonPrimitive(java.time.Instant.now().toString()) else JsonNull)
         }) {
             filter { eq("id", userId) }
         }

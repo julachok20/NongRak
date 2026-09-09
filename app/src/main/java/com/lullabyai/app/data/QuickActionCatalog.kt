@@ -562,6 +562,18 @@ object QuickActionCatalog {
             subtitleEn = "Photo journal & memories"
         ),
         QuickAction(
+            route = Screen.ChildDiaryReadBook.route,
+            labelTh = "เปิดอ่าน E-Book & คลิปสรุป AI",
+            labelEn = "Read Chronicle & AI Recap",
+            icon = Icons.Filled.MenuBook,
+            keywords = "read book chronicle recap clip video ตัดต่อ วิดีโอ ไฮไลท์ ig tiktok share",
+            category = QuickActionCategory.TOOLS,
+            iconTint = Color(0xFF1E88E5),
+            iconBg = Color(0xFFE3F2FD),
+            subtitleTh = "ไฮไลท์ความทรงจำ ตัดต่อคลิป & แชร์",
+            subtitleEn = "Interactive book & video recap"
+        ),
+        QuickAction(
             route = Screen.Expenses.route,
             labelTh = "บันทึกค่าใช้จ่ายลูกน้อย",
             labelEn = "Child Expenses Log",

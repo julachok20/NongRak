@@ -169,7 +169,7 @@ class ChatViewModel : ViewModel() {
     private var activePersona: String? = null
 
     /** Which companion is on screen, so feeding the child can feed the right one. */
-    private var activeMascot: String? = null
+    private var activeMascot: String? = "nongrak"
 
     fun setPersona(persona: String?) {
         activePersona = persona
@@ -271,6 +271,7 @@ class ChatViewModel : ViewModel() {
         val sessionId = _uiState.value.currentSessionId ?: return
         val roster = family.ifEmpty { listOfNotNull(child) }
         lastFamily = roster
+        val targetChild = ChildMention.resolve(content, roster, fallback = child) ?: child
         val bubbleText = content.ifBlank {
             if (audioBytes != null) (if (isThai) "[ข้อความเสียง]" else "[Voice message]") else content
         }
@@ -288,10 +289,11 @@ class ChatViewModel : ViewModel() {
         )
         viewModelScope.launch {
             repo.sendMessage(
-                sessionId, outgoing, child, imageBytes, imageMime,
+                sessionId, outgoing, targetChild, imageBytes, imageMime,
                 audioBytes, audioMime,
                 _uiState.value.parentRelationship, persona ?: activePersona, isThai,
-                family = roster
+                family = roster,
+                mascotKey = activeMascot
             )
                 .onSuccess { response ->
                     // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
@@ -399,12 +401,16 @@ class ChatViewModel : ViewModel() {
     fun answerNeedInfo(messageId: String, answer: String, child: Child?) {
         val request = _uiState.value.messages.find { it.id == messageId }?.needInfo
         dismissNeedInfo(messageId)
-        if (child != null && request != null && answer.isNotBlank()) {
+        val targetChild = lastFamily.find { c ->
+            request?.question?.contains(c.name, ignoreCase = true) == true ||
+                request?.fieldLabel?.contains(c.name, ignoreCase = true) == true
+        } ?: child
+        if (targetChild != null && request != null && answer.isNotBlank()) {
             viewModelScope.launch {
-                autoFillHealthBookFromAnswer(child.id, request, answer)
+                autoFillHealthBookFromAnswer(targetChild.id, request, answer)
             }
         }
-        if (answer.isNotBlank()) sendMessage(answer, child, family = lastFamily)
+        if (answer.isNotBlank()) sendMessage(answer, targetChild, family = lastFamily)
     }
 
     private suspend fun autoFillHealthBookFromAnswer(

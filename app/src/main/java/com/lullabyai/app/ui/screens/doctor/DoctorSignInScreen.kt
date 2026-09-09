@@ -49,7 +49,8 @@ import com.lullabyai.app.viewmodel.AuthViewModel
 @Composable
 fun DoctorSignInScreen(
     authViewModel: AuthViewModel,
-    navController: NavController
+    navController: NavController,
+    settingsViewModel: com.lullabyai.app.viewmodel.SettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val uiState by authViewModel.uiState.collectAsState()
     val s = LocalStrings.current
@@ -91,7 +92,16 @@ fun DoctorSignInScreen(
             LullabyTopBar(
                 title = if (isThai) "เข้าสู่ระบบแพทย์" else "Doctor Sign In",
                 onBack = { navController.popBackStack() },
-                navController = navController
+                navController = navController,
+                showNotification = false,
+                showProfile = false,
+                actions = {
+                    com.lullabyai.app.ui.components.LanguageToggleButton(
+                        isThai = isThai,
+                        onToggle = { settingsViewModel.toggleLanguage() },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

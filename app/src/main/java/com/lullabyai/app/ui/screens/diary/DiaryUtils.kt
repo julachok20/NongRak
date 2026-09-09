@@ -92,7 +92,7 @@ $descPart
  */
 fun exportMemoryToSocial(
     context: Context,
-    platform: String, // "tiktok", "instagram", "youtube_shorts", "general"
+    platform: String, // "tiktok", "instagram", "instagram_story", "facebook", "youtube_shorts", "general"
     title: String?,
     description: String?,
     date: String?,
@@ -105,17 +105,31 @@ fun exportMemoryToSocial(
     mascotResId: Int? = null,
     mascotPosition: MascotPosition? = null
 ) {
-    val platformPackage = when (platform.lowercase()) {
-        "tiktok" -> "com.zhiliaoapp.musically"
-        "instagram" -> "com.instagram.android"
-        "youtube_shorts", "youtube" -> "com.google.android.youtube"
+    val pm = context.packageManager
+    val isTikTok = platform.lowercase() == "tiktok"
+    val isInstagram = platform.lowercase().startsWith("instagram")
+    val isFacebook = platform.lowercase() == "facebook"
+    val isYoutube = platform.lowercase().contains("youtube")
+
+    val platformPackage = when {
+        isTikTok -> {
+            val mainPkg = "com.zhiliaoapp.musically"
+            val seaPkg = "com.ss.android.ugc.trill"
+            val hasMain = try { pm.getPackageInfo(mainPkg, 0); true } catch (_: Exception) { false }
+            val hasSea = try { pm.getPackageInfo(seaPkg, 0); true } catch (_: Exception) { false }
+            if (hasMain) mainPkg else if (hasSea) seaPkg else mainPkg
+        }
+        isInstagram -> "com.instagram.android"
+        isFacebook -> "com.facebook.katana"
+        isYoutube -> "com.google.android.youtube"
         else -> null
     }
 
-    val platformName = when (platform.lowercase()) {
-        "tiktok" -> "TikTok"
-        "instagram" -> "Instagram"
-        "youtube_shorts", "youtube" -> "YouTube Shorts"
+    val platformName = when {
+        isTikTok -> "TikTok"
+        isInstagram -> "Instagram"
+        isFacebook -> "Facebook"
+        isYoutube -> "YouTube Shorts"
         else -> if (isThai) "แชร์" else "Share"
     }
 
@@ -135,14 +149,10 @@ fun exportMemoryToSocial(
                     )
                     finalMime = "image/jpeg"
                 } else if (mimeType.startsWith("video/")) {
-                    // Re-encoding a video takes real seconds, unlike the old byte-copy that
-                    // returned instantly. Without this the app looks frozen between tapping
-                    // Export and the share sheet appearing.
                     Toast.makeText(
                         context,
-                        if (isThai) "กำลังใส่ลายน้ำ..."
-                        else "Adding watermark and outro...",
-                        Toast.LENGTH_LONG
+                        if (isThai) "กำลังเตรียมวิดีโอ..." else "Preparing video...",
+                        Toast.LENGTH_SHORT
                     ).show()
                     finalMediaUri = NongRakMediaWatermarkEngine.prepareWatermarkedVideoForExport(
                         context = context,
@@ -152,7 +162,12 @@ fun exportMemoryToSocial(
                         isThai = isThai,
                         aspectRatio = aspectRatio,
                         mascotResId = mascotResId,
-                        mascotPosition = mascotPosition
+                        mascotPosition = mascotPosition,
+                        // Video is branded when it is MADE, in the studio - every clip now passes
+                        // through the editor on the way in. Stamping again here laid a second,
+                        // differently-designed badge over the first. Stills keep their export-time
+                        // badge, because a photo never goes through the studio.
+                        watermark = false
                     )
                     finalMime = "video/mp4"
                 }
@@ -162,6 +177,20 @@ fun exportMemoryToSocial(
         }
 
         val shareText = createNongRakShareText(title, description, date, isThai)
+
+        // Copy caption to clipboard so user can immediately paste it into TikTok / Instagram Story / Post
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("NongRak AI Caption", shareText)
+            clipboard?.setPrimaryClip(clip)
+            Toast.makeText(
+                context,
+                if (isThai) "คัดลอกแคปชั่นแล้ว พร้อมวางใน $platformName ได้ทันที 📋"
+                else "Caption copied! Ready to paste in $platformName 📋",
+                Toast.LENGTH_SHORT
+            ).show()
+        } catch (_: Exception) {}
+
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = if (finalMediaUri != null && finalMime != null) finalMime else "text/plain"
             putExtra(Intent.EXTRA_TEXT, shareText)
@@ -188,7 +217,7 @@ fun exportMemoryToSocial(
             } catch (_: Exception) {
                 Toast.makeText(
                     context,
-                    if (isThai) "ไม่สามารถเปิดแอปสำหรับแชร์ได้" else "Unable to open share target",
+                    if (isThai) "ไม่สามารถเปิดแอป $platformName สำหรับแชร์ได้" else "Unable to open $platformName",
                     Toast.LENGTH_SHORT
                 ).show()
             }

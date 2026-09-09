@@ -1,6 +1,7 @@
 package com.lullabyai.app.ui.mascot
 
 import androidx.annotation.DrawableRes
+import com.lullabyai.app.R
 
 /**
  * What a companion can wear, and how far it has to be raised first.
@@ -15,7 +16,13 @@ import androidx.annotation.DrawableRes
  */
 enum class WardrobeSlot {
     /** Worn on the body. One at a time. */
-    SHIRT
+    SHIRT,
+    /** Around the neck. Draws over the shirt. */
+    SCARF,
+    /** On the head. Draws last so it sits above everything. */
+    HAT,
+    /** Pin, bow, badge. One at a time. */
+    ACCESSORY
 }
 
 /**
@@ -44,23 +51,66 @@ data class WardrobeItem(
 
 object MascotWardrobe {
 
+    private fun skins(
+        @DrawableRes nongrak: Int,
+        @DrawableRes bunny: Int,
+        @DrawableRes coco: Int,
+        @DrawableRes pingu: Int
+    ) = mapOf(
+        MascotArt.NONGRAK to nongrak,
+        MascotArt.BUNNY to bunny,
+        MascotArt.COCO to coco,
+        MascotArt.PINGU to pingu
+    )
+
     /**
      * Every wearable in the app.
      *
-     * Empty until the garment art exists. That is deliberate rather than unfinished: the mascots
-     * already wear designed costumes, so where a shirt sits over one is a design decision, and a
-     * placeholder invented in code would be the wrong answer shipped as if it were the right one.
+     * Overlays live in `drawable-nodpi/wear_<id>_<skin>.png`, same canvas as that skin's
+     * `mascot_<skin>.png`. They go through the same skinned mesh as the body.
      *
-     * To add one, drop `wear_<item>_<skin>.png` into `res/drawable-nodpi/` — same canvas size as
-     * that skin's `mascot_<skin>.png`, registered on top of it, transparent everywhere else — and
-     * add an entry here. The garment goes through the same skinned mesh as the body, so it
-     * deforms with a bounce or a wave without any further rigging.
+     * Level 1 is on purpose: a new carer opening the closet should find something to put on,
+     * not a locked wall. Higher pieces unlock as the bond climbs — same numbers as companion
+     * unlocks (บันนี่ 2, โคโค่ 3, พิงกุ 4) so a level-up can hand over clothes and a friend together.
      */
-    val items: List<WardrobeItem> = emptyList()
+    val items: List<WardrobeItem> = listOf(
+        WardrobeItem(
+            "bow", WardrobeSlot.ACCESSORY, "โบว์ชมพู", "Pink bow", 1,
+            skins(R.drawable.wear_bow_nongrak, R.drawable.wear_bow_bunny, R.drawable.wear_bow_coco, R.drawable.wear_bow_pingu)
+        ),
+        WardrobeItem(
+            "scarf", WardrobeSlot.SCARF, "ผ้าพันคอฟ้า", "Blue scarf", 2,
+            skins(R.drawable.wear_scarf_nongrak, R.drawable.wear_scarf_bunny, R.drawable.wear_scarf_coco, R.drawable.wear_scarf_pingu)
+        ),
+        WardrobeItem(
+            "flower", WardrobeSlot.HAT, "หมวกดอกไม้", "Flower hat", 3,
+            skins(R.drawable.wear_flower_nongrak, R.drawable.wear_flower_bunny, R.drawable.wear_flower_coco, R.drawable.wear_flower_pingu)
+        ),
+        WardrobeItem(
+            "star", WardrobeSlot.ACCESSORY, "ดาวติดอก", "Star pin", 4,
+            skins(R.drawable.wear_star_nongrak, R.drawable.wear_star_bunny, R.drawable.wear_star_coco, R.drawable.wear_star_pingu)
+        ),
+        WardrobeItem(
+            "party", WardrobeSlot.SHIRT, "เสื้องานเลี้ยง", "Party shirt", 5,
+            skins(R.drawable.wear_party_nongrak, R.drawable.wear_party_bunny, R.drawable.wear_party_coco, R.drawable.wear_party_pingu)
+        ),
+        WardrobeItem(
+            "crown", WardrobeSlot.HAT, "มงกุฎทอง", "Gold crown", 6,
+            skins(R.drawable.wear_crown_nongrak, R.drawable.wear_crown_bunny, R.drawable.wear_crown_coco, R.drawable.wear_crown_pingu)
+        )
+    )
 
     fun slot(slot: WardrobeSlot): List<WardrobeItem> = items.filter { it.slot == slot }
 
     fun byId(id: String?): WardrobeItem? = id?.let { wanted -> items.firstOrNull { it.id == wanted } }
+
+    /** Pieces that become wearable when the bond climbs from [fromLevel] to [toLevel], exclusive of [fromLevel]. */
+    fun itemsUnlockedBetween(fromLevel: Int, toLevel: Int): List<WardrobeItem> =
+        items.filter { it.requiredLevel in (fromLevel + 1)..toLevel }
+
+    /** Companions that become switchable when the best bond climbs from [fromBest] to [toBest]. */
+    fun skinsUnlockedBetween(fromBest: Int, toBest: Int): List<MascotArt> =
+        MascotArt.entries.filter { skinRequiredLevel(it) in (fromBest + 1)..toBest }
 
     /**
      * Resolves what is actually worn into drawables to layer.
@@ -96,6 +146,13 @@ object MascotWardrobe {
 
     fun skinUnlocked(skin: MascotArt, bestLevel: Int): Boolean =
         bestLevel >= skinRequiredLevel(skin)
+
+    fun skinName(skin: MascotArt, isThai: Boolean): String = when (skin) {
+        MascotArt.NONGRAK -> if (isThai) "น้องรัก" else "NongRak"
+        MascotArt.BUNNY -> if (isThai) "บันนี่" else "Bunny"
+        MascotArt.COCO -> if (isThai) "โคโค่" else "Coco"
+        MascotArt.PINGU -> if (isThai) "พิงกุ" else "Pingu"
+    }
 
     /**
      * Total XP needed to be at [level].

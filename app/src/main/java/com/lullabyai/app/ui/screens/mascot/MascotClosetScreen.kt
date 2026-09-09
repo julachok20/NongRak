@@ -46,13 +46,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lullabyai.app.data.repository.MascotBond
 import com.lullabyai.app.data.repository.MascotBondRepository
+import com.lullabyai.app.data.repository.UnlockAnnouncer
 import com.lullabyai.app.data.settings.SettingsManager
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.mascot.Mascot
 import com.lullabyai.app.ui.mascot.MascotArt
 import com.lullabyai.app.ui.mascot.MascotMood
 import com.lullabyai.app.ui.mascot.MascotWardrobe
-import com.lullabyai.app.ui.mascot.WardrobeSlot
+import com.lullabyai.app.ui.mascot.UnlockBannerHost
+import com.lullabyai.app.ui.mascot.WardrobeItem
 import com.lullabyai.app.ui.theme.Primary
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -88,6 +90,9 @@ fun MascotClosetScreen(
         bonds = MascotArt.entries.associateWith { art ->
             repo.get(art.key).getOrDefault(MascotBond(art.key))
         }
+        bonds.forEach { (art, bond) ->
+            UnlockAnnouncer.consider(settings, art.key, bond.level)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -98,6 +103,7 @@ fun MascotClosetScreen(
     val bestLevel = bonds.values.maxOfOrNull { it.level } ?: 1
     val activeBond = bonds[active] ?: MascotBond(active.key)
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             LullabyTopBar(
@@ -159,43 +165,39 @@ fun MascotClosetScreen(
             }
 
             Section(if (isThai) "เสื้อผ้า" else "Outfits") {
-                val shirts = MascotWardrobe.slot(WardrobeSlot.SHIRT)
-                if (shirts.isEmpty()) {
-                    // Says what is true rather than looking broken: the rig and the unlocks are
-                    // live, only the drawings are missing.
-                    EmptyWardrobe(isThai)
-                } else {
+                MascotWardrobe.items.chunked(3).forEach { row ->
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        shirts.forEach { item ->
+                        row.forEach { item ->
                             val wearable = item.artFor(active) != null
                             OutfitCard(
-                                label = item.nameFor(isThai),
+                                item = item,
+                                art = active,
                                 requiredLevel = item.requiredLevel,
                                 unlocked = item.unlockedAt(activeBond.level) && wearable,
-                                selected = activeBond.equipped["shirt"] == item.id,
+                                selected = activeBond.equipped[item.slot.name.lowercase()] == item.id,
                                 isThai = isThai,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 scope.launch {
-                                    val worn = activeBond.equipped["shirt"] == item.id
+                                    val key = item.slot.name.lowercase()
+                                    val worn = activeBond.equipped[key] == item.id
                                     repo.equip(
                                         active.key,
-                                        WardrobeSlot.SHIRT,
+                                        item.slot,
                                         if (worn) null else item.id
                                     ).onSuccess {
                                         reload()
                                         note = null
                                     }.onFailure { e ->
-                                        // Name what was received: a silent no-op here reads as a
-                                        // broken button.
                                         note = e.message ?: "equip failed"
                                     }
                                 }
                             }
                         }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -204,6 +206,8 @@ fun MascotClosetScreen(
                 EarnList(isThai)
             }
         }
+    }
+    UnlockBannerHost(isThai, Modifier.align(Alignment.TopCenter))
     }
 }
 
@@ -314,7 +318,8 @@ private fun CompanionCard(
 
 @Composable
 private fun OutfitCard(
-    label: String,
+    item: WardrobeItem,
+    art: MascotArt,
     requiredLevel: Int,
     unlocked: Boolean,
     selected: Boolean,
@@ -324,7 +329,7 @@ private fun OutfitCard(
 ) {
     Card(
         modifier
-            .aspectRatio(0.85f)
+            .aspectRatio(0.72f)
             .then(if (unlocked) Modifier.clickable(onClick = onToggle) else Modifier)
             .then(
                 if (selected) Modifier.border(2.dp, Primary, RoundedCornerShape(14.dp))
@@ -334,34 +339,42 @@ private fun OutfitCard(
     ) {
         Box(Modifier.fillMaxSize().padding(6.dp), Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(label, fontSize = 11.sp, textAlign = TextAlign.Center)
-                if (!unlocked) {
-                    Text(
-                        if (isThai) "ระดับ $requiredLevel" else "Lv $requiredLevel",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Mascot(
+                    art = art,
+                    mood = MascotMood.IDLE,
+                    animateFace = false,
+                    garments = listOfNotNull(item.artFor(art)),
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                )
+                Text(item.nameFor(isThai), fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 1)
+                Text(
+                    if (isThai) "Lv.$requiredLevel" else "Lv.$requiredLevel",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (unlocked) Primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (!unlocked) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.72f)),
+                    Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Filled.Lock,
+                            contentDescription = if (isThai) "ยังไม่ปลดล็อก" else "Locked",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            if (isThai) "ปลดล็อก Lv.$requiredLevel" else "Unlock at Lv.$requiredLevel",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun EmptyWardrobe(isThai: Boolean) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(
-                if (isThai) "ยังไม่มีเสื้อผ้าในตู้" else "The wardrobe is empty",
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (isThai) "เสื้อผ้าชุดแรกกำลังออกแบบอยู่ ระดับความผูกพันที่สะสมไว้ตอนนี้จะยังอยู่ครบเมื่อเสื้อผ้ามาถึง"
-                else "The first outfits are still being drawn. Bond levels earned now are kept, and unlock them when they arrive.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

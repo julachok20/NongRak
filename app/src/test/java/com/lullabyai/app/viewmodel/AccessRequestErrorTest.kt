@@ -15,6 +15,22 @@ class AccessRequestErrorTest {
     @Test
     fun `known backend failures map to stable keys`() {
         assertEquals(
+            AccessRequestViewModel.ERR_REQUEST_REJECTED,
+            AccessRequestViewModel.safeError(RuntimeException("request_rejected"))
+        )
+        assertEquals(
+            AccessRequestViewModel.ERR_REQUEST_REJECTED,
+            AccessRequestViewModel.safeError(RuntimeException("request rejected"))
+        )
+        assertEquals(
+            AccessRequestViewModel.ERR_ALREADY_PENDING,
+            AccessRequestViewModel.safeError(RuntimeException("already_pending"))
+        )
+        assertEquals(
+            AccessRequestViewModel.ERR_ALREADY_PENDING,
+            AccessRequestViewModel.safeError(RuntimeException("already pending"))
+        )
+        assertEquals(
             AccessRequestViewModel.ERR_INVALID_CODE,
             AccessRequestViewModel.safeError(RuntimeException("invalid or expired code"))
         )
@@ -31,6 +47,23 @@ class AccessRequestErrorTest {
             AccessRequestViewModel.ERR_NOT_FOUND,
             AccessRequestViewModel.safeError(RuntimeException("not authorized"))
         )
+    }
+
+    @Test
+    fun `rejection lock and already pending messages are properly localized`() {
+        val rejectedTh = AccessRequestStrings.error(AccessRequestViewModel.ERR_REQUEST_REJECTED, isThai = true)
+        val rejectedEn = AccessRequestStrings.error(AccessRequestViewModel.ERR_REQUEST_REJECTED, isThai = false)
+        assertNotNull(rejectedTh)
+        assertNotNull(rejectedEn)
+        assertEquals("คำขอเชื่อมข้อมูลลูกคนนี้ถูกปฏิเสธโดยผู้ปกครองแล้ว ไม่สามารถส่งคำขอซ้ำได้", rejectedTh)
+        assertEquals("This sync request was declined by the parent and cannot be requested again", rejectedEn)
+
+        val pendingTh = AccessRequestStrings.error(AccessRequestViewModel.ERR_ALREADY_PENDING, isThai = true)
+        val pendingEn = AccessRequestStrings.error(AccessRequestViewModel.ERR_ALREADY_PENDING, isThai = false)
+        assertNotNull(pendingTh)
+        assertNotNull(pendingEn)
+        assertEquals("คุณได้ส่งคำขอเชื่อมข้อมูลสำหรับเด็กคนนี้ไปแล้ว อยู่ระหว่างรอการอนุมัติ", pendingTh)
+        assertEquals("A sync request for this child is already pending parent approval", pendingEn)
     }
 
     @Test

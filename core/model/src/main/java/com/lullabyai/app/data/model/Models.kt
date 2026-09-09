@@ -110,7 +110,12 @@ data class Profile(
     // ThaiPhone.normalize. Nullable + defaulted for the same reason as VaccineRecord.ageGroup:
     // accounts created before this field existed have no phone, and a non-nullable field makes
     // kotlinx throw on the explicit null and blanks the WHOLE profile.
-    @SerialName("phone") val phone: String? = null
+    @SerialName("phone") val phone: String? = null,
+    /** Home address for the Health Book guardian block. Optional; collected via Info Ask. */
+    val address: String? = null,
+    /** Two-factor authentication toggle: when enabled, signing into a new device requires verification from an active device. */
+    @SerialName("two_factor_enabled") val twoFactorEnabled: Boolean = false,
+    @SerialName("two_factor_enabled_at") val twoFactorEnabledAt: String? = null
 )
 
 @Serializable
@@ -187,6 +192,13 @@ data class Child(
     @SerialName("sleep_hours") val sleepHours: Double? = null,
     @SerialName("activity_level") val activityLevel: String = "moderate",
     @SerialName("blood_group") val bloodGroup: String? = null,
+    /** Birth-book fields — NongRak Health Book page 1. Null until the parent fills them (Info Ask or later). */
+    @SerialName("delivery_type") val deliveryType: String? = null,
+    @SerialName("place_of_birth") val placeOfBirth: String? = null,
+    @SerialName("gestational_weeks") val gestationalWeeks: Int? = null,
+    @SerialName("birth_weight_g") val birthWeightG: Double? = null,
+    @SerialName("birth_length_cm") val birthLengthCm: Double? = null,
+    @SerialName("birth_head_cm") val birthHeadCm: Double? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     // Explicit "confirmed no allergies" — distinct from simply having zero rows in the allergies
     // table, so the missing-info nudge can tell "not yet answered" apart from "answered: none".

@@ -71,4 +71,28 @@ object ChildMention {
         }
         return out.distinct()
     }
+
+    /**
+     * Instruction for the model when the account has more than one child.
+     *
+     * The Child Info tab's selection is a screen default for records, not the subject of the
+     * conversation. Without this, the prompt only contains that one child and every answer
+     * sounds as if the others do not exist.
+     */
+    fun familyPreamble(children: List<Child>, selected: Child?, isThai: Boolean): String {
+        if (children.size < 2) return ""
+        val names = children.joinToString(if (isThai) ", " else ", ") { it.name }
+        val tab = selected?.name?.takeIf { it.isNotBlank() }
+        return if (isThai) {
+            "ครอบครัวนี้มีลูก ${children.size} คน: $names\n" +
+                (if (tab != null) "แท็บข้อมูลลูกที่เปิดอยู่คือ $tab — นั่นเป็นแค่หน้าจอแอป ไม่ได้หมายความว่าคำถามเกี่ยวกับคนนั้น\n" else "") +
+                "พิจารณาลูกทุกคนเสมอ ถ้าผู้ใช้เอ่ยชื่อหรือพูดถึงคนใดในเสียง ให้ใช้เด็กคนนั้น " +
+                "ถ้าไม่ได้ระบุชื่อ ให้ตอบโดยคำนึงถึงทุกคน ห้ามสมมติว่าหมายถึงเด็กในแท็บข้อมูลลูก\n"
+        } else {
+            "This family has ${children.size} children: $names\n" +
+                (if (tab != null) "The Child Info tab is currently on $tab — that is only the app screen, not the subject of the question.\n" else "") +
+                "Always consider every child. If the parent names one, use that child. " +
+                "If they do not, answer with all of them in mind. Do not assume they mean the Child Info tab selection.\n"
+        }
+    }
 }

@@ -56,7 +56,8 @@ private val SPECIALTIES = listOf(
 fun DoctorSignUpScreen(
     authViewModel: AuthViewModel,
     doctorViewModel: DoctorViewModel,
-    navController: NavController
+    navController: NavController,
+    settingsViewModel: com.lullabyai.app.viewmodel.SettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val uiState by authViewModel.uiState.collectAsState()
     val doctorState by doctorViewModel.uiState.collectAsState()
@@ -152,7 +153,14 @@ fun DoctorSignUpScreen(
                 // Same reason as DoctorLoginScreen: no bell / avatar pre-auth, and both actions
                 // navigate to PARENT destinations, which would break out of doctor mode.
                 showNotification = false,
-                showProfile = false
+                showProfile = false,
+                actions = {
+                    com.lullabyai.app.ui.components.LanguageToggleButton(
+                        isThai = isThai,
+                        onToggle = { settingsViewModel.toggleLanguage() },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
             )
         },
         containerColor = MaterialTheme.colorScheme.background

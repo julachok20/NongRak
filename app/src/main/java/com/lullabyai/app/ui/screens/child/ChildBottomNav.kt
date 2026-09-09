@@ -19,8 +19,6 @@ fun ChildBottomNav(navController: NavController, currentTab: String) {
         onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
         onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
         onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-        // Stats is reachable from the dashboard's button grid on child screens, so the footer's
-        // Stats slot is replaced with Connect → parent doctor-connect hub (MyDoctorsHub).
-        onConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } }
+        onCommunity = { navController.navigate(Screen.Community.route) { launchSingleTop = true } }
     )
 }

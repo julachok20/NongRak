@@ -80,16 +80,34 @@ class AccessPermissionViewModel(
             // Empty falls back to the starter roles in the UI, which are always valid.
             val roles = childRepo.listChildRoles(id).getOrDefault(emptyList())
             val me = runCatching { supabase.auth.currentUserOrNull()?.id }.getOrNull()
+            val myProfile = if (me != null) {
+                runCatching { com.lullabyai.app.data.repository.AuthRepository().getProfile().getOrNull() }.getOrNull()
+            } else null
+
+            val updatedMembers = if (me != null && myProfile != null) {
+                val profileName = myProfile.fullName?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: myProfile.username?.trim()?.takeIf { it.isNotEmpty() }
+                val profileAvatar = myProfile.avatarUrl?.trim()?.takeIf { it.isNotEmpty() }
+                members.map { m ->
+                    if (m.userId == me) {
+                        m.copy(
+                            displayName = profileName ?: m.displayName,
+                            avatarUrl = profileAvatar ?: m.avatarUrl
+                        )
+                    } else m
+                }
+            } else members
+
             _uiState.update {
                 it.copy(
                     loading = false,
-                    members = members,
+                    members = updatedMembers,
                     activity = activity,
                     roles = roles,
                     myUserId = me,
-                    myRole = members.find { m -> m.userId == me }?.role,
+                    myRole = updatedMembers.find { m -> m.userId == me }?.role,
                     selectedMember = it.selectedMember?.let { sel ->
-                        members.find { m -> m.userId == sel.userId }
+                        updatedMembers.find { m -> m.userId == sel.userId }
                     }
                 )
             }

@@ -1,11 +1,15 @@
 package com.lullabyai.app.util
 
 import com.lullabyai.app.data.model.Child
+import com.lullabyai.app.data.model.Profile
+import com.lullabyai.app.data.remote.supabase
+import com.lullabyai.app.data.repository.AuthRepository
 import com.lullabyai.app.data.repository.ChildRepository
 import com.lullabyai.app.data.repository.DoctorVisitRepository
 import com.lullabyai.app.data.repository.HealthRepository
 import com.lullabyai.app.data.repository.NutritionRepository
 import com.lullabyai.app.data.repository.SleepRepository
+import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -154,6 +158,7 @@ object HealthBookBuilder {
         val milestonesD = async { ChildRepository().getMilestones(id).getOrDefault(emptyList()) }
         val sleepD = async { SleepRepository().getLogs(id).getOrDefault(emptyList()) }
         val milkD = async { NutritionRepository().getMilkLogs(id) }
+        val profileD = async { AuthRepository().getProfile().getOrNull() }
         val foodD = async {
             NutritionRepository().getFoodLogsRange(
                 id,
@@ -171,6 +176,8 @@ object HealthBookBuilder {
         val sleep = sleepD.await()
         val milk = milkD.await()
         val food = foodD.await()
+        val profile = profileD.await()
+        val authEmail = supabase.auth.currentUserOrNull()?.email
 
         val pages = mutableListOf<FormPage>()
 
@@ -180,7 +187,7 @@ object HealthBookBuilder {
             birthdate = child.birthdate.ifBlank { "" }
         )
         pages += instructionsPage()
-        pages += basicInfoPage(child, allergies, chronic, milk, sleep, milestones, visits)
+        pages += basicInfoPage(child, allergies, chronic, milk, sleep, milestones, visits, profile, authEmail)
         pages += immunizationPages(vaccines)
         pages += illnessPages(records, visits, allergies, chronic)
         pages += lifestylePages(food, milk)
@@ -230,7 +237,9 @@ object HealthBookBuilder {
         milk: List<com.lullabyai.app.data.model.MilkLog>,
         sleep: List<com.lullabyai.app.data.model.SleepLog>,
         milestones: List<com.lullabyai.app.data.model.DevelopmentMilestone>,
-        visits: List<com.lullabyai.app.data.model.DoctorVisit>
+        visits: List<com.lullabyai.app.data.model.DoctorVisit>,
+        profile: Profile?,
+        authEmail: String?
     ): FormPage.BasicInfo {
         val months = ageMonths(child.birthdate)
 
@@ -264,25 +273,21 @@ object HealthBookBuilder {
             birth = listOf(
                 "วันเดือนปีเกิด (Date of Birth)" to child.birthdate,
                 "อายุ (Age)" to if (months >= 0) "$months" else "",
-                "กรุ๊ปเลือด (Blood Type)" to (child.bloodGroup ?: ""),
+                "กรุ๊ปเลือด (Blood Type)" to when (child.bloodGroup) {
+                    null, "" -> ""
+                    "unknown" -> "ยังไม่ทราบ"
+                    else -> child.bloodGroup!!
+                },
                 "โรคประจำตัว (Chronic Disease)" to chronic.joinToString(", ") { it.name },
                 "การแพ้ยา/อาหาร (Allergy)" to allergyText,
-                "สถานที่คลอด (Place of Birth)" to "",
-                "อายุครรภ์ (Gestational Age)" to "",
-                "น้ำหนักแรกเกิด (Birth Weight)" to "",
-                "ส่วนสูงแรกเกิด (Birth Length)" to "",
-                "เส้นรอบศีรษะแรกเกิด (Head Circumference)" to ""
+                "สถานที่คลอด (Place of Birth)" to (child.placeOfBirth ?: ""),
+                "อายุครรภ์ (Gestational Age)" to HealthBookFields.gestational(child.gestationalWeeks),
+                "น้ำหนักแรกเกิด (Birth Weight)" to HealthBookFields.birthWeight(child.birthWeightG),
+                "ส่วนสูงแรกเกิด (Birth Length)" to HealthBookFields.cm(child.birthLengthCm),
+                "เส้นรอบศีรษะแรกเกิด (Head Circumference)" to HealthBookFields.cm(child.birthHeadCm)
             ),
-            deliveryType = "",
-            guardian = listOf(
-                "ชื่อบิดา (Father's Name)" to "",
-                "ชื่อมารดา (Mother's Name)" to "",
-                "ผู้ปกครอง (Guardian)" to "",
-                "ความสัมพันธ์ (Relation)" to "",
-                "ที่อยู่ (Address)" to "",
-                "โทรศัพท์ (Phone)" to "",
-                "อีเมล (Email)" to ""
-            ),
+            deliveryType = HealthBookFields.delivery(child.deliveryType),
+            guardian = HealthBookFields.guardianLines(profile, authEmail),
             feeding = listOf(
                 "นมแม่อย่างเดียว (Breastmilk Only)" to (breast > 0 && formula == 0),
                 "นมผสม (Formula)" to (formula > 0 && breast == 0),
@@ -566,3 +571,65 @@ object HealthBookBuilder {
         else -> s
     }
 }
+
+/** Printable Health Book strings — kept here so Info Ask writes and the book cannot drift. */
+object HealthBookFields {
+
+    fun delivery(type: String?): String = when (type?.trim()?.lowercase()) {
+        null, "" -> ""
+        "natural" -> "คลอดธรรมชาติ"
+        "cesarean" -> "ผ่าคลอด"
+        "assisted" -> "ช่วยคลอด"
+        "other" -> "อื่นๆ"
+        else -> type.trim()
+    }
+
+    fun birthWeight(grams: Double?): String {
+        if (grams == null || grams <= 0) return ""
+        return if (grams >= 1000) {
+            val kg = grams / 1000.0
+            String.format(java.util.Locale.US, "%.2f กก. (%d กรัม)", kg, grams.toInt())
+        } else "${grams.toInt()} กรัม"
+    }
+
+    fun cm(value: Double?): String =
+        if (value == null || value <= 0) "" else String.format(java.util.Locale.US, "%.1f ซม.", value)
+
+    fun gestational(weeks: Int?): String =
+        if (weeks == null || weeks <= 0) "" else "$weeks สัปดาห์"
+
+    fun relationLabel(relationship: String?): String = when (relationship?.trim()?.lowercase()) {
+        "mother", "แม่" -> "มารดา"
+        "father", "พ่อ" -> "บิดา"
+        "guardian", "ผู้ปกครอง" -> "ผู้ปกครอง"
+        "other", "อื่นๆ" -> "ผู้ปกครอง"
+        else -> relationship?.trim().orEmpty()
+    }
+
+    fun isMother(relationship: String?): Boolean {
+        val r = relationship?.trim()?.lowercase() ?: return false
+        return r == "mother" || r == "แม่"
+    }
+
+    fun isFather(relationship: String?): Boolean {
+        val r = relationship?.trim()?.lowercase() ?: return false
+        return r == "father" || r == "พ่อ"
+    }
+
+    fun guardianLines(profile: Profile?, authEmail: String?): List<Pair<String, String>> {
+        val name = profile?.fullName?.trim().orEmpty()
+        val relation = profile?.relationship
+        val father = if (isFather(relation)) name else ""
+        val mother = if (isMother(relation)) name else ""
+        return listOf(
+            "ชื่อบิดา (Father's Name)" to father,
+            "ชื่อมารดา (Mother's Name)" to mother,
+            "ผู้ปกครอง (Guardian)" to name,
+            "ความสัมพันธ์ (Relation)" to relationLabel(relation),
+            "ที่อยู่ (Address)" to profile?.address?.trim().orEmpty(),
+            "โทรศัพท์ (Phone)" to profile?.phone?.trim().orEmpty(),
+            "อีเมล (Email)" to authEmail?.trim().orEmpty()
+        )
+    }
+}
+

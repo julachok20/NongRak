@@ -42,5 +42,6 @@ class ProactiveBriefTest {
     fun `greeting is used when nothing is pending`() {
         assertEquals(BriefKind.NONE, ProactiveBrief.GREETING.kind)
         assertEquals("สวัสดีค่ะ", ProactiveBrief.GREETING.headline)
+        assertEquals("สวัสดีค่ะ", ProactiveBrief.GREETING.detail)
     }
 }

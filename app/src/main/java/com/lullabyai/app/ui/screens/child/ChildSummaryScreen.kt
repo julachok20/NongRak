@@ -61,6 +61,109 @@ internal fun genderLabel(gender: String?, isThai: Boolean): String = when (gende
     else -> if (isThai) "ไม่ได้ระบุ" else "Not specified"
 }
 
+/** One tile in a Child-info Bento action group. */
+data class ChildTile(
+    val icon: ImageVector,
+    val label: String,
+    val route: String,
+    val iconTint: Color = Primary,
+    val iconBg: Color = PrimaryContainer.copy(0.45f),
+    val badge: String? = null
+)
+
+/**
+ * Modern Bento-grid action group with responsive 2-column layout and vibrant icon containers.
+ */
+@Composable
+fun ChildActionGroup(
+    title: String,
+    tiles: List<ChildTile>,
+    onNavigate: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        tiles.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                pair.forEach { t ->
+                    Card(
+                        onClick = { onNavigate(t.route) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(96.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(1.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(t.iconBg),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(t.icon, null, tint = t.iconTint, modifier = Modifier.size(20.dp))
+                                }
+                                if (t.badge != null) {
+                                    Surface(
+                                        shape = RoundedCornerShape(100.dp),
+                                        color = t.iconTint.copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            text = t.badge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = t.iconTint,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        Icons.Filled.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = t.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                // An odd tile count keeps its half-width instead of stretching across the row.
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 @Composable
 fun ChildSummaryScreen(
     childViewModel: ChildViewModel,
@@ -96,22 +199,11 @@ fun ChildSummaryScreen(
         if (!tourPreview && childState.children.isEmpty() && childState.child == null) childViewModel.loadChild()
     }
 
-    // AI daily question — skip during tour preview (no real child yet).
+    // Typed info-ask — skip during tour preview (no real child yet).
     val context = LocalContext.current
     LaunchedEffect(child?.id, tourPreview) {
         if (tourPreview) return@LaunchedEffect
-        child?.let { childViewModel.loadDailyQuestion(context, s.isThai) }
-    }
-    var showDailyQuestionDialog by remember { mutableStateOf(false) }
-    if (showDailyQuestionDialog) {
-        childState.dailyQuestion?.let { question ->
-            com.lullabyai.app.ui.components.DailyQuestionDialog(
-                question = question, isThai = s.isThai,
-                onAnswer = { answer -> childViewModel.answerDailyQuestion(answer); showDailyQuestionDialog = false },
-                onSkip = { childViewModel.dismissDailyQuestion(); showDailyQuestionDialog = false },
-                onDismiss = { showDailyQuestionDialog = false }
-            )
-        }
+        child?.let { childViewModel.loadInfoAsk(context, s.isThai) }
     }
 
     // If the active child changed elsewhere (added a child, or switched on another screen), reload.
@@ -148,30 +240,6 @@ fun ChildSummaryScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(Modifier.height(4.dp))
-
-            val context = LocalContext.current
-
-            // Persistent one-tap emergency line — flagged in the professional-polish audit as
-            // needed (a real visual element, not just prose buried in an AI reply). ACTION_DIAL
-            // (not ACTION_CALL) so it just opens the dialer pre-filled — no CALL_PHONE permission.
-            Card(
-                onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:1669"))) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Error.copy(0.08f))
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(Icons.Filled.Call, null, tint = Error, modifier = Modifier.size(18.dp))
-                    Text(
-                        if (s.isThai) "เหตุฉุกเฉิน โทร 1669" else "Emergency? Call 1669",
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Error,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Icon(Icons.Filled.ChevronRight, null, tint = Error.copy(0.5f), modifier = Modifier.size(18.dp))
-                }
-            }
 
             // Same button, destination by role: someone whose job here is the daily log lands on
             // the update form, everyone else on the history. Full width and high on the page —
@@ -235,14 +303,22 @@ fun ChildSummaryScreen(
                 }
             }
 
-            childState.dailyQuestion?.let {
-                if (!tourPreview) {
-                    com.lullabyai.app.ui.components.DailyQuestionBanner(
-                        isThai = s.isThai,
-                        onClick = { showDailyQuestionDialog = true },
-                        onDismiss = { childViewModel.dismissDailyQuestion() }
-                    )
-                }
+            if (!tourPreview && child != null) {
+                com.lullabyai.app.ui.screens.access.HandoffHomeCard(child.id,s.isThai,
+                    onOpen = { navController.navigate(Screen.CareHandoff.route(child.id)) })
+            }
+            if (childState.infoAsks.isNotEmpty() && !tourPreview) {
+                val prompts = childState.infoAsks
+                com.lullabyai.app.ui.components.InfoAskBanner(
+                    isThai = s.isThai,
+                    subjectName = com.lullabyai.app.data.infoask.InfoAskCatalog.bannerSubjectName(
+                        prompts, child?.name.orEmpty(), s.isThai
+                    ),
+                    questionCount = prompts.size,
+                    preview = prompts.take(2).joinToString("\n") { "• ${it.question(s.isThai)}" },
+                    onClick = { navController.navigate(Screen.InfoAsk.route) },
+                    onDismiss = { childViewModel.dismissInfoAsk(context) }
+                )
             }
 
             // Profile card (row)
@@ -250,10 +326,10 @@ fun ChildSummaryScreen(
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
               Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(80.dp).clip(RoundedCornerShape(18.dp)).background(SecondaryContainer), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.size(80.dp).clip(RoundedCornerShape(18.dp)).background(PrimaryContainer), contentAlignment = Alignment.Center) {
                         val avatar = childState.childAvatarSignedUrl
                         if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        else Text("👶", fontSize = 30.sp)
+                        else Icon(Icons.Filled.ChildCare, null, tint = Primary, modifier = Modifier.size(36.dp))
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         // Name + switch-child trigger ("สลับบัญชี") — opens the bottom sheet below.
@@ -314,17 +390,15 @@ fun ChildSummaryScreen(
                         Text((if (s.isThai) "วันเกิด " else "Born ") + formatDate(child?.birthdate, s.isThai), style = MaterialTheme.typography.labelSmall, color = Outline)
                     }
                 }
-                // "Check health data" CTA -> new AI-aggregated summary screen. Merged into the same
-                // card as the avatar/name/age (mockup keeps these in one continuous card boundary),
-                // not a separate sibling button below it.
+                // "ดูสมุดบันทึกสุขภาพ" (View Health Record Book) CTA -> Interactive Health Book screen
                 Button(
-                    onClick = { navController.navigate(Screen.ChildAiSummary.route) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp),
+                    onClick = { navController.navigate(Screen.HealthBook.route) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary)
                 ) {
-                    Icon(Icons.Filled.Insights, null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.MenuBook, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (s.isThai) "ตรวจสอบข้อมูลสุขภาพ" else "Check health data", fontWeight = FontWeight.Bold)
+                    Text(if (s.isThai) "ดูสมุดบันทึกสุขภาพ" else "View Health Record Book", fontWeight = FontWeight.Bold)
                 }
               }
             }
@@ -359,42 +433,6 @@ fun ChildSummaryScreen(
                     (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
                     Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline, icon = Icons.Filled.Straighten
                 ) { navController.navigate(Screen.GrowthHistory.route) }
-            }
-
-            // The whole record as a book to page through, and to hand to a doctor as a PDF.
-            // Placed with the growth cards because this is where a parent already comes to look
-            // something up about their child rather than to log something new.
-            Card(
-                onClick = { navController.navigate(Screen.HealthBook.route) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.MenuBook, null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (s.isThai) "สมุดสุขภาพประจำตัว" else "Health Book",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            if (s.isThai)
-                                "เปิดอ่านทั้งเล่ม บันทึกเป็น PDF ให้คุณหมอได้"
-                            else
-                                "Page through the whole record, or export it as a PDF",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
 
             // Unique standout AI Guidance ("คำแนะนำ AI") button linking to full AI Guidance & Daily Brief
@@ -550,61 +588,194 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // The "อัปเดตน้ำหนักและส่วนสูง" banner that used to sit here is not in the Stitch
-            // "Child Summary with Suggestion Button" design and GrowthHistory is already reachable
-            // from both growth stat cards and the "ประวัติการบันทึก" chip — dropped, not orphaned.
-
-            if (childState.allergies.isNotEmpty()) {
-                // Extra-large radius (mockup gives this card a bigger radius than the rest of the
-                // page's cards) and outlined chips instead of solid-filled pills.
-                Card(
-                    Modifier.fillMaxWidth().clickable { navController.navigate(Screen.AllergyHistory.route) },
-                    shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Error.copy(0.08f))
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Filled.Warning, null, tint = Error, modifier = Modifier.size(18.dp))
-                            Text(if (s.isThai) "ประวัติการแพ้" else "Allergies", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Error)
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            childState.allergies.take(4).forEach { a ->
-                                Surface(
-                                    shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Error.copy(0.4f))
-                                ) {
-                                    Text(a.name, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Error)
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                InfoRow(Icons.Filled.Warning, if (s.isThai) "การแพ้" else "Allergies", if (s.isThai) "ไม่มีประวัติแพ้" else "None", null) { navController.navigate(Screen.AllergyHistory.route) }
-            }
-
-            // Chronic conditions summary — mirrors the allergy card above. Data is already loaded
-            // into childState.chronicConditions alongside allergies (see ChildViewModel.loadChild),
-            // and stays in sync with onboarding (completeOnboarding seeds this same table) and the
-            // Health Hub's add/delete card, so this is read-only here, no separate fetch needed.
-            Card(
-                Modifier.fillMaxWidth().clickable { navController.navigate(Screen.ChildHealth.route) },
-                shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(1.dp)
+            // Medical Info 2-Column Bento Grid (Allergies & Chronic Conditions side-by-side matching Stitch)
+            // Medical Info 2-Column Bento Grid (Allergies & Chronic Conditions side-by-side)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.HealthAndSafety, null, tint = Primary, modifier = Modifier.size(18.dp))
-                        Text(if (s.isThai) "โรคประจำตัว" else "Chronic conditions", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                // 1. Allergies Card
+                Card(
+                    onClick = { navController.navigate(Screen.AllergyHistory.route) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(135.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (childState.allergies.isNotEmpty()) Error.copy(alpha = 0.35f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    ),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (childState.allergies.isNotEmpty()) Error.copy(alpha = 0.12f)
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.Warning,
+                                    contentDescription = null,
+                                    tint = if (childState.allergies.isNotEmpty()) Error else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Text(
+                                if (s.isThai) "ประวัติการแพ้" else "Allergies",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (childState.allergies.isNotEmpty()) Error else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
+                            )
+                        }
+
+                        if (childState.allergies.isEmpty()) {
+                            Text(
+                                if (s.isThai) "ไม่มีประวัติแพ้" else "No known allergies",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                childState.allergies.take(2).forEach { a ->
+                                    Surface(
+                                        shape = RoundedCornerShape(100.dp),
+                                        color = Error.copy(alpha = 0.1f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Error.copy(alpha = 0.25f))
+                                    ) {
+                                        Text(
+                                            a.name,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Error,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                                if (childState.allergies.size > 2) {
+                                    Text(
+                                        "+${childState.allergies.size - 2}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Error,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    if (childState.chronicConditions.isEmpty()) {
-                        Text(if (s.isThai) "ไม่มีข้อมูลโรคประจำตัว" else "No chronic conditions recorded", style = MaterialTheme.typography.labelSmall, color = Outline)
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            childState.chronicConditions.take(4).forEach { cc ->
-                                Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.06f)) {
-                                    Text(cc.name, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary)
+                }
+
+                // 2. Chronic Conditions Card
+                Card(
+                    onClick = { navController.navigate(Screen.ChildHealth.route) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(135.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (childState.chronicConditions.isNotEmpty()) Primary.copy(alpha = 0.35f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    ),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (childState.chronicConditions.isNotEmpty()) Primary.copy(alpha = 0.12f)
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.MedicalServices,
+                                    contentDescription = null,
+                                    tint = if (childState.chronicConditions.isNotEmpty()) Primary else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Text(
+                                if (s.isThai) "โรคประจำตัว" else "Chronic info",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (childState.chronicConditions.isNotEmpty()) Primary else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
+                            )
+                        }
+
+                        if (childState.chronicConditions.isEmpty()) {
+                            Text(
+                                if (s.isThai) "ไม่มีข้อมูล" else "None recorded",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                childState.chronicConditions.take(2).forEach { cc ->
+                                    Surface(
+                                        shape = RoundedCornerShape(100.dp),
+                                        color = Primary.copy(alpha = 0.1f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.25f))
+                                    ) {
+                                        Text(
+                                            cc.name,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Primary,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                                if (childState.chronicConditions.size > 2) {
+                                    Text(
+                                        "+${childState.chronicConditions.size - 2}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Primary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
                                 }
                             }
                         }
@@ -612,149 +783,210 @@ fun ChildSummaryScreen(
                 }
             }
 
-            // Stitch "Child Summary with Diary Dashboard Link" — single 7-cell action grid in
-            // design order (Health Log, Stats, Memory book, Export PDF, Document vault, Quick log,
-            // Access), all linked to real destinations. Reconciled 2026-07-26: the design has no
-            // separate "Chronic" tile here (chronic conditions get their own card above) and no
-            // standalone "Quick Action" button — both dropped from this grid. ChronicRegistry stays
-            // reachable via QuickActionSearch/AI chat/tour; QuickActionSearch stays reachable via
-            // Quick Log hub, so no destination is orphaned by trimming this grid to match the design.
+            // Recommended Action Banner (Stitch Step 3.2: แนะนำอัปเดตน้ำหนักและส่วนสูง)
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = PrimaryContainer.copy(alpha = 0.25f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.TrendingUp,
+                                contentDescription = null,
+                                tint = Primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = if (s.isThai) "แนะนำ: อัปเดตน้ำหนักและส่วนสูงวันนี้" else "Tip: Update weight & height today",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (s.isThai) "เพื่อติดตามพัฒนาการที่แม่นยำ" else "For precise growth tracking",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = { navController.navigate(Screen.AddGrowthRecord.route) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (s.isThai) "บันทึก" else "Record", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            // Primary Quick Actions (เมนูหลัก) Matching Stitch
             Column(
                 Modifier.fillMaxWidth().tourAnchor("parent_child_actions"),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Stitch "Child Summary with Suggestion Button": the actions split into two named
-                // groups — things you record, then things you export or administer. The old flat
-                // run of tiles gave "บันทึกสุขภาพ" and "สิทธิ์การเข้าถึง" identical weight, which
-                // is why the screen read as a wall.
+                Text(
+                    if (s.isThai) "เมนูหลัก" else "Main Menu",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                // Hero Full-Width Diary Card
+                Card(
+                    onClick = { navController.navigate(Screen.ChildDiary.route) },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Primary),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.AutoStories,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (s.isThai) "ไดอารี่" else "Diary",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                if (s.isThai) "บันทึกเรื่องราวประจำวัน & โมเมนต์แสนพิเศษ" else "Daily journal & special moments",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                        }
+                        Icon(Icons.Filled.ChevronRight, null, tint = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+
+                // 2-Column Grid Actions
                 val isGuestUser = childViewModel.isGuest()
                 ChildActionGroup(
-                    title = if (s.isThai) "สุขภาพและบันทึก" else "Health & Records",
-                    tiles = if (isGuestUser) {
-                        listOf(
-                            ChildTile(
-                                icon = Icons.Filled.AddCircle,
-                                label = if (s.isThai) "บันทึกสุขภาพ" else "Health log",
-                                route = Screen.HealthLog.route,
-                                iconTint = Color(0xFF00897B),
-                                iconBg = Color(0xFFE0F2F1)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Analytics,
-                                label = if (s.isThai) "ดูสถิติ" else "Stats",
-                                route = Screen.StatisticsInsights.route,
-                                iconTint = Color(0xFF3949AB),
-                                iconBg = Color(0xFFE8EAF6)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Bolt,
-                                label = if (s.isThai) "บันทึกด่วน" else "Quick log",
-                                route = Screen.QuickLogHub.route,
-                                iconTint = Color(0xFF7B1FA2),
-                                iconBg = Color(0xFFF3E5F5)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Payments,
-                                label = if (s.isThai) "ค่าใช้จ่าย" else "Expenses",
-                                route = Screen.Expenses.route,
-                                iconTint = Color(0xFF2E7D32),
-                                iconBg = Color(0xFFE8F5E9)
-                            )
+                    title = "",
+                    tiles = listOf(
+                        ChildTile(
+                            icon = Icons.Filled.EventRepeat,
+                            label = if (s.isThai) "กิจกรรม" else "Activities",
+                            route = Screen.ActivitySchedule.route,
+                            iconTint = Color(0xFF0288D1),
+                            iconBg = Color(0xFFE1F5FE)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.Chat,
+                            label = if (s.isThai) "แชทกับผู้ดูแล" else "Care chat",
+                            route = Screen.CareCircle.route,
+                            iconTint = Color(0xFF1565C0),
+                            iconBg = Color(0xFFE3F2FD)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.MedicalServices,
+                            label = if (s.isThai) "ศูนย์สุขภาพ" else "Health Hub",
+                            route = Screen.ChildHealth.route,
+                            iconTint = Color(0xFF00897B),
+                            iconBg = Color(0xFFE0F2F1)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.PictureAsPdf,
+                            label = if (s.isThai) "ส่งออก PDF" else "Export PDF",
+                            route = Screen.PdfExport.route,
+                            iconTint = Color(0xFFC62828),
+                            iconBg = Color(0xFFFFEBEE)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.LockPerson,
+                            label = if (s.isThai) "สิทธิ์การเข้าถึง" else "Access & roles",
+                            route = Screen.PermissionAccess.route,
+                            iconTint = Color(0xFF5E35B1),
+                            iconBg = Color(0xFFEDE7F6)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.Bolt,
+                            label = if (s.isThai) "บันทึกด่วน" else "Quick log",
+                            route = Screen.QuickLogHub.route,
+                            iconTint = Color(0xFF7B1FA2),
+                            iconBg = Color(0xFFF3E5F5)
                         )
-                    } else {
-                        listOf(
-                            ChildTile(
-                                icon = Icons.Filled.AddCircle,
-                                label = if (s.isThai) "บันทึกสุขภาพ" else "Health log",
-                                route = Screen.HealthLog.route,
-                                iconTint = Color(0xFF00897B),
-                                iconBg = Color(0xFFE0F2F1)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Analytics,
-                                label = if (s.isThai) "ดูสถิติ" else "Stats",
-                                route = Screen.StatisticsInsights.route,
-                                iconTint = Color(0xFF3949AB),
-                                iconBg = Color(0xFFE8EAF6)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.EventNote,
-                                label = if (s.isThai) "สมุดความจำ" else "Memory book",
-                                route = Screen.ChildDiary.route,
-                                iconTint = Color(0xFFE65100),
-                                iconBg = Color(0xFFFFF3E0)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Bolt,
-                                label = if (s.isThai) "บันทึกด่วน" else "Quick log",
-                                route = Screen.QuickLogHub.route,
-                                iconTint = Color(0xFF7B1FA2),
-                                iconBg = Color(0xFFF3E5F5)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Payments,
-                                label = if (s.isThai) "ค่าใช้จ่าย" else "Expenses",
-                                route = Screen.Expenses.route,
-                                iconTint = Color(0xFF2E7D32),
-                                iconBg = Color(0xFFE8F5E9)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.Schedule,
-                                label = if (s.isThai) "ปฏิทินกิจกรรม" else "Activities",
-                                route = Screen.ActivitySchedule.route,
-                                iconTint = Color(0xFF0288D1),
-                                iconBg = Color(0xFFE1F5FE)
-                            )
-                        )
-                    },
+                    ),
                     onNavigate = { navController.navigate(it) }
                 )
 
+                Spacer(Modifier.height(4.dp))
+
+                // More Utilities (เครื่องมืออื่นๆ)
                 ChildActionGroup(
-                    title = if (s.isThai) "รายงานและการจัดการ" else "Reports & Management",
-                    tiles = if (isGuestUser) {
-                        listOf(
-                            ChildTile(
-                                icon = Icons.Filled.PictureAsPdf,
-                                label = if (s.isThai) "ส่งออก PDF" else "Export PDF",
-                                route = Screen.PdfExport.route,
-                                iconTint = Color(0xFFC62828),
-                                iconBg = Color(0xFFFFEBEE),
-                                badge = if (s.isThai) "ทดลอง" else "Demo"
-                            )
+                    title = if (s.isThai) "เครื่องมืออื่นๆ" else "More Tools",
+                    tiles = listOf(
+                        ChildTile(
+                            icon = Icons.Filled.AddCircle,
+                            label = if (s.isThai) "บันทึกสุขภาพ" else "Health log",
+                            route = Screen.HealthLog.route,
+                            iconTint = Color(0xFF00897B),
+                            iconBg = Color(0xFFE0F2F1)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.Analytics,
+                            label = if (s.isThai) "ดูสถิติ" else "Stats",
+                            route = Screen.StatisticsInsights.route,
+                            iconTint = Color(0xFF3949AB),
+                            iconBg = Color(0xFFE8EAF6)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.Payments,
+                            label = if (s.isThai) "ค่าใช้จ่าย" else "Expenses",
+                            route = Screen.Expenses.route,
+                            iconTint = Color(0xFF2E7D32),
+                            iconBg = Color(0xFFE8F5E9)
+                        ),
+                        ChildTile(
+                            icon = Icons.Filled.FolderOpen,
+                            label = if (s.isThai) "คลังเอกสาร" else "Document vault",
+                            route = Screen.MedicalDataVault.route,
+                            iconTint = Color(0xFF0097A7),
+                            iconBg = Color(0xFFE0F7FA)
                         )
-                    } else {
-                        listOf(
-                            ChildTile(
-                                icon = Icons.Filled.PictureAsPdf,
-                                label = if (s.isThai) "ส่งออก PDF" else "Export PDF",
-                                route = Screen.PdfExport.route,
-                                iconTint = Color(0xFFC62828),
-                                iconBg = Color(0xFFFFEBEE)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.FolderOpen,
-                                label = if (s.isThai) "คลังเอกสาร" else "Document vault",
-                                route = Screen.MedicalDataVault.route,
-                                iconTint = Color(0xFF0097A7),
-                                iconBg = Color(0xFFE0F7FA)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.LockPerson,
-                                label = if (s.isThai) "สิทธิ์การเข้าถึง" else "Access & roles",
-                                route = Screen.PermissionAccess.route,
-                                iconTint = Color(0xFF5E35B1),
-                                iconBg = Color(0xFFEDE7F6)
-                            ),
-                            ChildTile(
-                                icon = Icons.Filled.ChatBubble,
-                                label = if (s.isThai) "แชทกับผู้ดูแล" else "Care chat",
-                                route = Screen.CareCircle.route,
-                                iconTint = Color(0xFF1565C0),
-                                iconBg = Color(0xFFE3F2FD)
-                            )
-                        )
-                    },
+                    ),
                     onNavigate = { navController.navigate(it) }
                 )
             }
@@ -763,6 +995,7 @@ fun ChildSummaryScreen(
         }
         }
     }
+
 
     // Delete-child confirmation
     childToDelete?.let { target ->
@@ -792,7 +1025,7 @@ private fun ChildSwitcherSheet(
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 36.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(if (isThai) "เลือกบัญชีลูก" else "Select child", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, null) }
@@ -807,10 +1040,10 @@ private fun ChildSwitcherSheet(
                         border = if (isActive) androidx.compose.foundation.BorderStroke(2.dp, Primary.copy(0.25f)) else null
                     ) {
                         Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(SecondaryContainer), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(PrimaryContainer), contentAlignment = Alignment.Center) {
                                 if (isActive && !childAvatarSignedUrl.isNullOrBlank()) {
                                     AsyncImage(model = childAvatarSignedUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                                } else Text("👶", fontSize = 24.sp)
+                                } else Icon(Icons.Filled.ChildCare, null, tint = Primary, modifier = Modifier.size(26.dp))
                             }
                             Column(Modifier.weight(1f)) {
                                 Text(c.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -837,109 +1070,6 @@ private fun ChildSwitcherSheet(
                     Spacer(Modifier.width(8.dp))
                     Text(if (isThai) "เพิ่มบัญชีลูก" else "Add child", fontWeight = FontWeight.Bold)
                 }
-            }
-        }
-    }
-}
-
-/** One tile in a Child-info Bento action group. */
-private data class ChildTile(
-    val icon: ImageVector,
-    val label: String,
-    val route: String,
-    val iconTint: Color = Primary,
-    val iconBg: Color = PrimaryContainer.copy(0.45f),
-    val badge: String? = null
-)
-
-/**
- * Modern Bento-grid action group with responsive 2-column layout and vibrant icon containers.
- */
-@Composable
-private fun ChildActionGroup(
-    title: String,
-    tiles: List<ChildTile>,
-    onNavigate: (String) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        tiles.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                pair.forEach { t ->
-                    Card(
-                        onClick = { onNavigate(t.route) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(96.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(1.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                        )
-                    ) {
-                        Column(
-                            Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    Modifier
-                                        .size(38.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(t.iconBg),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(t.icon, null, tint = t.iconTint, modifier = Modifier.size(20.dp))
-                                }
-                                if (t.badge != null) {
-                                    Surface(
-                                        shape = RoundedCornerShape(100.dp),
-                                        color = t.iconTint.copy(alpha = 0.12f)
-                                    ) {
-                                        Text(
-                                            text = t.badge,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = t.iconTint,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 9.sp,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        Icons.Filled.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = t.label,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-                // An odd tile count keeps its half-width instead of stretching across the row.
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }

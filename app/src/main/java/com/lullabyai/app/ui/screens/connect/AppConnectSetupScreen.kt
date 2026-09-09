@@ -22,11 +22,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.lullabyai.app.data.repository.WearablePlatform
-import com.lullabyai.app.data.wearables.HealthConnectSync
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.Outline
@@ -43,47 +41,19 @@ private data class PlatformCard(
     val kind: PlatformKind
 )
 
-private enum class PlatformKind { APPLE_SOON, HEALTH_CONNECT, IOT }
+private enum class PlatformKind { APPLE_SOON, IOT }
 
 private val APP_CONNECT_CATEGORIES: List<Pair<String, List<PlatformCard>>> = listOf(
+    // Google Fit, Samsung Health, Health Connect, Fitbit and Garmin were all one card each for the
+    // SAME bridge: they did not talk to NongRak, they read whatever those apps wrote into Health
+    // Connect. With Health Connect removed there is nothing behind them, so they are gone rather
+    // than left as five buttons that connect to nothing.
     "Health apps" to listOf(
         PlatformCard(
             WearablePlatform.APPLE_HEALTH, "Apple Health",
             "ซิงค์จาก iPhone — เร็วๆ นี้ (iOS เท่านั้น)",
             "Sync from iPhone — Coming Soon (iOS only)",
             Icons.Filled.PhoneIphone, PlatformKind.APPLE_SOON
-        ),
-        PlatformCard(
-            WearablePlatform.GOOGLE_FIT, "Google Fit",
-            "ซิงค์ผ่าน Health Connect (Android)",
-            "Sync via Health Connect on Android",
-            Icons.Filled.Favorite, PlatformKind.HEALTH_CONNECT
-        ),
-        PlatformCard(
-            WearablePlatform.SAMSUNG, "Samsung Health",
-            "ซิงค์ผ่าน Health Connect เมื่อเปิดแชร์ข้อมูล",
-            "Sync via Health Connect when sharing is enabled",
-            Icons.Filled.HealthAndSafety, PlatformKind.HEALTH_CONNECT
-        ),
-        PlatformCard(
-            WearablePlatform.HEALTH_CONNECT, "Health Connect",
-            "สะพานหลักสำหรับข้อมูลสุขภาพบน Android",
-            "Primary Android health-data bridge",
-            Icons.Filled.MonitorHeart, PlatformKind.HEALTH_CONNECT
-        )
-    ),
-    "Wearables" to listOf(
-        PlatformCard(
-            WearablePlatform.FITBIT, "Fitbit",
-            "ดึงข้อมูลที่ Fitbit เขียนเข้า Health Connect",
-            "Reads data Fitbit writes into Health Connect",
-            Icons.Filled.Watch, PlatformKind.HEALTH_CONNECT
-        ),
-        PlatformCard(
-            WearablePlatform.GARMIN, "Garmin",
-            "ดึงข้อมูลที่ Garmin Connect เขียนเข้า Health Connect",
-            "Reads data Garmin Connect writes into Health Connect",
-            Icons.Filled.Watch, PlatformKind.HEALTH_CONNECT
         )
     ),
     "Child devices" to listOf(
@@ -117,15 +87,6 @@ fun AppConnectSetupScreen(
     val state by vm.state.collectAsState()
     val context = LocalContext.current
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract()
-    ) { granted ->
-        if (granted.containsAll(HealthConnectSync.PERMISSIONS)) {
-            vm.syncNow(s.isThai)
-        } else {
-            vm.refresh()
-        }
-    }
 
     LaunchedEffect(Unit) { vm.refresh() }
 
@@ -154,39 +115,8 @@ fun AppConnectSetupScreen(
                 )
             }
 
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            HealthConnectSync.installOrOpenIntent(context)?.let { intent ->
-                                runCatching { context.startActivity(intent) }
-                            }
-                        },
-                        shape = RoundedCornerShape(100.dp)
-                    ) {
-                        Text(if (s.isThai) "เปิด Health Connect" else "Open Health Connect")
-                    }
-                    Button(
-                        onClick = {
-                            if (state.hcAvailable && !state.hcPermissionsGranted) {
-                                permissionLauncher.launch(HealthConnectSync.PERMISSIONS)
-                            } else {
-                                vm.syncNow(s.isThai)
-                            }
-                        },
-                        enabled = !state.syncing,
-                        shape = RoundedCornerShape(100.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                    ) {
-                        Text(
-                            when {
-                                state.syncing -> if (s.isThai) "กำลังซิงค์…" else "Syncing…"
-                                else -> if (s.isThai) "ซิงค์ตอนนี้" else "Sync now"
-                            }
-                        )
-                    }
-                }
-            }
+            // The "Open Health Connect" and sync buttons lived here. Health Connect was removed,
+            // so there is no external app to open and no pull to trigger.
 
             item {
                 TextButton(onClick = { navController.navigate(Screen.ChildDeviceHub.route) }) {
@@ -247,12 +177,6 @@ fun AppConnectSetupScreen(
                                 connected -> vm.disconnectPlatform(card.platform)
                                 card.kind == PlatformKind.IOT ->
                                     vm.connectIotDevice(card.platform, card.title, s.isThai)
-                                else -> {
-                                    if (state.hcAvailable && !state.hcPermissionsGranted) {
-                                        permissionLauncher.launch(HealthConnectSync.PERMISSIONS)
-                                    }
-                                    vm.connectHcPlatform(card.platform, card.title, s.isThai)
-                                }
                             }
                         }
                     )

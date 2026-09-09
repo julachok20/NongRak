@@ -102,6 +102,9 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
         com.lullabyai.app.data.settings.SettingsManager(context).selectedMascot
     }.collectAsState(initial = null)
     val callMascot = MascotId.fromKey(callMascotKey)
+    LaunchedEffect(callMascot, isThai) {
+        chatViewModel.setCompanion(callMascot.assetPrefix, callMascot.personaPrompt(isThai))
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val chatState by chatViewModel.uiState.collectAsState()
     val childState by childViewModel.uiState.collectAsState()
@@ -180,7 +183,8 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 imageMime = if (latestFrame != null) "image/jpeg" else null,
                 spoken = true,
                 audioBytes = wav,
-                audioMime = VoiceTurnRecorder.MIME
+                audioMime = VoiceTurnRecorder.MIME,
+                family = childState.children
             )
         }
     }
