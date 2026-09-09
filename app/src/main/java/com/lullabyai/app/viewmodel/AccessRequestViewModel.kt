@@ -47,7 +47,15 @@ data class AccessRequestUiState(
     val pending: List<ChildSyncRequest> = emptyList(),
     val childNames: Map<String, String> = emptyMap(),
     val popup: ChildSyncRequest? = null,
-    val resolving: Boolean = false
+    val resolving: Boolean = false,
+    /**
+     * Request ids the owner has already answered or closed this session. The 4s poll in
+     * [AccessRequestViewModel.startWatching] re-reads pending rows and would otherwise re-raise the
+     * popup for a row the owner just dealt with - which is what "pressed Deny and it kept showing up
+     * again and again" actually was. A denial that fails server-side leaves the row `pending`, so
+     * without this the dialog returns every 4 seconds indefinitely.
+     */
+    val handledIds: Set<String> = emptySet()
 ) {
     val canSubmit: Boolean
         get() = !submitting && (accessCode.isNotBlank() || selectedMatchId != null)
@@ -188,9 +196,12 @@ class AccessRequestViewModel(
                 it.copy(
                     pending = pending,
                     childNames = names,
-                    // Keep an already-open popup on screen; only auto-raise for a genuinely new arrival.
+                    // Keep an already-open popup on screen; only auto-raise for a genuinely new
+                    // arrival. "New" excludes anything already answered or closed this session:
+                    // a row the owner denied can still be `pending` server-side (failed RPC), and
+                    // re-raising it turns one refusal into an endless dialog.
                     popup = it.popup?.let { open -> pending.find { p -> p.id == open.id } }
-                        ?: pending.firstOrNull().takeIf { _ -> raisePopup }
+                        ?: pending.firstOrNull { p -> p.id !in it.handledIds }.takeIf { _ -> raisePopup }
                 )
             }
         }
@@ -227,7 +238,10 @@ class AccessRequestViewModel(
 
     fun showPopup(request: ChildSyncRequest) = _uiState.update { it.copy(popup = request, error = null) }
 
-    fun dismissPopup() = _uiState.update { it.copy(popup = null) }
+    /** Closing the dialog counts as handled: the poll must not shove the same request back. */
+    fun dismissPopup() = _uiState.update {
+        it.copy(popup = null, handledIds = it.handledIds + listOfNotNull(it.popup?.id))
+    }
 
     /** approve = true grants access via `confirm_child_sync_request`; false marks it rejected. */
     fun resolve(requestId: String, approve: Boolean, role: String? = null) {
@@ -239,15 +253,23 @@ class AccessRequestViewModel(
                         it.copy(
                             resolving = false,
                             popup = null,
-                            pending = it.pending.filterNot { p -> p.id == requestId }
+                            pending = it.pending.filterNot { p -> p.id == requestId },
+                            handledIds = it.handledIds + requestId
                         )
                     }
                     loadPending()
                 }
                 .onFailure { e ->
                     // Someone else (or another device) already resolved it — drop it either way.
+                    // Marked handled too: the owner has given their answer, and replaying the
+                    // dialog every 4s does not make a server-side refusal any more resolvable.
                     _uiState.update {
-                        it.copy(resolving = false, popup = null, error = safeError(e))
+                        it.copy(
+                            resolving = false,
+                            popup = null,
+                            error = safeError(e),
+                            handledIds = it.handledIds + requestId
+                        )
                     }
                     loadPending()
                 }
@@ -264,6 +286,8 @@ class AccessRequestViewModel(
         const val ERR_NOTHING_TO_SUBMIT = "nothing_to_submit"
         const val ERR_INVALID_CODE = "invalid_code"
         const val ERR_ALREADY_MEMBER = "already_member"
+        const val ERR_ALREADY_PENDING = "already_pending"
+        const val ERR_REQUEST_REJECTED = "request_rejected"
         const val ERR_NOT_FOUND = "not_found"
         const val ERR_ALREADY_RESOLVED = "already_resolved"
         const val ERR_GENERIC = "generic"
@@ -276,8 +300,10 @@ class AccessRequestViewModel(
         fun safeError(e: Throwable): String {
             val raw = (e.message ?: "").lowercase()
             return when {
+                "request_rejected" in raw || "request rejected" in raw -> ERR_REQUEST_REJECTED
+                "already_pending" in raw || "already pending" in raw -> ERR_ALREADY_PENDING
                 "invalid or expired code" in raw || "empty_code" in raw -> ERR_INVALID_CODE
-                "already a member" in raw -> ERR_ALREADY_MEMBER
+                "already a member" in raw || "already_member" in raw -> ERR_ALREADY_MEMBER
                 "child not found" in raw || "request not found" in raw -> ERR_NOT_FOUND
                 "already resolved" in raw -> ERR_ALREADY_RESOLVED
                 "not authorized" in raw -> ERR_NOT_FOUND
@@ -301,6 +327,12 @@ object AccessRequestStrings {
             else "That code is invalid, already used, or expired — ask the owner for a new one"
         AccessRequestViewModel.ERR_ALREADY_MEMBER ->
             if (isThai) "คุณมีสิทธิ์เข้าถึงข้อมูลลูกคนนี้อยู่แล้ว" else "You already have access to this child"
+        AccessRequestViewModel.ERR_ALREADY_PENDING ->
+            if (isThai) "คุณได้ส่งคำขอเชื่อมข้อมูลสำหรับเด็กคนนี้ไปแล้ว อยู่ระหว่างรอการอนุมัติ"
+            else "A sync request for this child is already pending parent approval"
+        AccessRequestViewModel.ERR_REQUEST_REJECTED ->
+            if (isThai) "คำขอเชื่อมข้อมูลลูกคนนี้ถูกปฏิเสธโดยผู้ปกครองแล้ว ไม่สามารถส่งคำขอซ้ำได้"
+            else "This sync request was declined by the parent and cannot be requested again"
         AccessRequestViewModel.ERR_NOT_FOUND ->
             if (isThai) "ไม่พบคำขอหรือข้อมูลที่ตรงกัน" else "No matching request or record found"
         AccessRequestViewModel.ERR_ALREADY_RESOLVED ->

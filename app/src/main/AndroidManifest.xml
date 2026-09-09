@@ -13,14 +13,6 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
-    <!-- Health Connect read permissions (Google Fit / Samsung / Fitbit / Garmin bridge) -->
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
-    <uses-permission android:name="android.permission.health.READ_SLEEP" />
-    <uses-permission android:name="android.permission.health.READ_BODY_TEMPERATURE" />
-    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
-    <uses-permission android:name="android.permission.health.READ_STEPS" />
-    <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" />
-
     <!-- Camera is optional so the app still installs on devices/emulators without one -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -33,10 +25,6 @@
         <!-- Make the text-to-speech engine visible (Android 11+) so the AI can read replies aloud. -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
-        </intent>
-        <package android:name="com.google.android.apps.healthdata" />
-        <intent>
-            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
         </intent>
         <!-- Make calendar apps visible (Android 11+) for the "add vaccine to calendar" button —
              without this, ACTION_INSERT on the calendar Events URI can fail to resolve even when
@@ -96,14 +84,6 @@
                 <data android:scheme="nongrak" android:host="open" />
             </intent-filter>
 
-            <!-- Health Connect permission rationale (required by HC policy) -->
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-            </intent-filter>
         </activity>
 
         <!-- Declares Health Connect privacy policy link for the permissions screen -->

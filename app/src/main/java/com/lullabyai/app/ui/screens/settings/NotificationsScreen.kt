@@ -39,7 +39,9 @@ fun NotificationsScreen(
     val vm: NotificationViewModel = viewModel()
     val state by vm.uiState.collectAsState()
     val childState by childViewModel.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.load(); childViewModel.loadPendingSyncRequests() }
+    // Needed for the sync-request snooze, which is stored per device in DataStore.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) { vm.load(); childViewModel.loadPendingSyncRequests(context) }
 
     val tabs = listOf(
         Triple("schedule", "กำหนดการ", NotifCategory.SCHEDULE),
@@ -115,8 +117,8 @@ fun NotificationsScreen(
                             val childName = childState.children.find { it.id == req.childId }?.name ?: "-"
                             SyncRequestCard(
                                 childName = childName,
-                                onApprove = { childViewModel.confirmSyncRequest(req.id, true) },
-                                onReject = { childViewModel.confirmSyncRequest(req.id, false) }
+                                onApprove = { childViewModel.confirmSyncRequest(context, req.id, true) },
+                                onReject = { childViewModel.confirmSyncRequest(context, req.id, false) }
                             )
                         }
                     }

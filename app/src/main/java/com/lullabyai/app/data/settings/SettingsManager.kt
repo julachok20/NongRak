@@ -22,7 +22,9 @@ data class AppSettings(
     val healthAlert: Boolean = true,
     val aiTips: Boolean = false,
     /** true = the AI logs what it understood without asking; false = it asks first. */
-    val autoRecord: Boolean = false
+    val autoRecord: Boolean = false,
+    /** true = signing in from a new device requires approval from an active device (2FA). */
+    val twoFactorEnabled: Boolean = false
 )
 
 class SettingsManager(private val context: Context) {
@@ -33,11 +35,13 @@ class SettingsManager(private val context: Context) {
     private val DAILY_REPORT = booleanPreferencesKey("daily_report")
     private val HEALTH_ALERT = booleanPreferencesKey("health_alert")
     private val AI_TIPS = booleanPreferencesKey("ai_tips")
+    private val TWO_FACTOR_ENABLED = booleanPreferencesKey("two_factor_enabled")
     private val SELECTED_CHILD = stringPreferencesKey("selected_child_id")
     private val HAS_SEEN_TOUR = booleanPreferencesKey("has_seen_first_run_tour")
     private val HAS_SEEN_DOCTOR_TOUR = booleanPreferencesKey("has_seen_doctor_first_run_tour")
     private val SLEEP_REC_RESPONSE_AT = stringPreferencesKey("sleep_rec_response_at")
     private val DEVICE_ID = stringPreferencesKey("trusted_device_id")
+    private val COMMUNITY_TERMS_ACCEPTED = booleanPreferencesKey("community_terms_accepted")
 
     /** When the parent last answered (yes or no+reason) the recommended-bedtime prompt — gates
      *  how often SleepScheduleScreen/SleepRecommendationWorker re-ask (cooldown, not one-and-done). */
@@ -106,6 +110,94 @@ class SettingsManager(private val context: Context) {
         }
     }
 
+    // --- Child sync request snooze ---------------------------------------------------------
+    //
+    // Answering an access request used to hide it only in memory, so any refresh that re-read the
+    // table put the card straight back: a request can legitimately still be `pending` after the
+    // owner answers (the RPC refused, or it is now waiting on a ranked co-owner). Persisting the
+    // snooze here is what makes "gone" survive a refresh or an app restart.
+    //
+    // A snooze, not a permanent dismissal: if nobody has resolved the request two hours later it
+    // surfaces again, because a pending request for access to a child's records must not be
+    // silently forgotten.
+    private val SYNC_REQUEST_SNOOZE = stringPreferencesKey("sync_request_snooze")
+
+    /** How long an answered request stays hidden before it is worth raising again. */
+    private val SYNC_SNOOZE = java.time.Duration.ofHours(2)
+
+    /** Request ids still inside their snooze window. Expired entries are ignored. */
+    suspend fun snoozedSyncRequestIds(): Set<String> {
+        val now = System.currentTimeMillis()
+        return parseSnoozes(context.dataStore.data.first()[SYNC_REQUEST_SNOOZE])
+            .filterValues { it > now }
+            .keys
+    }
+
+    /** Hides [requestId] for the next two hours. Expired entries are pruned on the way through. */
+    suspend fun snoozeSyncRequest(requestId: String) {
+        val now = System.currentTimeMillis()
+        val until = now + SYNC_SNOOZE.toMillis()
+        context.dataStore.edit { prefs ->
+            val kept = parseSnoozes(prefs[SYNC_REQUEST_SNOOZE]).filterValues { it > now }
+            prefs[SYNC_REQUEST_SNOOZE] = (kept + (requestId to until))
+                .entries.joinToString(",") { "${it.key}|${it.value}" }
+        }
+    }
+
+    /** Tolerant of malformed entries: a corrupt pair is dropped, never allowed to throw. */
+    private fun parseSnoozes(raw: String?): Map<String, Long> =
+        (raw ?: "").split(',')
+            .mapNotNull { entry ->
+                val id = entry.substringBefore('|', "").trim()
+                val until = entry.substringAfter('|', "").trim().toLongOrNull()
+                if (id.isBlank() || until == null) null else id to until
+            }
+            .toMap()
+
+    private val INFO_ASK_SHOWN_DATE = stringPreferencesKey("info_ask_shown_date")
+    private val INFO_ASK_SHOWN_IDS = stringPreferencesKey("info_ask_shown_ids")
+    private val INFO_ASK_ANSWERED_IDS = stringPreferencesKey("info_ask_answered_ids")
+
+    /** Field ids already shown today for [childId] — so the banner does not repeat the same gap. */
+    suspend fun infoAskShownFieldIdsToday(childId: String): Set<String> {
+        val prefs = context.dataStore.data.first()
+        val today = java.time.LocalDate.now().toString()
+        if (prefs[INFO_ASK_SHOWN_DATE] != today) return emptySet()
+        return fieldIdsForChild(prefs[INFO_ASK_SHOWN_IDS], childId)
+    }
+
+    suspend fun recordInfoAskFieldShown(childId: String, fieldId: String) =
+        recordInfoAskFieldsShown(childId, listOf(fieldId))
+
+    suspend fun recordInfoAskFieldsShown(childId: String, fieldIds: Collection<String>) {
+        if (fieldIds.isEmpty()) return
+        val today = java.time.LocalDate.now().toString()
+        context.dataStore.edit { prefs ->
+            val reset = prefs[INFO_ASK_SHOWN_DATE] != today
+            val current = if (reset) emptyList() else (prefs[INFO_ASK_SHOWN_IDS] ?: "").split(',').filter { it.isNotBlank() }
+            prefs[INFO_ASK_SHOWN_DATE] = today
+            prefs[INFO_ASK_SHOWN_IDS] = (current + fieldIds.map { "$childId|$it" }).distinct().joinToString(",")
+        }
+    }
+
+    /** One-shot fields already answered for this child (e.g. activity_level). */
+    suspend fun infoAskAnsweredFieldIds(childId: String): Set<String> =
+        fieldIdsForChild(context.dataStore.data.first()[INFO_ASK_ANSWERED_IDS], childId)
+
+    suspend fun recordInfoAskFieldAnswered(childId: String, fieldId: String) {
+        context.dataStore.edit { prefs ->
+            val current = (prefs[INFO_ASK_ANSWERED_IDS] ?: "").split(',').filter { it.isNotBlank() }
+            prefs[INFO_ASK_ANSWERED_IDS] = (current + "$childId|$fieldId").distinct().joinToString(",")
+        }
+    }
+
+    private fun fieldIdsForChild(raw: String?, childId: String): Set<String> =
+        (raw ?: "").split(',')
+            .map { it.trim() }
+            .filter { it.startsWith("$childId|") }
+            .map { it.substringAfter('|') }
+            .toSet()
+
     private val ADD_CHILD_PROMPT_AT = stringPreferencesKey("add_child_prompt_shown_at")
 
     /** Whether the "add a child" nudge popup is allowed to show again — gated to once per 4 hours
@@ -144,6 +236,25 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setSelectedMascot(value: String) {
         context.dataStore.edit { it[SELECTED_MASCOT] = value }
+    }
+
+    private fun unlockAnnouncedKey(mascot: String) = intPreferencesKey("unlock_announced_$mascot")
+    private val UNLOCK_ANNOUNCED_BEST = intPreferencesKey("unlock_announced_best")
+
+    /** Last bond level whose unlocks were shown for this companion. Null = never seeded. */
+    suspend fun announcedUnlockLevel(mascot: String): Int? =
+        context.dataStore.data.first()[unlockAnnouncedKey(mascot)]
+
+    suspend fun setAnnouncedUnlockLevel(mascot: String, level: Int) {
+        context.dataStore.edit { it[unlockAnnouncedKey(mascot)] = level }
+    }
+
+    /** Best bond whose companion-unlock toasts were shown. Null = never seeded. */
+    suspend fun announcedBestLevel(): Int? =
+        context.dataStore.data.first()[UNLOCK_ANNOUNCED_BEST]
+
+    suspend fun setAnnouncedBestLevel(level: Int) {
+        context.dataStore.edit { it[UNLOCK_ANNOUNCED_BEST] = level }
     }
 
     private val SERVICE_USAGE = stringPreferencesKey("service_usage")
@@ -258,8 +369,13 @@ class SettingsManager(private val context: Context) {
             aiTips = prefs[AI_TIPS] ?: false,
             // Defaults to off: the AI asking before it writes is the safe starting point, and
             // the parent opts in to unattended logging once they trust it.
-            autoRecord = prefs[AUTO_RECORD] ?: false
+            autoRecord = prefs[AUTO_RECORD] ?: false,
+            twoFactorEnabled = prefs[TWO_FACTOR_ENABLED] ?: false
         )
+    }
+
+    suspend fun setTwoFactorEnabled(value: Boolean) {
+        context.dataStore.edit { it[TWO_FACTOR_ENABLED] = value }
     }
 
     suspend fun setDarkMode(value: Boolean) {
@@ -345,6 +461,14 @@ class SettingsManager(private val context: Context) {
             val cur = prefs[SYNC_CUSTOM_SOURCES]?.split(";;;")?.filter { it.isNotBlank() } ?: emptyList()
             prefs[SYNC_CUSTOM_SOURCES] = cur.filter { it != sourceName }.joinToString(";;;")
         }
+    }
+
+    val hasAcceptedCommunityTerms: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[COMMUNITY_TERMS_ACCEPTED] ?: false
+    }
+
+    suspend fun setCommunityTermsAccepted(accepted: Boolean = true) {
+        context.dataStore.edit { it[COMMUNITY_TERMS_ACCEPTED] = accepted }
     }
 }
 

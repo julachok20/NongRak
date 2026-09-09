@@ -97,6 +97,14 @@ data class ChildUiState(
     val inviteCode: String? = null,
     val inviteCodeChildName: String? = null,   // which child the shown code belongs to — each child gets its own code
     val pendingSyncRequests: List<com.lullabyai.app.data.model.ChildSyncRequest> = emptyList(),
+    /**
+     * Requests the owner has already answered on this device. [loadPendingSyncRequests] re-reads
+     * from the server, so without this a row that is still `pending` server-side — a denial the RPC
+     * refused, or a duplicate the requester filed — reappears on the dashboard card immediately
+     * after Approve/Deny. Once answered, it stays gone; a failure is reported through `syncError`
+     * instead of by silently putting the card back.
+     */
+    val handledSyncIds: Set<String> = emptySet(),
     /** One-shot popup when a doctor sends vaccine verification to this account. */
     val doctorVaccineInboxPopup: DoctorVaccineInboxItem? = null,
     // --- Home info-ask (replaces the daily-question popup) ------------------------------------
@@ -359,7 +367,7 @@ class ChildViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(syncSearching = true, syncError = null, syncSearchResults = emptyList())
             childRepo.searchChildForSync(name, birthdate)
                 .onSuccess { _uiState.value = _uiState.value.copy(syncSearching = false, syncSearchResults = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(syncSearching = false, syncError = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncSearching = false, syncError = AccessRequestViewModel.safeError(it)) }
         }
     }
 
@@ -367,7 +375,7 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch {
             childRepo.requestSyncBySearch(childId, role)
                 .onSuccess { _uiState.value = _uiState.value.copy(syncRequestSent = true, syncError = null) }
-                .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncError = AccessRequestViewModel.safeError(it)) }
         }
     }
 
@@ -375,7 +383,7 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch {
             childRepo.requestSyncByCode(code, role = role, method = method)
                 .onSuccess { _uiState.value = _uiState.value.copy(syncRequestSent = true, syncError = null) }
-                .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncError = AccessRequestViewModel.safeError(it)) }
         }
     }
 
@@ -385,7 +393,7 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch {
             childRepo.generateInviteCode(childId)
                 .onSuccess { _uiState.value = _uiState.value.copy(inviteCode = it, inviteCodeChildName = childName) }
-                .onFailure { _uiState.value = _uiState.value.copy(syncError = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(syncError = AccessRequestViewModel.safeError(it)) }
         }
     }
 
@@ -396,16 +404,62 @@ class ChildViewModel : ViewModel() {
         )
     }
 
-    fun loadPendingSyncRequests() {
+    /** Dismisses the owner-side sync error banner. Does not un-handle the request. */
+    fun clearSyncError() {
+        _uiState.value = _uiState.value.copy(syncError = null)
+    }
+
+    fun loadPendingSyncRequests(context: android.content.Context) {
         viewModelScope.launch {
+            val snoozed = runCatching {
+                com.lullabyai.app.data.settings.SettingsManager(context).snoozedSyncRequestIds()
+            }.getOrDefault(emptySet())
             childRepo.getPendingSyncRequests()
-                .onSuccess { _uiState.value = _uiState.value.copy(pendingSyncRequests = it) }
+                .onSuccess { fresh ->
+                    // Hidden if answered this session OR snoozed on disk. The disk half is what
+                    // survives a refresh: the row can still be `pending` server-side after the
+                    // owner answers, and re-showing it every reload is the bug being fixed.
+                    val hidden = _uiState.value.handledSyncIds + snoozed
+                    _uiState.value = _uiState.value.copy(
+                        pendingSyncRequests = fresh.filterNot { it.id in hidden }
+                    )
+                }
         }
     }
 
-    fun confirmSyncRequest(requestId: String, approve: Boolean) {
+    /**
+     * The optimistic removal below hides the row before the server has agreed to anything, so a
+     * failed RPC MUST be reported. This previously had only an `onSuccess` branch: when
+     * `confirm_child_sync_request` raised ('not authorized', 'already resolved'), the row vanished
+     * from the list while staying `pending` in Postgres, and AccessRequestViewModel's 4s poll
+     * re-raised the popup seconds later — the "pressed Deny, it keeps coming back" report.
+     */
+    fun confirmSyncRequest(context: android.content.Context, requestId: String, approve: Boolean) {
         viewModelScope.launch {
-            childRepo.confirmSyncRequest(requestId, approve).onSuccess { loadPendingSyncRequests() }
+            _uiState.value = _uiState.value.copy(
+                pendingSyncRequests = _uiState.value.pendingSyncRequests.filterNot { it.id == requestId },
+                handledSyncIds = _uiState.value.handledSyncIds + requestId,
+                syncError = null
+            )
+            // Snooze before the call, not after: the point is to stop the card returning whatever
+            // the server says, including when the RPC refuses. The error banner is what tells the
+            // owner a refusal happened; the two-hour expiry is what stops a genuinely unresolved
+            // request from being lost.
+            runCatching {
+                com.lullabyai.app.data.settings.SettingsManager(context).snoozeSyncRequest(requestId)
+            }
+            childRepo.confirmSyncRequest(requestId, approve)
+                .onSuccess { loadPendingSyncRequests(context) }
+                .onFailure { e ->
+                    // safeError, never e.message: raw RPC text can carry the child id, the
+                    // requester's user id or the invite token, none of which belong on screen.
+                    // Re-read after, so the row returns to the list honestly rather than the owner
+                    // learning of the failure only when the popup comes back.
+                    _uiState.value = _uiState.value.copy(
+                        syncError = AccessRequestViewModel.safeError(e)
+                    )
+                    loadPendingSyncRequests(context)
+                }
         }
     }
 

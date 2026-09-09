@@ -137,12 +137,20 @@ class ChatRepository {
         relationship: String? = null,
         /** The chosen companion's voice. Null keeps the neutral house tone. */
         persona: String? = null,
-        isThai: Boolean = true
+        isThai: Boolean = true,
+        /**
+         * Every child on this account. Child Info's selected row is [child] — a screen default,
+         * not the only baby the model may talk about. Empty falls back to [child] alone.
+         */
+        family: List<Child> = emptyList(),
+        /** Mascot key (nongrak, coco, bunny, pingu) to anchor AI persona and mannerisms. */
+        mascotKey: String? = null
     ): Result<String> = runCatching {
         // Retrieve prior history (memory) BEFORE adding the new message
         val history = runCatching { getMessages(sessionId).getOrDefault(emptyList()) }.getOrDefault(emptyList())
 
-        val childContext = buildChildContext(child, relationship, isThai)
+        val targetChild = com.lullabyai.app.util.ChildMention.resolve(userMessage, family, fallback = child) ?: child
+        val childContext = buildChatChildContext(family, targetChild, relationship, isThai)
 
         val conversation = history.joinToString("\n") { msg ->
             val who = if (msg.role == "user") (if (isThai) "ผู้ใช้" else "User") else (if (isThai) "ผู้ช่วย" else "Assistant")
@@ -198,7 +206,7 @@ class ChatRepository {
         val imageB64 = mediaBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
 
         val systemPrompt = if (isThai) {
-            RelationshipLabels.chatSystemPrompt(relationship, isThai = true) +
+            RelationshipLabels.chatSystemPrompt(relationship, isThai = true, mascotKey = mascotKey) +
                 persona.orEmpty() +
                 "\n\nเวลาปัจจุบันของผู้ใช้: " +
                 java.time.LocalDateTime.now()
@@ -208,7 +216,7 @@ class ChatRepository {
                 "ให้คำนวณเป็นเวลาจริงในรูปแบบ HH:mm จากเวลาปัจจุบันข้างต้นเสมอ " +
                 "ห้ามใส่ข้อความแทนค่า เช่น [current_time] ลงใน params เด็ดขาด"
         } else {
-            RelationshipLabels.chatSystemPrompt(relationship, isThai = false) +
+            RelationshipLabels.chatSystemPrompt(relationship, isThai = false, mascotKey = mascotKey) +
                 persona.orEmpty() +
                 "\n\nCurrent user time: " +
                 java.time.LocalDateTime.now()
@@ -219,9 +227,27 @@ class ChatRepository {
                 "Never put placeholders like [current_time] in params."
         }
 
+        // Medical questions go to MedGemma first and come back with the warning already on top
+        // (see NongRakMedicalRouter). Text only: an image question still needs the vision chain.
+        // A null answer means "not medical", "MedGemma unreachable" or "the call failed", all of
+        // which fall through to the normal chain - a parent asking about a fever must get an
+        // answer either way, so this never blocks a reply.
+        val medicalErrors = mutableListOf<String>()
+        val medical = if (imageB64 == null) {
+            com.lullabyai.app.data.remote.NongRakMedicalRouter.tryAnswer(
+                userMessage = userMessage,
+                contextPrompt = systemPrompt.orEmpty(),
+                errors = medicalErrors
+            )
+        } else null
+
+        if (medical == null && medicalErrors.isNotEmpty()) {
+            android.util.Log.w("ChatRepository", "MedGemma skipped: ${medicalErrors.joinToString(" | ")}")
+        }
+
         // Call the AI (useSearch=false for chat: the system prompt already has the knowledge base).
         // maxTokens 4096: Thai is token-heavy, so a smaller limit truncates answers mid-sentence.
-        val aiText = ClaudeClient.generateContent(
+        val aiText = medical?.text ?: ClaudeClient.generateContent(
             prompt, useSearch = false, maxTokens = 4096,
             system = systemPrompt,
             jsonMode = false,
@@ -243,6 +269,59 @@ class ChatRepository {
         }
 
         response
+    }
+
+    /**
+     * Chat turns see the whole family. Analysis cards ([generateDashboardSummary] etc.) still
+     * call [buildChildContext] for the one child on that screen.
+     */
+    private suspend fun buildChatChildContext(
+        family: List<Child>,
+        selected: Child?,
+        relationship: String?,
+        isThai: Boolean
+    ): String {
+        val kids = family.distinctBy { it.id }.ifEmpty { listOfNotNull(selected) }
+        if (kids.size <= 1) return buildChildContext(kids.firstOrNull() ?: selected, relationship, isThai)
+        val primary = selected ?: kids.first()
+        val otherKids = kids.filter { it.id != primary.id }
+        return buildString {
+            val user = buildChildContext(null, relationship, isThai)
+            if (user.isNotBlank()) {
+                append(user)
+                appendLine()
+            }
+            append(com.lullabyai.app.util.ChildMention.familyPreamble(kids, primary, isThai))
+            appendLine()
+            if (isThai) {
+                appendLine("★ ข้อมูลเด็กหลักในการสนทนานี้: ${primary.name}")
+                appendLine("คำสั่งสำคัญสำหรับการตอบคำถามและการขอข้อมูล (<NEED_INFO>):")
+                appendLine("- ให้ตอบคำถามและให้คำแนะนำโดยมุ่งเน้นที่ '${primary.name}' เป็นหลัก")
+                if (otherKids.isNotEmpty()) {
+                    val otherNames = otherKids.joinToString(", ") { it.name }
+                    appendLine("- ห้ามถามข้อมูลเพิ่มเติม (<NEED_INFO>) เกี่ยวกับเด็กคนอื่น ($otherNames) เด็ดขาดในขณะที่กำลังสนทนาเรื่องของ '${primary.name}'")
+                    appendLine("- การถามข้อมูลผ่านบล็อก <NEED_INFO> ต้องเจาะจงเฉพาะ '${primary.name}' เท่านั้น และต้องระบุชื่อ '${primary.name}' ในคำถามเสมอ")
+                }
+            } else {
+                appendLine("★ Primary child of focus in this conversation: ${primary.name}")
+                appendLine("Critical instructions for replies and requesting info (<NEED_INFO>):")
+                appendLine("- Focus answers and care recommendations primarily on '${primary.name}'.")
+                if (otherKids.isNotEmpty()) {
+                    val otherNames = otherKids.joinToString(", ") { it.name }
+                    appendLine("- NEVER request additional info (<NEED_INFO>) about other children ($otherNames) while discussing '${primary.name}'.")
+                    appendLine("- Any proactive questions via <NEED_INFO> MUST be strictly about '${primary.name}' and specify '${primary.name}' by name.")
+                }
+            }
+            appendLine()
+            appendLine(if (isThai) "— ${primary.name} (เด็กหลักที่กำลังสนทนา) —" else "— ${primary.name} (Primary focus child) —")
+            append(buildChildContext(primary, relationship = null, isThai))
+            appendLine()
+            otherKids.forEach { c ->
+                appendLine(if (isThai) "— ${c.name} (ข้อมูลเด็กคนอื่นในครอบครัว — ใช้เป็นบริบทเสริม ห้ามถาม <NEED_INFO> ของเด็กคนนี้) —" else "— ${c.name} (Other child in family — background reference only, DO NOT ask <NEED_INFO> for this child) —")
+                append(buildChildContext(c, relationship = null, isThai))
+                appendLine()
+            }
+        }
     }
 
     /** Builds a rich context string from the child profile + medical history (synced from onboarding). */

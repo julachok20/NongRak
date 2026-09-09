@@ -20,11 +20,11 @@ android {
         applicationId = "com.publish.NongRak"
         minSdk = 26
         targetSdk = 36
-        // Next after the newest artifact in Releases/ (v1.0.8-internal, vc21). This file had been
+        // Next after the newest artifact in Releases/ (v1.0.9, vc26). This file had been
         // left on vc16/1.0.3-dev36 while five releases shipped from elsewhere, so read Releases/
         // rather than this line when picking the next number.
-        versionCode = 23
-        versionName = "1.0.9"
+        versionCode = 28
+        versionName = "1.0.1"
         testInstrumentationRunner = "com.lullabyai.app.NongRakTestRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${localProps["SUPABASE_URL"]}\"")
@@ -119,15 +119,13 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.video)
     implementation(libs.mlkit.barcode.scanning)
-    // Real Guava, not just the empty listenablefuture shim CameraX normally relies on —
-    // androidx.health.connect:connect-client forces listenablefuture to the empty
-    // "avoid-conflict-with-guava" placeholder on the compile classpath without pulling in
-    // real Guava to compensate, which makes ListenableFuture (CameraX's ProcessCameraProvider
-    // return type) inaccessible at compile time. Adding Guava directly resolves it.
+    // Real Guava. androidx.health.connect forced listenablefuture to the empty
+    // "avoid-conflict-with-guava" placeholder on the compile classpath without pulling in real
+    // Guava to compensate, which hid ListenableFuture - CameraX's ProcessCameraProvider return
+    // type - at compile time. Health Connect has since been removed, so this may no longer be
+    // needed; CameraX (including the video recorder) still depends on ListenableFuture resolving,
+    // so verify the camera builds AND opens before dropping it.
     implementation("com.google.guava:guava:33.3.1-android")
-
-    // Health Connect (Google Fit / Samsung / Fitbit / Garmin bridge on Android)
-    implementation(libs.androidx.health.connect)
 
     // Supabase
     implementation(libs.supabase.postgrest)
