@@ -8,6 +8,11 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -114,11 +119,9 @@ private fun voiceStyle(mode: ChatMode): String = when (mode) {
 
 /** The pose the companion wears, given what it is currently doing or warning about. */
 private fun companionEmotion(
-    hasQuestion: Boolean,
     briefKind: BriefKind,
     mode: ChatMode
 ): CompanionEmotion = when {
-    hasQuestion -> CompanionEmotion.CONFUSED          // waiting on a detail before it can log
     briefKind != BriefKind.NONE -> CompanionEmotion.CARING
     mode == ChatMode.STORY -> CompanionEmotion.LEARNING
     else -> CompanionEmotion.GREETING
@@ -192,8 +195,7 @@ fun AIChatScreen(
 
     // The AI's most recent question wins if several are pending (e.g. a slow reply from an older
     // turn) — showing more than one popup stacked would be confusing.
-    val pendingNeedInfo = chatState.messages.lastOrNull { it.needInfo != null && !it.needInfoAnswered }
-    val emotion = companionEmotion(pendingNeedInfo != null, brief.kind, chatState.mode)
+    val emotion = companionEmotion(brief.kind, chatState.mode)
 
     // ponytail: bonding tracks how many conversations the parent has had — the only cumulative
     // signal already stored. Swap for a real interaction counter when one exists.
@@ -585,6 +587,7 @@ fun AIChatScreen(
                             ChatBubble(
                                 message = message,
                                 mascot = mascot,
+                                isThai = isThai,
                                 onConfirmAction = {
                                     // "navigate" is UI-only (no repository write) — resolved and fired here,
                                     // alongside confirmAgentAction which still marks the card confirmed/failed.
@@ -595,14 +598,19 @@ fun AIChatScreen(
                                     }
                                     childState.child?.id?.let { chatViewModel.confirmAgentAction(message.id, it) }
                                 },
-                                onCancelAction = { chatViewModel.cancelAgentAction(message.id) }
+                                onCancelAction = { chatViewModel.cancelAgentAction(message.id) },
+                                onConfirmCommand = { ticket -> chatViewModel.confirmCommand(message.id, ticket) },
+                                onCancelCommand = { ticket -> chatViewModel.cancelCommand(message.id, ticket) }
                             )
                         }
-                        // Debug indicator: which AI model answered the latest reply
+                        // Parents see the product name. Debug builds add the model that actually
+                        // answered, so a silent fallback to the cloud chain is still visible in testing.
                         if (chatState.lastProvider.isNotBlank() && !chatState.isLoading) {
                             item {
                                 Text(
-                                    "ตอบโดย ${chatState.lastProvider}",
+                                    (if (isThai) "ตอบโดย " else "Answered by ") +
+                                        com.lullabyai.app.util.answerLabel(chatState.lastProvider) +
+                                        if (com.lullabyai.app.BuildConfig.DEBUG) " · ${chatState.lastProvider}" else "",
                                     fontSize = 10.sp,
                                     color = chatColors.inkFaint,
                                     modifier = Modifier.fillMaxWidth().padding(start = 44.dp)
@@ -622,17 +630,25 @@ fun AIChatScreen(
                                         color = chatColors.aiBubble,
                                         shadowElevation = 1.dp
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(16.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            repeat(3) { i ->
-                                                Box(
-                                                    Modifier.size(6.dp).background(
-                                                        chatColors.primary.copy(if (i == 0) 1f else 0.5f), CircleShape
-                                                    )
-                                                )
-                                            }
+                                        // Spark streams: the bubble fills as Typhoon writes. Dots until
+                                        // the first words arrive (safety check, Gemma key points).
+                                        val partial = chatState.streamingText
+                                        if (partial != null) {
+                                            Text(
+                                                text = partial,
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                                fontSize = 14.sp,
+                                                lineHeight = 22.sp,
+                                                color = chatColors.aiBubbleText
+                                            )
+                                        } else {
+                                            val asked = chatState.messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+                                            ThinkingIndicator(
+                                                name = mascot.thaiName,
+                                                complex = com.lullabyai.app.data.remote.NongRakMedicalRouter.isMedicalQuestion(asked) ||
+                                                    asked.length > 180,
+                                                isThai = isThai
+                                            )
                                         }
                                     }
                                 }
@@ -643,30 +659,6 @@ fun AIChatScreen(
                 }
             }
         }
-    }
-
-    pendingNeedInfo?.let { message ->
-        val request = message.needInfo!!
-        var answer by remember(message.id) { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { chatViewModel.dismissNeedInfo(message.id) },
-            icon = { Icon(Icons.Filled.HelpOutline, null, tint = chatColors.primary) },
-            title = { Text(request.question) },
-            text = {
-                OutlinedTextField(
-                    value = answer, onValueChange = { answer = it },
-                    label = { Text(request.fieldLabel.ifBlank { "คำตอบ" }) }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { chatViewModel.answerNeedInfo(message.id, answer, childState.child) },
-                    enabled = answer.isNotBlank()
-                ) { Text("ส่ง", color = chatColors.primary, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { chatViewModel.dismissNeedInfo(message.id) }) { Text("ข้าม") } }
-        )
     }
 
     sessionToDelete?.let { id ->
@@ -1096,16 +1088,146 @@ private fun CompanionBubble(mascot: MascotId, text: String) {
     }
 }
 
+/**
+ * The wait before the first words arrive. Spark checks the question first and, for medical or long
+ * questions, has Gemma pick out key points before Typhoon starts writing — that can take a while,
+ * so the line under the dots says what is happening instead of letting the bubble look frozen.
+ */
+@Composable
+private fun ThinkingIndicator(name: String, complex: Boolean, isThai: Boolean) {
+    val chatColors = LocalChatColors.current
+    var seconds by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1_000)
+            seconds++
+        }
+    }
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(tween(1_200, easing = LinearEasing)),
+        label = "dots"
+    )
+    val line = when {
+        seconds >= 25 -> if (isThai) "คำถามนี้ละเอียดหน่อย ขอเวลาอีกนิดนะคะ…" else "This one needs a little longer…"
+        complex && seconds >= 8 -> if (isThai) "กำลังรวบรวมประเด็นสำคัญ…" else "Gathering the key points…"
+        complex -> if (isThai) "${name}กำลังวิเคราะห์อย่างละเอียด…" else "Analysing carefully…"
+        seconds >= 8 -> if (isThai) "กำลังเรียบเรียงคำตอบ…" else "Putting the answer together…"
+        else -> if (isThai) "${name}กำลังคิด…" else "Thinking…"
+    }
+    Column(
+        Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            repeat(3) { i ->
+                // Each dot rises and brightens in turn.
+                val lift = 1f - kotlin.math.abs(phase - i - 0.5f).coerceAtMost(1f)
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .graphicsLayer { translationY = -lift * 6.dp.toPx() }
+                        .background(chatColors.primary.copy(alpha = 0.4f + 0.6f * lift), CircleShape)
+                )
+            }
+        }
+        Text(line, fontSize = 12.sp, color = chatColors.inkSoft)
+    }
+}
+
+/**
+ * Above every medical answer, in place of warning text inside the reply. Driven by the message's
+ * stored `medical` flag, so it is still there when the chat is reopened.
+ */
+@Composable
+private fun MedicalNoteBanner(isThai: Boolean, modifier: Modifier = Modifier) {
+    val chatColors = LocalChatColors.current
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = chatColors.primaryLight,
+        border = if (chatColors.isDark) androidx.compose.foundation.BorderStroke(1.dp, chatColors.border) else null,
+        modifier = modifier.fillMaxWidth(0.82f)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(Icons.Filled.Info, null, tint = chatColors.primary, modifier = Modifier.size(16.dp))
+            Text(
+                if (isThai) "หมายเหตุ: คำแนะนำนี้เป็นข้อมูลทั่วไป ไม่ใช่การวินิจฉัยทางการแพทย์ " +
+                    "หากอาการรุนแรงหรือไม่ดีขึ้น ควรพบแพทย์ทันที (ฉุกเฉินโทร 1669)"
+                else "Note: this is general guidance, not a medical diagnosis. " +
+                    "If symptoms are severe or not improving, see a doctor now (emergency: 1669).",
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                color = chatColors.inkSoft
+            )
+        }
+    }
+}
+
+/** Readable names for the columns a command card lists; unknown keys show as they are. */
+private fun commandFieldLabel(key: String, isThai: Boolean): String {
+    val th = mapOf(
+        "start_time" to "เริ่ม", "end_time" to "สิ้นสุด", "sleep_type" to "ประเภทการนอน", "mood" to "อารมณ์",
+        "milk_type" to "ชนิดนม", "volume_ml" to "ปริมาณ (มล.)", "side" to "ข้าง", "logged_at" to "เวลา",
+        "meal_type" to "มื้อ", "item_name" to "อาหาร", "calories" to "แคลอรี", "log_date" to "วันที่",
+        "waste_type" to "ประเภท", "amount" to "จำนวน", "consistency" to "ลักษณะ", "color" to "สี",
+        "recorded_at" to "เวลา", "title" to "หัวข้อ", "description" to "รายละเอียด", "temperature" to "อุณหภูมิ",
+        "weight_kg" to "น้ำหนัก (กก.)", "height_cm" to "ส่วนสูง (ซม.)", "vaccine_name" to "วัคซีน",
+        "date_given" to "วันที่ฉีด", "medicine_name" to "ยา", "dosage" to "ขนาดยา", "name" to "ชื่อ",
+        "severity" to "ความรุนแรง", "notes" to "หมายเหตุ", "note" to "หมายเหตุ", "starts_at" to "เริ่ม",
+        "ends_at" to "สิ้นสุด", "spent_on" to "วันที่จ่าย", "category" to "หมวด", "time_of_day" to "เวลา",
+        "item" to "รายการ", "budget" to "งบ", "month" to "เดือน", "body" to "ข้อความ", "instructions" to "คำแนะนำ",
+        "tasks" to "สิ่งที่ต้องทำ", "expected_end" to "กลับมาดูแลเอง", "tooth_id" to "ซี่ฟัน", "status" to "สถานะ",
+        "symptoms" to "อาการ", "feeling" to "ความรู้สึก", "day_status" to "สถานะวันนี้", "routine_date" to "วันที่",
+        "morning" to "เช้า", "lunch" to "กลางวัน", "bedtime" to "ก่อนนอน", "flossing" to "ไหมขัดฟัน",
+        "ingredient_name" to "วัตถุดิบ", "quantity" to "จำนวน", "done" to "ทำแล้ว", "on_date" to "วันที่",
+        "pain_level" to "ระดับความเจ็บ", "erupted_at" to "วันที่ฟันขึ้น"
+    )
+    return if (isThai) th[key] ?: key else key.replace('_', ' ')
+}
+
+/** The named reason from ai-chat, in words a parent can act on. */
+private fun commandFailureText(reason: String, isThai: Boolean): String = when {
+    reason.startsWith("ticket_expired") ->
+        if (isThai) "หมดเวลายืนยันแล้ว ลองพิมพ์สั่งใหม่อีกครั้ง" else "This expired. Please ask again."
+    reason.startsWith("ticket_already_used") ->
+        if (isThai) "รายการนี้บันทึกไปแล้ว" else "Already recorded."
+    reason.startsWith("record_changed") ->
+        if (isThai) "ข้อมูลนี้ถูกแก้ไปแล้วหลังจากเตรียมรายการ ลองสั่งใหม่อีกครั้ง" else "This changed since. Please ask again."
+    reason.startsWith("record_not_found") || reason.startsWith("restore_not_found") ->
+        if (isThai) "ไม่พบรายการนี้แล้ว" else "That item is gone."
+    reason.startsWith("restore_expired") ->
+        if (isThai) "เกิน 30 วันแล้ว กู้คืนไม่ได้" else "Older than 30 days; can't restore."
+    "CHILD_OVER_TOTAL" in reason ->
+        if (isThai) "งบของลูกรวมกันเกินงบรวมที่ตั้งไว้" else "Children's budgets would exceed the overall budget."
+    "no caregiver is ticked" in reason ->
+        if (isThai) "ยังไม่มีผู้ดูแลที่ติ๊ก \"ช่วยดูแล\" ในการตั้งค่าสิทธิ์" else "No caregiver is ticked in access settings."
+    "42501" in reason || "row-level security" in reason || "not authorized" in reason ->
+        if (isThai) "บทบาทของบัญชีนี้ไม่มีสิทธิ์ทำรายการนี้" else "Your role can't do this."
+    else -> (if (isThai) "บันทึกไม่สำเร็จ: " else "Couldn't record: ") + reason.take(80)
+}
+
 @Composable
 private fun ChatBubble(
     message: UiChatMessage,
     mascot: MascotId,
+    isThai: Boolean = true,
     onConfirmAction: () -> Unit = {},
-    onCancelAction: () -> Unit = {}
+    onCancelAction: () -> Unit = {},
+    onConfirmCommand: (ticket: String) -> Unit = {},
+    onCancelCommand: (ticket: String) -> Unit = {}
 ) {
     val chatColors = LocalChatColors.current
     val isUser = message.role == "user"
     Column(modifier = Modifier.fillMaxWidth()) {
+        if (!isUser && message.medical) {
+            MedicalNoteBanner(isThai, Modifier.padding(start = 44.dp, bottom = 6.dp))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -1143,6 +1265,92 @@ private fun ChatBubble(
                 }
             }
             if (isUser) { Spacer(Modifier.width(8.dp)) }
+        }
+        // Command-center cards: signed proposals from ai-chat. Nothing is written until Confirm, and
+        // the write runs with this person's own login (their role decides what is allowed).
+        message.commands.forEach { command ->
+            val status = message.commandStatus[command.ticket]
+            Row(Modifier.fillMaxWidth().padding(start = 44.dp, top = 8.dp), horizontalArrangement = Arrangement.Start) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = chatColors.primaryLight,
+                    border = if (chatColors.isDark) androidx.compose.foundation.BorderStroke(1.dp, chatColors.border) else null,
+                    modifier = Modifier.fillMaxWidth(0.82f)
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.Bolt, null, tint = chatColors.primary, modifier = Modifier.size(16.dp))
+                            Text(
+                                command.label + if (command.child.isNotBlank()) " · ${command.child}" else "",
+                                fontSize = 12.sp, fontWeight = FontWeight.Bold, color = chatColors.primary
+                            )
+                        }
+                        Text(command.summary, fontSize = 12.sp, color = chatColors.inkSoft)
+                        if (command.fields.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                command.fields.forEach { (key, value) ->
+                                    val old = command.before[key]
+                                    Text(
+                                        "${commandFieldLabel(key, isThai)}: " + if (old != null) "${old.ifBlank { "–" }} → $value" else value,
+                                        fontSize = 11.sp,
+                                        color = if (old != null) chatColors.inkSoft else chatColors.inkFaint
+                                    )
+                                }
+                            }
+                        }
+                        val isDelete = command.action == "delete"
+                        when {
+                            status == null -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { onCancelCommand(command.ticket) },
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, chatColors.border)
+                                ) {
+                                    Text(if (isThai) "ยกเลิก" else "Cancel", fontSize = 12.sp, color = chatColors.inkSoft)
+                                }
+                                Button(
+                                    onClick = { onConfirmCommand(command.ticket) },
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = if (isDelete) Error else chatColors.primary)
+                                ) {
+                                    Text(
+                                        when (command.action) {
+                                            "delete" -> if (isThai) "ยืนยันลบ" else "Delete"
+                                            "send" -> if (isThai) "ยืนยันส่ง" else "Send"
+                                            else -> if (isThai) "ยืนยัน" else "Confirm"
+                                        },
+                                        fontSize = 12.sp, color = Color.White
+                                    )
+                                }
+                            }
+                            status == "running" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = chatColors.primary
+                                )
+                                Text(if (isThai) "กำลังดำเนินการ…" else "Working…", fontSize = 12.sp, color = chatColors.inkSoft)
+                            }
+                            status == "done" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF22C55E), modifier = Modifier.size(14.dp))
+                                Text(
+                                    when (command.action) {
+                                        "edit" -> if (isThai) "แก้ไขแล้ว (กู้คืนได้ใน 30 วัน)" else "Updated (restorable for 30 days)"
+                                        "delete" -> if (isThai) "ลบแล้ว (กู้คืนได้ใน 30 วัน)" else "Deleted (restorable for 30 days)"
+                                        "restore" -> if (isThai) "กู้คืนแล้ว" else "Restored"
+                                        "send" -> if (isThai) "ส่งแล้ว" else "Sent"
+                                        else -> if (isThai) "บันทึกแล้ว" else "Recorded"
+                                    },
+                                    fontSize = 12.sp, color = Color(0xFF22C55E)
+                                )
+                            }
+                            status == "cancelled" -> Text(if (isThai) "ยกเลิกแล้ว" else "Cancelled", fontSize = 12.sp, color = chatColors.inkFaint)
+                            else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.ErrorOutline, null, tint = Error, modifier = Modifier.size(14.dp))
+                                Text(commandFailureText(status.removePrefix("failed:"), isThai), fontSize = 12.sp, color = Error)
+                            }
+                        }
+                    }
+                }
+            }
         }
         // Agentic action card — the AI proposed logging/editing/deleting data; nothing runs until
         // the parent taps Confirm here (see ChatViewModel.confirmAgentAction).

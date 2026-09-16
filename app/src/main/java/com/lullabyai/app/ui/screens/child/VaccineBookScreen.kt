@@ -172,7 +172,7 @@ fun VaccineBookScreen(
                     }
                     if (currentGroup.isNotEmpty()) {
                         Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
-                            Text(currentGroup, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                            Text(currentGroup, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -201,17 +201,17 @@ fun VaccineBookScreen(
                                 )
                             }
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
-                                CircularProgressIndicator(progress = { pct / 100f }, modifier = Modifier.fillMaxSize(), strokeWidth = 7.dp, color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
-                                Text("$pct%", style = MaterialTheme.typography.titleMedium, color = Primary, fontWeight = FontWeight.Bold)
+                                CircularProgressIndicator(progress = { pct / 100f }, modifier = Modifier.fillMaxSize(), strokeWidth = 7.dp, color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                                Text("$pct%", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
                         }
-                        Surface(shape = RoundedCornerShape(100.dp), color = if (hasOverdue) Error.copy(0.1f) else Primary.copy(0.1f)) {
+                        Surface(shape = RoundedCornerShape(100.dp), color = if (hasOverdue) Error.copy(0.1f) else MaterialTheme.colorScheme.primary.copy(0.1f)) {
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(if (hasOverdue) Icons.Filled.WarningAmber else Icons.Filled.AutoAwesome, null, tint = if (hasOverdue) Error else Primary, modifier = Modifier.size(16.dp))
+                                Icon(if (hasOverdue) Icons.Filled.WarningAmber else Icons.Filled.AutoAwesome, null, tint = if (hasOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                 Text(
                                     if (hasOverdue) (if (s.isThai) "มีรายการเลยกำหนด" else "Behind schedule")
                                     else (if (s.isThai) "เป็นไปตามกำหนด" else "On schedule"),
-                                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = if (hasOverdue) Error else Primary
+                                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = if (hasOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -223,12 +223,15 @@ fun VaccineBookScreen(
             // parent doesn't mistake an import/data gap for the child simply having no vaccines due.
             if (hasIncompleteAgeData) {
                 item {
-                    Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF3E0)) {
+                    // Dark: pastel box becomes an orange wash with lighter orange text.
+                    val warnDark = com.lullabyai.app.ui.theme.LocalDarkTheme.current
+                    val warnInk = if (warnDark) Color(0xFFFFB74D) else Color(0xFFE65100)
+                    Surface(shape = RoundedCornerShape(12.dp), color = if (warnDark) Color(0x29E65100) else Color(0xFFFFF3E0)) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Filled.WarningAmber, null, tint = Color(0xFFE65100), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.WarningAmber, null, tint = warnInk, modifier = Modifier.size(18.dp))
                             Text(
                                 if (s.isThai) "บางรายการวัคซีนไม่มีข้อมูลช่วงอายุ — อาจต้องแก้ไข" else "Some vaccines are missing age-range data — may need updating",
-                                style = MaterialTheme.typography.labelMedium, color = Color(0xFFE65100)
+                                style = MaterialTheme.typography.labelMedium, color = warnInk
                             )
                         }
                     }
@@ -242,11 +245,11 @@ fun VaccineBookScreen(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Icon(Icons.Filled.DocumentScanner, null, tint = Primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.DocumentScanner, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
                         if (s.isThai) "อ่านจากสมุดวัคซีน (ถ่ายรูป)" else "Scan vaccine book",
-                        color = Primary, fontWeight = FontWeight.Bold
+                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -270,7 +273,7 @@ fun VaccineBookScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Filled.CalendarMonth, null, tint = Primary, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Filled.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             Text(
                                 "${pageIndex + 1}. $currentGroup",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -302,7 +305,7 @@ fun VaccineBookScreen(
                                             "${i + 1}. " + (if (s.isThai) b.label else b.labelEn),
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = if (i == pageIndex) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (i == pageIndex) Primary else MaterialTheme.colorScheme.onSurface,
+                                            color = if (i == pageIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
@@ -321,7 +324,7 @@ fun VaccineBookScreen(
             // Section header
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Filled.CalendarMonth, null, tint = Primary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Text(
                         (if (s.isThai) "ตารางวัคซีนช่วง " else "Vaccine schedule — ") + currentGroup,
                         style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
@@ -330,12 +333,12 @@ fun VaccineBookScreen(
                     // Stitch shows an upcoming-count chip beside this header ("3 รายการถัดไป").
                     val upcoming = groupVaccines.count { it.status != "completed" && it.status != "skipped" }
                     if (upcoming > 0) {
-                        Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.10f)) {
+                        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.primary.copy(0.10f)) {
                             Text(
                                 if (s.isThai) "$upcoming รายการถัดไป" else "$upcoming upcoming",
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Primary, fontWeight = FontWeight.Bold
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -453,14 +456,14 @@ fun VaccineBookScreen(
     vaccineToDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { vaccineToDelete = null },
-            icon = { Icon(Icons.Filled.DeleteOutline, null, tint = Color(0xFFBA1A1A)) },
+            icon = { Icon(Icons.Filled.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(if (s.isThai) "ลบรายการวัคซีน?" else "Delete vaccine?", fontWeight = FontWeight.Bold) },
             text = { Text(if (s.isThai) "คุณแน่ใจหรือไม่ว่าต้องการลบ \"${target.vaccineName}\" ออกจากสมุดวัคซีน? การลบนี้ไม่สามารถย้อนกลับได้" else "Remove \"${target.vaccineName}\" from the vaccine book? This cannot be undone.") },
             confirmButton = {
                 TextButton(onClick = {
                     childViewModel.deleteVaccine(target)
                     vaccineToDelete = null
-                }) { Text(if (s.isThai) "ลบ" else "Delete", color = Color(0xFFBA1A1A), fontWeight = FontWeight.Bold) }
+                }) { Text(if (s.isThai) "ลบ" else "Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { vaccineToDelete = null }) { Text(if (s.isThai) "ยกเลิก" else "Cancel") }
@@ -505,7 +508,7 @@ private fun AddVaccineDialog(defaultGroup: String, onDismiss: () -> Unit, onAdd:
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onAdd(name.trim(), group, date.trim(), desc.trim(), place.trim()) }) { Text(if (s.isThai) "เพิ่ม" else "Add", color = Primary, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = { if (name.isNotBlank()) onAdd(name.trim(), group, date.trim(), desc.trim(), place.trim()) }) { Text(if (s.isThai) "เพิ่ม" else "Add", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
     )
@@ -526,7 +529,7 @@ private fun EditVaccineDialog(
     var place by remember { mutableStateOf(vaccine.place ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.EditCalendar, null, tint = Primary) },
+        icon = { Icon(Icons.Filled.EditCalendar, null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text(if (s.isThai) "แก้ไขกำหนดการวัคซีน" else "Edit vaccine schedule", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -537,15 +540,15 @@ private fun EditVaccineDialog(
                 Text((if (s.isThai) "ช่วงอายุ: " else "Age: ") + (vaccine.ageGroup ?: "-"), style = MaterialTheme.typography.labelSmall, color = Outline)
                 if (canDelete) {
                     TextButton(onClick = onDelete, contentPadding = PaddingValues(0.dp)) {
-                        Icon(Icons.Filled.DeleteOutline, null, tint = Color(0xFFBA1A1A), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(if (s.isThai) "ลบรายการนี้ออกจากสมุด" else "Remove from book", color = Color(0xFFBA1A1A), style = MaterialTheme.typography.labelMedium)
+                        Text(if (s.isThai) "ลบรายการนี้ออกจากสมุด" else "Remove from book", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onSave(name.trim(), date.trim(), desc.trim(), place.trim()) }) { Text(if (s.isThai) "บันทึก" else "Save", color = Primary, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = { if (name.isNotBlank()) onSave(name.trim(), date.trim(), desc.trim(), place.trim()) }) { Text(if (s.isThai) "บันทึก" else "Save", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(if (s.isThai) "ยกเลิก" else "Cancel") } }
     )
@@ -572,11 +575,11 @@ private fun VaccineRow(
     val s = LocalStrings.current
     val (badgeColor, badgeText) = when (vaccine.status) {
         "completed" -> Color(0xFF4CAF50) to (if (s.isThai) "เสร็จสิ้น" else "Done")
-        "appointment" -> Primary to (if (s.isThai) "แนะนำให้ฉีด" else "Recommended")
-        "overdue" -> Color(0xFFBA1A1A) to (if (s.isThai) "เลยกำหนด" else "Overdue")
+        "appointment" -> MaterialTheme.colorScheme.primary to (if (s.isThai) "แนะนำให้ฉีด" else "Recommended")
+        "overdue" -> MaterialTheme.colorScheme.error to (if (s.isThai) "เลยกำหนด" else "Overdue")
         "upcoming" -> Color(0xFFF57C00) to (if (s.isThai) "เร็วๆ นี้" else "Upcoming")
         "skipped" -> Color(0xFF9E9E9E) to (if (s.isThai) "ข้ามแล้ว" else "Skipped")
-        else -> Outline to (if (s.isThai) "รอกำหนด" else "Scheduled")
+        else -> MaterialTheme.colorScheme.outline to (if (s.isThai) "รอกำหนด" else "Scheduled")
     }
     val done = vaccine.status == "completed"
     Card(
@@ -590,9 +593,9 @@ private fun VaccineRow(
             // overlap the action buttons (which now live on a separate row below).
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
-                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Primary.copy(0.1f)),
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(0.1f)),
                     contentAlignment = Alignment.Center
-                ) { Icon(Icons.Filled.Vaccines, null, tint = Primary, modifier = Modifier.size(22.dp)) }
+                ) { Icon(Icons.Filled.Vaccines, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)) }
 
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(vaccine.vaccineName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
@@ -612,17 +615,17 @@ private fun VaccineRow(
                     vaccine.place?.takeIf { it.isNotBlank() }?.let { IconLine(Icons.Filled.LocalHospital, it) }
                     // #10 provenance + certificate state.
                     if (vaccine.source == "moph_book") {
-                        Surface(shape = RoundedCornerShape(8.dp), color = Primary.copy(0.10f)) {
+                        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary.copy(0.10f)) {
                             Row(
                                 Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                Icon(Icons.Filled.MenuBook, null, tint = Primary, modifier = Modifier.size(13.dp))
+                                Icon(Icons.Filled.MenuBook, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
                                 Text(
                                     if (s.isThai) "จากสมุดวัคซีนกระทรวงสาธารณสุข" else "From ministry vaccine book",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Primary, fontWeight = FontWeight.Bold
+                                    color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -647,12 +650,12 @@ private fun VaccineRow(
                             onClick = onUploadCertificate,
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Icon(Icons.Filled.UploadFile, null, tint = Primary, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Filled.UploadFile, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 if (s.isThai) "อัปโหลดใบรับรองวัคซีน" else "Upload certificate",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Primary, fontWeight = FontWeight.Bold
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -725,13 +728,13 @@ private fun VaccineRow(
             if (skipExpanded) {
                 var selectedReason by remember { mutableStateOf(vaccine.notes ?: "") }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(if (s.isThai) "ระบุเหตุผลที่ข้าม:" else "Reason for skipping:", style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                    Text(if (s.isThai) "ระบุเหตุผลที่ข้าม:" else "Reason for skipping:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     vaccineSkipReasons(s.isThai).forEach { reason ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { selectedReason = reason }.padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(selected = selectedReason == reason, onClick = { selectedReason = reason }, colors = RadioButtonDefaults.colors(selectedColor = Primary))
+                            RadioButton(selected = selectedReason == reason, onClick = { selectedReason = reason }, colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary))
                             Text(reason, style = MaterialTheme.typography.bodyMedium)
                         }
                     }

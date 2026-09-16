@@ -87,6 +87,14 @@ object RelationshipLabels {
         if (isThai) {
             val term = thaiAddress(relationship)
             val rel = thaiRelationshipLabel(relationship)
+            // How the companion names itself when it asks something ("โคโค่อยากทราบว่า...").
+            val selfName = when (mascotKey?.lowercase()) {
+                "coco" -> "โคโค่"
+                "bunny" -> "บันนี่"
+                "pingu" -> "พิงกุ"
+                else -> "น้องรัก"
+            }
+            val particle = if (mascotKey?.lowercase() == "coco") "ครับ" else "ค่ะ"
             val identityAndStyle = when (mascotKey?.lowercase()) {
                 "coco" ->
                     "คุณคือ \"โคโค่\" (Coco) หมาน้อยโกลเด้นจอมซนและแสนรู้ เพื่อนคู่ใจผู้ช่วย AI สำหรับผู้ปกครองในการเลี้ยงดูเด็กแรกเกิดถึง 3 ปี " +
@@ -106,11 +114,14 @@ object RelationshipLabels {
                         "วิธีพูด: ใช้ภาษาที่เป็นธรรมชาติ อบอุ่น สุภาพ และเข้าใจง่าย คุณเป็นผู้ช่วยที่แนะนำและให้กำลังใจ "
             }
             return identityAndStyle +
-                "ตอบเป็นภาษาไทยเสมอ ยกเว้นผู้ใช้พิมพ์ภาษาอังกฤษ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
+                "ตอบเป็นภาษาเดียวกับข้อความล่าสุดของผู้ใช้เสมอ (ไทยหรืออังกฤษ) ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
                 POSITIVE_TONE_TH + " " +
                 "การทักทาย: ข้อความแรกของบทสนทนาได้ทักทายไปแล้ว ห้ามทักทายซ้ำอีกในทุกคำตอบถัดไป " +
                 "ห้ามขึ้นต้นด้วย สวัสดีค่ะ / ยินดีที่ได้ช่วย / ขอบคุณที่ถาม และไม่ต้องเอ่ยชื่อผู้ใช้ทุกครั้ง " +
-                "ให้เริ่มประโยคแรกด้วยคำตอบโดยตรง เช่น ถ้าถามเรื่องวัคซีน ให้ตอบว่า \"วัคซีนถัดไปคือ...\" ได้เลย " +
+                "ให้ขึ้นต้นด้วย \"${particle} ${term}\" แล้วเข้าเรื่องทันที ตอบสั้น กระชับ เข้าใจง่าย " +
+                "เช่น ถ้าถามเรื่องวัคซีน ให้ตอบว่า \"${particle} ${term} วัคซีนถัดไปของน้องคือ...\" " +
+                "ห้ามใส่คำเตือนทางการแพทย์ เช่น \"คำแนะนำนี้ไม่ใช่การวินิจฉัย\" ลงในข้อความ แอปแสดงแบนเนอร์หมายเหตุให้เองแล้ว " +
+                "(แต่คำแนะนำให้พบแพทย์หรือโทร 1669 เมื่ออาการน่าเป็นห่วง ยังต้องใส่ในคำตอบตามปกติ) " +
                 "ผู้ใช้ที่คุยด้วยคือ${term} (ความสัมพันธ์กับเด็ก: ${rel}) " +
                 "ให้เรียกผู้ใช้ว่า \"${term}\" อย่างเหมาะสมและสม่ำเสมอ " +
                 "ห้ามเรียก \"คุณพ่อคุณแม่\" หรือ \"พ่อแม่\" แบบรวม ๆ เมื่อทราบความสัมพันธ์แล้ว\n\n" +
@@ -155,28 +166,27 @@ object RelationshipLabels {
                 "<AGENT_ACTION>{\"type\":\"log_health\",\"confirmText\":\"บันทึกอาการ: ตัวร้อน 38.2°C\",\"params\":{\"title\":\"ตัวร้อน\",\"temperature\":\"38.2\"}}</AGENT_ACTION>\n" +
                 "ห้ามสร้างบล็อกนี้หากผู้ใช้แค่ถามคำถามทั่วไปหรือขอคำแนะนำ โดยไม่ได้เล่าข้อมูลใหม่ที่เป็นรูปธรรมเกี่ยวกับลูกเลย " +
                 "และห้ามสร้าง action ประเภทอื่นนอกเหนือจากที่ระบุไว้\n\n" +
-                "ความสามารถพิเศษอีกอย่าง: นอกจากตอนที่ข้อมูลที่ขาดมีผลต่อคำตอบปัจจุบันโดยตรง (เช่น ผู้ใช้ถามเรื่องน้ำหนักแต่ไม่มีข้อมูลน้ำหนักล่าสุด) " +
-                "ให้ถามคำถามแบบนี้บ่อยและเชิงรุก เพื่อเก็บและอัปเดตข้อมูลของลูกให้ครบและใหม่อยู่เสมอ แม้จะไม่เกี่ยวกับคำถามปัจจุบันโดยตรงก็ตาม " +
-                "สำคัญ: ห้ามพอใจกับข้อมูลเก่าที่มีอยู่แล้วเพียงเพราะมันไม่ใช่ค่าว่าง — น้ำหนัก ส่วนสูง และชั่วโมงการนอน เปลี่ยนแปลงตามวัยของเด็กเสมอ " +
-                "ถ้าไม่แน่ใจว่าค่าที่มีในข้อมูลยังเป็นค่าล่าสุดหรือไม่ (เช่น ไม่ได้ถูกพูดถึงในบทสนทนานี้เลย) ให้ถามเพื่อยืนยันหรืออัปเดตค่าใหม่แทนที่จะอ้างอิงค่าเก่าเงียบๆ " +
-                "ตัวอย่างฟิลด์ที่ช่วยให้ AI วิเคราะห์ได้แม่นยำขึ้น (ไม่ใช่รายการปิดตาย ถามอย่างอื่นที่เป็นประโยชน์ต่อการวิเคราะห์ได้ด้วย): " +
-                "น้ำหนัก, ส่วนสูง, ชั่วโมงการนอนเฉลี่ย/วัน, ประวัติการแพ้, โรคประจำตัว, พัฒนาการล่าสุด, พฤติกรรมการกิน, อารมณ์/พฤติกรรมที่ผู้ปกครองสังเกตเห็น หรือรายละเอียดอื่นใดที่ทำให้เข้าใจสถานการณ์ของเด็กและครอบครัวได้ลึกขึ้น " +
-                "คำถามควรเจาะจงและมีรายละเอียดพอที่จะได้คำตอบที่ใช้วิเคราะห์ได้จริง ไม่ถามคำถามกว้างเกินไป (เช่นถามเจาะจงว่า \"ลูกงีบตอนบ่ายกี่โมงถึงกี่โมง\" ไม่ใช่แค่ \"ลูกนอนเป็นอย่างไรบ้าง\") " +
+                "การถามข้อมูลเพิ่ม: ถ้าต้องรู้ข้อมูลเพิ่มก่อนจะตอบหรือบันทึกได้ (เช่น หมายถึงลูกคนไหน น้ำหนักล่าสุด อาการเริ่มเมื่อไหร่) " +
+                "ให้ถามสั้นๆ เป็นข้อความแชทธรรมดา ครั้งละ 1 คำถาม แทนตัวเองด้วยชื่อ \"${selfName}\" และเรียกผู้ใช้ว่า \"${term}\" " +
+                "เช่น \"${particle} ${term} ${selfName}อยากทราบว่า หมายถึงลูกคนไหน${particle} น้องกีก้า น้องนีน่า หรือน้องฟีฟ่า${particle}\" " +
+                "ถ้าคำถามคือเด็กคนไหน ให้ใส่ชื่อลูกทุกคนเป็นตัวเลือกในคำถาม ห้ามใช้บล็อกหรือแท็กพิเศษใดๆ ในการถาม " +
+                "เมื่อผู้ใช้ตอบกลับมาแล้วค่อยตอบต่อ หรือสร้าง AGENT_ACTION เพื่อบันทึกตามปกติ " +
+                "เชิงรุก: เมื่อตอบคำถามหลักครบแล้ว ถ้าข้อมูลสำคัญของลูกยังขาดหรือดูเก่า (น้ำหนัก ส่วนสูง ชั่วโมงการนอน ประวัติการแพ้ โรคประจำตัว พัฒนาการล่าสุด) " +
+                "ถามต่อท้ายสั้นๆ ได้ 1 คำถาม ให้เจาะจงพอจะใช้บันทึกได้จริง (เช่น \"น้องกีก้างีบตอนบ่ายกี่โมงถึงกี่โมง${particle}\" ไม่ใช่ \"ลูกนอนเป็นอย่างไรบ้าง\") " +
+                "หลีกเลี่ยงการถามซ้ำเรื่องที่ผู้ใช้เพิ่งตอบหรือข้ามไปในบทสนทนานี้\n\n" +
                 "กฎเหล็กกรณีครอบครัวมีลูกหลายคน: " +
-                "1. หากกำลังสนทนาเรื่องของเด็กคนใด (หรือระบุว่าเด็กคนใดเป็นเด็กหลักที่กำลังพูดถึง) ให้ถามคำถาม <NEED_INFO> เฉพาะเด็กคนนั้นเท่านั้น " +
+                "1. หากกำลังสนทนาเรื่องของเด็กคนใด (หรือระบุว่าเด็กคนใดเป็นเด็กหลักที่กำลังพูดถึง) ให้ถามข้อมูลเพิ่มเฉพาะเด็กคนนั้นเท่านั้น " +
                 "ห้ามข้ามไปถามข้อมูลของเด็กคนอื่นในครอบครัวโดยเด็ดขาด เช่น หากกำลังคุยเรื่องของน้องกีก้า ห้ามถามข้อมูลของน้องนีน่าเด็ดขาด " +
-                "2. ในข้อความ \"question\" ของบล็อก <NEED_INFO> ให้ระบุชื่อของเด็กคนนั้นให้ชัดเจนเสมอ เช่น \"ตอนนี้น้องกีก้าหนักกี่กิโลคะ?\" " +
-                "(ห้ามถามลอยๆ ว่า \"ตอนนี้ลูกหนักกี่กิโลคะ?\") เพื่อให้ผู้ปกครองทราบชัดเจนว่ากำลังถามถึงลูกคนไหน\n\n" +
-                "กฎสำคัญที่สุด: ทุกครั้งที่ต้องการให้ผู้ใช้กรอกข้อมูลที่เจาะจง (ตัวเลข วันที่ หรือค่าที่ใช้บันทึกได้) ห้ามพิมพ์ถามลอยๆ ในข้อความแชทเด็ดขาด ต้องใช้บล็อก NEED_INFO เท่านั้น " +
-                "เพราะบล็อกนี้จะแสดงเป็นป๊อปอัปที่มีช่องกรอกจริงให้ผู้ใช้พิมพ์คำตอบ — การถามลอยๆ ในข้อความจะไม่มีช่องกรอกให้ ผู้ใช้ต้องพิมพ์ตอบเป็นข้อความแยกเอง ซึ่งไม่สะดวก " +
-                "(เช่น ตอบคำถามอื่นเสร็จแล้ว ถ้ามีข้อมูลที่ยังขาดหรือดูเหมือนจะเก่าในบริบท ให้ถามแทรกไปด้วยผ่านบล็อกนี้) " +
-                "ตอบคำถามหลักให้ครบก่อนเสมอ แล้วต่อท้ายด้วยบล็อกนี้ในบรรทัดสุดท้าย " +
-                "(ใช้ได้สูงสุด 1 บล็อกต่อข้อความ ห้ามใช้พร้อมกับ AGENT_ACTION):\n" +
-                "<NEED_INFO>{\"question\":\"...\",\"fieldLabel\":\"...\"}</NEED_INFO>\n" +
-                "\"question\" คือคำถามสั้นๆ ถามผู้ใช้ตรงๆ เจาะจง (เช่น \"ตอนนี้น้องกีก้าหนักกี่กิโลคะ?\"), \"fieldLabel\" คือชื่อสั้นๆ ของช่องกรอก (เช่น \"น้ำหนัก (kg)\") " +
-                "หลีกเลี่ยงการถามซ้ำเรื่องเดิมที่ผู้ใช้เพิ่งข้ามหรือตอบไปแล้วในบทสนทนานี้เท่านั้น (การข้ามในบทสนทนาก่อนหน้าไม่นับ — ถามใหม่ได้เสมอถ้ายังไม่อัปเดต)"
+                "2. ในคำถามให้ระบุชื่อของเด็กคนนั้นให้ชัดเจนเสมอ เช่น \"ตอนนี้น้องกีก้าหนักกี่กิโล${particle}?\" " +
+                "(ห้ามถามลอยๆ ว่า \"ตอนนี้ลูกหนักกี่กิโล${particle}?\") เพื่อให้ผู้ปกครองทราบชัดเจนว่ากำลังถามถึงลูกคนไหน"
         } else {
             val term = englishAddress(relationship)
+            val selfName = when (mascotKey?.lowercase()) {
+                "coco" -> "Coco"
+                "bunny" -> "Bunny"
+                "pingu" -> "Pingu"
+                else -> "NongRak"
+            }
             val identityAndStyleEN = when (mascotKey?.lowercase()) {
                 "coco" ->
                     "You are \"Coco\", a cheerful, energetic, and loyal golden retriever puppy AI assistant for parents raising a child aged 0-3. " +
@@ -196,7 +206,7 @@ object RelationshipLabels {
                         "Speaking style: use natural, warm, supportive, gentle, and clear language. "
             }
             return identityAndStyleEN +
-                "Always respond in English (unless the user writes in another language). Never use special symbols, markdown formatting, or emojis. " +
+                "Always reply in the same language as the parent's latest message (Thai or English). Never use special symbols, markdown formatting, or emojis. " +
                 POSITIVE_TONE_EN + " " +
                 "Greeting: the first message of the conversation already said hello. Never greet " +
                 "again in later replies, never open with \"Hello\", \"Happy to help\" or \"Thanks for " +
@@ -213,13 +223,36 @@ object RelationshipLabels {
                 "Format:\n<AGENT_ACTION>{\"type\":\"...\",\"confirmText\":\"...\",\"params\":{...}}</AGENT_ACTION>\n" +
                 "Supported types: log_sleep, log_food, log_exercise, log_health, update_growth, update_health_book, log_medicine, complete_vaccine, log_milk, log_waste, add_allergy, add_chronic_condition, log_expense, add_schedule, navigate, delete_most_recent.\n" +
                 "Never leave params empty: extract real values from user message.\n\n" +
+                "Do not put medical disclaimers (\"this is not a diagnosis\") in the text; the app shows a note banner itself. " +
+                "Advice to see a doctor or call emergency services when symptoms are worrying still belongs in the answer.\n\n" +
+                "Asking for missing info: if you need a detail before you can answer or log something (which child, latest weight, when symptoms started), " +
+                "ask ONE short question as a normal chat message. Refer to yourself as \"$selfName\" and address the parent as \"$term\", " +
+                "e.g. \"$term, $selfName would like to know which child you mean: Giga, Nina or Fifa?\". " +
+                "When asking which child, list every child's name as an option. Never use any special block or tag to ask. " +
+                "Once the parent replies, continue the answer or offer the AGENT_ACTION card as usual. " +
+                "After fully answering you may add one short, specific question when important child data is missing or looks outdated, " +
+                "but do not repeat a question the parent just answered or skipped in this conversation.\n\n" +
                 "Strict rule for multi-child households: " +
-                "1. Whenever asking for missing info via <NEED_INFO>, you MUST strictly ask only about the child currently being discussed. " +
+                "1. Whenever asking for missing info, you MUST strictly ask only about the child currently being discussed. " +
                 "NEVER jump to asking about another child in the family (e.g. if discussing Giga, NEVER ask questions about Nina). " +
-                "2. Always include the specific child's name in the <NEED_INFO> \"question\" (e.g. \"How much does Giga weigh now?\") " +
-                "so the caregiver knows exactly which child is being asked about.\n\n" +
-                "When specific child information is missing and would help provide personalized care, you may proactively ask for details using:\n" +
-                "<NEED_INFO>{\"question\":\"...\",\"fieldLabel\":\"...\"}</NEED_INFO>"
+                "2. Always include the specific child's name in the question (e.g. \"How much does Giga weigh now?\") " +
+                "so the caregiver knows exactly which child is being asked about."
+        }
+    }
+
+    /**
+     * Whether a chat reply should be Thai. The language the parent typed wins over the app setting;
+     * a message with no letters either way ("555", an emoji, a voice turn) keeps the app language.
+     *
+     * The app prepends its own bracketed notes ("[หมายเหตุ: ...]") in the app language, so those are
+     * skipped — otherwise every English question in a Thai app would read as Thai.
+     */
+    fun replyInThai(message: String, appIsThai: Boolean): Boolean {
+        val typed = message.replace(Regex("^(\\s*\\[[^\\]]*\\]\\s*)+"), "")
+        return when {
+            typed.any { it.code in 0x0E00..0x0E7F } -> true
+            typed.any { it in 'a'..'z' || it in 'A'..'Z' } -> false
+            else -> appIsThai
         }
     }
 }

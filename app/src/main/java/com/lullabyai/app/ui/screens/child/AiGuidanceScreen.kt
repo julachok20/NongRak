@@ -53,7 +53,7 @@ fun AiGuidanceScreen(childViewModel: ChildViewModel, navController: NavControlle
     }
     val ageMonths = childViewModel.getAgeMonths()
     val sleepHours = remember(state.sleepLogs) { childViewModel.avgSleepHours() }
-    val weightStatus = com.lullabyai.app.util.GrowthReference.weightStatus(child?.weightKg, ageMonths)
+    val weightStatus = com.lullabyai.app.util.GrowthReference.current(child, state.growthRecords).first
     val dailyBrief = remember(child?.birthdate, isThai) {
         AiDailyBriefHelper.getZeroDataAiBrief(child, isThai)
     }

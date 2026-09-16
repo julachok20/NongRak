@@ -33,6 +33,27 @@ class HandoffRepository {
         })
     }
 
+    /**
+     * Sends one briefing to every caregiver ticked in Permission settings.
+     *
+     * The recipient list is the server's to decide, not the client's: a tick removed a moment ago
+     * must not still receive the child's medical instructions. An expected end is required here
+     * (unlike the 1:1 send) because a shift with no end never clears from the caregiver's banner.
+     */
+    suspend fun broadcast(childId: String, draft: HandoffDraft): HandoffBroadcastResult {
+        val tasks = draft.checklist.lines().map(String::trim).filter(String::isNotEmpty)
+        require(tasks.size <= 20 && tasks.all { it.length <= 300 }) { "Maximum 20 tasks, 300 characters each" }
+        val expected = draft.expectedEnd.trim().takeIf { it.isNotEmpty() }
+            ?.let { java.time.OffsetDateTime.parse(it).toInstant().toString() }
+            ?: throw IllegalArgumentException("handoff_expected_end_required")
+        return supabase.postgrest.rpc("handoff_broadcast", buildJsonObject {
+            put("p_child_id", childId)
+            put("p_instructions", draft.notes)
+            put("p_tasks", JsonArray(tasks.map(::JsonPrimitive)))
+            put("p_expected_end", expected)
+        }).decodeAs<HandoffBroadcastResult>()
+    }
+
     suspend fun act(id: String, action: String, note: String = "", index: Int? = null, done: Boolean? = null) {
         supabase.postgrest.rpc("handoff_act", buildJsonObject {
             put("p_id", id); put("p_action", action); put("p_note", note)

@@ -68,15 +68,53 @@ fun LoginScreen(
     var captchaToken by remember { mutableStateOf<String?>(null) }
     var formError by remember { mutableStateOf<String?>(null) }
     val isThai = settings.language == AppLanguage.TH
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val biometricLogin = com.lullabyai.app.data.settings.BiometricLogin
+    var savedBiometricSignIn by remember { mutableStateOf(runCatching { biometricLogin.hasSavedSignIn(context) }.getOrDefault(false)) }
+    val savedEmail = remember { runCatching { biometricLogin.enrolledEmail(context) }.getOrNull() }
+    val savedName = remember { runCatching { biometricLogin.displayName(context) }.getOrNull() }
+    // Opens by itself when this phone has a saved sign-in: "ต้องการเข้าสู่ระบบบัญชีนี้หรือไม่?"
+    var showSavedAccountPrompt by remember { mutableStateOf(savedBiometricSignIn) }
+
+    fun biometricSignIn() {
+        formError = null
+        com.lullabyai.app.util.AppLock.authenticate(
+            context,
+            if (isThai) "เข้าสู่ระบบ NongRak" else "Sign in to NongRak",
+            savedName ?: savedEmail ?: (if (isThai) "ยืนยันด้วยใบหน้า หรือลายนิ้วมือ" else "Use your face or fingerprint")
+        ) { ok, message ->
+            if (ok) {
+                com.lullabyai.app.util.AppLock.unlocked = true
+                authViewModel.signInWithBiometric { mustChange ->
+                    if (mustChange) onNeedChangePassword() else onLoginSuccess()
+                }
+                // The key is single-use; hide the button until the next logout saves a new one.
+                savedBiometricSignIn = false
+            } else if (message != null) {
+                formError = message
+            }
+        }
+    }
+
+    // Set while the "use biometrics next time?" question is open; running it continues into the app.
+    var pendingAfterOffer by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    /** Every successful sign-in passes through here, so the biometric offer is made once, in one place. */
+    fun finishLogin(next: () -> Unit) {
+        val userId = authViewModel.getCurrentUserId()
+        val offer = userId != null && runCatching { biometricLogin.shouldOffer(context, userId) }.getOrDefault(false)
+        if (offer) pendingAfterOffer = next else next()
+    }
+
     val googleSignIn = rememberGoogleSignInAction(
         authViewModel = authViewModel,
         isThai = isThai,
-        onSuccess = onLoginSuccess
+        onSuccess = { finishLogin(onLoginSuccess) }
     )
     val lineSignIn = com.lullabyai.app.ui.components.rememberLineSignInAction(
         authViewModel = authViewModel,
         isThai = isThai,
-        onSuccess = onLoginSuccess
+        onSuccess = { finishLogin(onLoginSuccess) }
     )
     val screenOpenedAtMs = remember { System.currentTimeMillis() }
     var captchaRequired by remember { mutableStateOf(false) }
@@ -87,6 +125,97 @@ fun LoginScreen(
         if (uiState.error != null) {
             // Error shown inline
         }
+    }
+
+    if (showSavedAccountPrompt && savedBiometricSignIn) {
+        AlertDialog(
+            onDismissRequest = { showSavedAccountPrompt = false },
+            icon = { Icon(Icons.Filled.AccountCircle, null, tint = Primary, modifier = Modifier.size(52.dp)) },
+            title = {
+                Text(
+                    if (isThai) "ต้องการเข้าสู่ระบบบัญชีนี้หรือไม่?" else "Sign in to this account?",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(savedName ?: savedEmail ?: "-", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    if (!savedName.isNullOrBlank() && !savedEmail.isNullOrBlank()) {
+                        Text(savedEmail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (isThai) "ยืนยันด้วยลายนิ้วมือหรือใบหน้า ไม่ต้องใส่รหัสผ่าน" else "Confirm with fingerprint or face — no password",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showSavedAccountPrompt = false; biometricSignIn() }, shape = RoundedCornerShape(100.dp)) {
+                    Icon(Icons.Filled.Fingerprint, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isThai) "เข้าสู่ระบบ" else "Sign in")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSavedAccountPrompt = false }) {
+                    Text(if (isThai) "ใช้บัญชีอื่น" else "Use another account")
+                }
+            }
+        )
+    }
+
+    pendingAfterOffer?.let { proceed ->
+        val userId = authViewModel.getCurrentUserId()
+        val replacing = runCatching { biometricLogin.enrolledUserId(context) }.getOrNull().let { it != null && it != userId }
+        fun done() { pendingAfterOffer = null; proceed() }
+        AlertDialog(
+            onDismissRequest = {},
+            icon = { Icon(Icons.Filled.Fingerprint, null, tint = Primary, modifier = Modifier.size(36.dp)) },
+            title = {
+                Text(
+                    if (isThai) "ใช้ลายนิ้วมือ / ใบหน้าเข้าสู่ระบบครั้งถัดไป?" else "Use fingerprint / face next time?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    (if (isThai) "ครั้งหน้าหลังออกจากระบบ แตะครั้งเดียวแล้วสแกนก็เข้าได้เลย ไม่ต้องพิมพ์รหัสผ่าน ใช้ได้ 1 บัญชีต่อเครื่อง"
+                    else "Next time after logging out, one tap and a scan signs you in — no password. One account per phone.") +
+                        if (replacing) (if (isThai) "\n\nบัญชีที่ตั้งไว้ก่อนหน้าบนเครื่องนี้จะถูกแทนที่" else "\n\nThe account set up before on this phone will be replaced.") else ""
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    com.lullabyai.app.util.AppLock.authenticate(
+                        context,
+                        if (isThai) "ตั้งค่าเข้าสู่ระบบด้วยลายนิ้วมือ" else "Set up fingerprint sign-in",
+                        if (isThai) "ยืนยันว่าเครื่องนี้สแกนได้" else "Confirm this phone can scan you"
+                    ) { ok, message ->
+                        if (ok && userId != null) {
+                            com.lullabyai.app.util.AppLock.unlocked = true
+                            runCatching {
+                                biometricLogin.enroll(context, userId, com.lullabyai.app.data.repository.AuthRepository().currentUser?.email)
+                            }
+                        } else if (message != null) {
+                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        done()
+                    }
+                }, shape = RoundedCornerShape(100.dp)) {
+                    Text(if (isThai) "ใช้เลย" else "Turn on")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (userId != null) runCatching { biometricLogin.decline(context, userId) }
+                    done()
+                }) { Text(if (isThai) "ไม่ตอนนี้" else "Not now") }
+            }
+        )
     }
 
     Box(
@@ -126,6 +255,26 @@ fun LoginScreen(
             )
 
             Spacer(Modifier.height(32.dp))
+
+            // One-tap return for the account enrolled on this phone.
+            if (savedBiometricSignIn) {
+                Button(
+                    onClick = { biometricSignIn() },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) {
+                    Icon(Icons.Filled.Fingerprint, null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(if (isThai) "เข้าสู่ระบบด้วยลายนิ้วมือ / ใบหน้า" else "Sign in with fingerprint / face", fontWeight = FontWeight.Bold)
+                        (savedName ?: savedEmail)?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
 
             // Form card
             Card(
@@ -205,7 +354,7 @@ fun LoginScreen(
                                 formError = if (isThai) "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนเข้าสู่ระบบ" else "Unusual activity detected — please verify you're not a robot before signing in"
                             } else {
                                 authViewModel.signIn(email, password, captchaToken) { mustChange ->
-                                    if (mustChange) onNeedChangePassword() else onLoginSuccess()
+                                    finishLogin { if (mustChange) onNeedChangePassword() else onLoginSuccess() }
                                 }
                             }
                         },

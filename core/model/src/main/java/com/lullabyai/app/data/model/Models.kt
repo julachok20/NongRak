@@ -759,7 +759,9 @@ data class ChatMessage(
     @SerialName("session_id") val sessionId: String? = null,
     val role: String = "user",
     val content: String = "",
-    @SerialName("created_at") val createdAt: String? = null
+    @SerialName("created_at") val createdAt: String? = null,
+    /** Set on medical answers, so the disclaimer banner survives reopening the chat. */
+    val medical: Boolean = false
 )
 
 data class UiChatMessage(
@@ -770,8 +772,12 @@ data class UiChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val agentAction: AgentAction? = null,   // non-null when the AI proposed a data-changing action
     val actionStatus: String? = null,       // null = awaiting confirmation, "confirmed", "cancelled", "failed"
-    val needInfo: NeedInfoRequest? = null,  // non-null when the AI needs one piece of info to help further
-    val needInfoAnswered: Boolean = false   // true once the popup was submitted or skipped (hides it)
+    /** A medical answer: the chat shows the "not a diagnosis" banner above it. */
+    val medical: Boolean = false,
+    /** Record commands the ai-chat command center proposed with this answer; each runs only after Confirm. */
+    val commands: List<AiCommand> = emptyList(),
+    /** ticket -> "running" | "done" | "cancelled" | "failed:<named reason>". Missing = waiting for the tap. */
+    val commandStatus: Map<String, String> = emptyMap()
 )
 
 /**
@@ -795,6 +801,25 @@ data class AgentAction(
     val type: String,
     val confirmText: String,
     val params: Map<String, String> = emptyMap()
+)
+
+/**
+ * One record command from the ai-chat command center. [ticket] is signed by the function, single-use
+ * and short-lived; the app only hands it back on Confirm (SparkChatClient.execute) and cannot alter it.
+ * [fields] is display text (local times, baht), not what gets written.
+ */
+@Serializable
+data class AiCommand(
+    val ticket: String,
+    val command: String,
+    val label: String,
+    val summary: String,
+    val child: String = "",
+    val fields: Map<String, String> = emptyMap(),
+    /** "add" | "edit" | "delete" | "restore" | "send" — decides the card's wording and button colour. */
+    val action: String = "add",
+    /** Edits only: the same keys as [fields], as they are now, so the card can show old → new. */
+    val before: Map<String, String> = emptyMap()
 )
 
 @Serializable

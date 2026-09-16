@@ -569,7 +569,7 @@ fun AppNavigation(
                     }
                     navController.navigate(Screen.OnboardingStep3.route)
                 },
-                onNavigateToInfoAsk = { navController.navigate(Screen.InfoAsk.route) },
+                onNavigateToRoute = { route -> navController.navigate(route) },
                 isTourActive = tourActive
             )
         }
@@ -601,9 +601,10 @@ fun AppNavigation(
             )
         }
         composable(Screen.ChildSummary.route) {
-            ChildSummaryScreen(
-                childViewModel, chatViewModel, navController, onboardingViewModel,
-                onBack = { navController.popBackStack() },
+            // Child tab = the Stitch "NongRak Child Hub - Pro UX Redesign" screen (ChildHubScreen).
+            // The previous ChildSummaryScreen is kept in the codebase but no longer routed.
+            com.lullabyai.app.ui.screens.child.ChildHubScreen(
+                childViewModel, chatViewModel, navController,
                 isTourMode = tourActive
             )
         }
@@ -812,7 +813,6 @@ fun AppNavigation(
                 authViewModel = authViewModel,
                 settingsViewModel = settingsViewModel,
                 navController = navController,
-                onNavigateToEditProfile = { navController.navigate(Screen.EditProfile.route) },
                 onLogout = {
                     chatViewModel.clearForSignOut()
                     // Device-level singleton: without this the next account inherits the previous
@@ -844,6 +844,12 @@ fun AppNavigation(
         }
         composable(Screen.AiDataRetention.route) {
             com.lullabyai.app.ui.screens.settings.AiDataRetentionScreen(childViewModel, navController) { navController.popBackStack() }
+        }
+        composable(Screen.AiPreferences.route) {
+            com.lullabyai.app.ui.screens.settings.AiPreferencesScreen(navController = navController)
+        }
+        composable(Screen.ActiveSessions.route) {
+            com.lullabyai.app.ui.screens.settings.ActiveSessionsScreen(navController) { navController.popBackStack() }
         }
         composable(Screen.LineLink.route) {
             com.lullabyai.app.ui.screens.settings.LineLinkScreen(
@@ -924,6 +930,28 @@ fun AppNavigation(
         }
         composable(Screen.CareHandoff.route, arguments = listOf(navArgument("childId") { type = NavType.StringType })) { entry ->
             com.lullabyai.app.ui.screens.access.HandoffScreen(
+                childId = entry.arguments?.getString("childId").orEmpty(), navController = navController
+            )
+        }
+        composable(Screen.AiEndpoint.route) {
+            com.lullabyai.app.ui.screens.settings.AiEndpointScreen(navController = navController)
+        }
+        composable(Screen.AiParentStyle.route) {
+            com.lullabyai.app.ui.screens.settings.AiParentStyleScreen(navController = navController)
+        }
+        composable(
+            Screen.CareRoutine.route,
+            arguments = listOf(navArgument("childId") { type = NavType.StringType })
+        ) { entry ->
+            com.lullabyai.app.ui.screens.routine.CareRoutineScreen(
+                childId = entry.arguments?.getString("childId").orEmpty(), navController = navController
+            )
+        }
+        composable(
+            Screen.CareHandoverChecklist.route,
+            arguments = listOf(navArgument("childId") { type = NavType.StringType })
+        ) { entry ->
+            com.lullabyai.app.ui.screens.access.CaregiverHandoverChecklistScreen(
                 childId = entry.arguments?.getString("childId").orEmpty(), navController = navController
             )
         }

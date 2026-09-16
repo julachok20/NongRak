@@ -4,12 +4,21 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- App lock (AppLock / AppLockGate): BiometricPrompt throws SecurityException without it. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!--
       Coarse only, and optional: it finds child-friendly places near the family for the activity
       schedule's suggestions. Declining it costs the place suggestions, nothing else in the app.
     -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!--
+      Two-way Google Calendar sync for the activity schedule. Requested only when the parent turns
+      sync on, never at launch. Only events NongRak itself created are read back; the parent's other
+      calendar events are never imported.
+    -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 

@@ -267,6 +267,24 @@ class CommunityRepository(
 
     val blogs: Flow<List<ProfessionalAdviceBlog>> = _blogs.asStateFlow()
 
+    private val _removedMine = MutableStateFlow<List<com.lullabyai.app.data.model.RemovedPost>>(emptyList())
+    /** The signed-in person's own posts the owner removed, not yet acknowledged on this device. */
+    val removedMine: Flow<List<com.lullabyai.app.data.model.RemovedPost>> = _removedMine.asStateFlow()
+
+    private val removedPrefs by lazy {
+        com.lullabyai.app.NongRakApp.instance.getSharedPreferences("community_removed", android.content.Context.MODE_PRIVATE)
+    }
+
+    private fun dismissedRemovedIds(): Set<String> =
+        runCatching { removedPrefs.getStringSet("dismissed", emptySet()).orEmpty() }.getOrDefault(emptySet())
+
+    /** "รับทราบ" on the banner: remembered per device, so the same removal is not shown again. */
+    fun dismissRemoved(ids: List<String>) {
+        val dismissed = dismissedRemovedIds() + ids
+        runCatching { removedPrefs.edit().putStringSet("dismissed", dismissed).apply() }
+        _removedMine.value = _removedMine.value.filterNot { it.id in dismissed }
+    }
+
     init {
         scope.launch {
             // Load local cache immediately so screens render instant data
@@ -296,6 +314,15 @@ class CommunityRepository(
                     limit(100)
                 }
                 .decodeList<CommunityPostDto>()
+                .let { all ->
+                    // Removed posts come back only to their author (RLS). Keep them out of the feed and
+                    // show them to that author as the warning banner instead.
+                    val dismissed = dismissedRemovedIds()
+                    _removedMine.value = all
+                        .filter { it.removedAt != null && it.userId != null && it.userId == currentUserId && it.id !in dismissed }
+                        .map { com.lullabyai.app.data.model.RemovedPost(it.id, it.removedReason, it.content.take(60)) }
+                    all.filter { it.removedAt == null }
+                }
 
             val postIds = postDtos.map { it.id }
 
@@ -381,6 +408,7 @@ class CommunityRepository(
                     content = dto.content,
                     tags = dto.tags,
                     imageUrl = dto.imageUrl,
+                    videoUrl = dto.videoUrl,
                     likesCount = dto.likesCount,
                     isLiked = likedPostIds.contains(dto.id),
                     commentsCount = if (comments.size > dto.commentsCount) comments.size else dto.commentsCount,
@@ -400,6 +428,12 @@ class CommunityRepository(
     /**
      * Uploads an attached image to the public community-media storage bucket.
      */
+    /**
+     * A checked picture or clip. The caller MUST have screened it first (SparkChatClient.moderateMedia):
+     * community-media is public, so anything put here is reachable by URL from that moment on.
+     */
+    suspend fun uploadPostMedia(bytes: ByteArray, extension: String): Result<String> = uploadPostImage(bytes, extension)
+
     suspend fun uploadPostImage(bytes: ByteArray, extension: String = "jpg"): Result<String> = runCatching {
         val path = "posts/${UUID.randomUUID()}.$extension"
         val bucket = supabase.storage.from("community-media")
@@ -423,9 +457,14 @@ class CommunityRepository(
         const val ERR_COMMENT_EDIT_WINDOW = "comment_edit_window_expired"
         const val ERR_NOT_YOURS = "not_yours"
         const val ERR_WRITE_FAILED = "write_failed"
+        /** ShieldGemma judged the text against the community rules; nothing was published. */
+        const val ERR_MODERATION_BLOCKED = "moderation_blocked"
 
         /** Turns a key from [reportWriteFailure] into text. Null means nothing to show. */
         fun communityWriteError(key: String?, isThai: Boolean): String? = when (key) {
+            ERR_MODERATION_BLOCKED ->
+                if (isThai) "ข้อความนี้ไม่ได้เผยแพร่ เพราะขัดกับแนวทางของชุมชน"
+                else "This wasn't published because it goes against the community guidelines."
             ERR_POST_EDIT_WINDOW ->
                 if (isThai) "แก้ไขโพสต์ได้ภายใน 48 ชั่วโมงหลังโพสต์เท่านั้น"
                 else "Posts can only be edited within 48 hours of posting."
@@ -548,6 +587,14 @@ class CommunityRepository(
 
         // 2. Persist locally and remotely
         scope.launch {
+            // ShieldGemma sees the text before anyone else does; a rejected post is taken back off
+            // the feed rather than lingering locally as if it had been published.
+            if (!com.lullabyai.app.data.remote.SparkChatClient.moderate(post.content).allowed) {
+                _posts.update { current -> current.filterNot { it.id == post.id } }
+                runCatching { OfflineCache.put("community_posts", _posts.value) }
+                _writeError.value = ERR_MODERATION_BLOCKED
+                return@launch
+            }
             runCatching { OfflineCache.put("community_posts", _posts.value) }
             runCatching {
                 val currentUserId = post.userId ?: supabase.auth.currentUserOrNull()?.id
@@ -560,6 +607,7 @@ class CommunityRepository(
                     content = post.content,
                     tags = post.tags,
                     imageUrl = post.imageUrl,
+                    videoUrl = post.videoUrl,
                     likesCount = post.likesCount,
                     commentsCount = post.commentsCount,
                     createdAt = java.time.Instant.ofEpochMilli(post.createdAtMillis).toString()
@@ -606,6 +654,19 @@ class CommunityRepository(
         }
 
         scope.launch {
+            if (!com.lullabyai.app.data.remote.SparkChatClient.moderate(content).allowed) {
+                _posts.update { current ->
+                    current.map { post ->
+                        if (post.id == postId) {
+                            val kept = post.comments.filterNot { it.id == newCommentId }
+                            post.copy(comments = kept, commentsCount = kept.size)
+                        } else post
+                    }
+                }
+                runCatching { OfflineCache.put("community_posts", _posts.value) }
+                _writeError.value = ERR_MODERATION_BLOCKED
+                return@launch
+            }
             runCatching { OfflineCache.put("community_posts", _posts.value) }
             runCatching {
                 val currentUserId = userId ?: supabase.auth.currentUserOrNull()?.id

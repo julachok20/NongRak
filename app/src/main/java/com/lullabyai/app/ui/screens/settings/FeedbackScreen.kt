@@ -1,17 +1,21 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class
+)
 package com.lullabyai.app.ui.screens.settings
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,19 +25,53 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import com.lullabyai.app.R
 import com.lullabyai.app.data.repository.FeedbackRepository
 import com.lullabyai.app.data.repository.FeedbackSubmission
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.AuthViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val MAX_MESSAGE = 500
+
+private data class FeedbackChip(val key: String, val icon: ImageVector, val th: String, val en: String)
+
+/** Stitch "รีวิวแอปพลิเคชัน": what impressed them (4–5 stars). */
+private val PRAISE_CHIPS = listOf(
+    FeedbackChip("ai_accurate", Icons.Filled.AutoAwesome, "คำแนะนำ AI แม่นยำ", "Accurate AI advice"),
+    FeedbackChip("health_book", Icons.Filled.MenuBook, "สมุดสุขภาพใช้งานง่าย", "Easy health book"),
+    FeedbackChip("care_chat", Icons.Filled.ChatBubble, "แชทผู้ดูแลสะดวก", "Handy caregiver chat"),
+    FeedbackChip("design", Icons.Filled.Palette, "ดีไซน์สวยสบายตา", "Pleasant design"),
+    FeedbackChip("fast_logging", Icons.Filled.Timer, "บันทึกข้อมูลรวดเร็ว", "Quick logging"),
+    FeedbackChip("data_safety", Icons.Filled.VerifiedUser, "ความปลอดภัยข้อมูลดีเยี่ยม", "Data safety")
+)
+
+/** 1–3 stars: asking an unhappy parent what impressed them reads badly, so ask what to fix. */
+private val ISSUE_CHIPS = listOf(
+    FeedbackChip("ai_off", Icons.Filled.AutoAwesome, "คำแนะนำ AI ไม่ตรง", "AI advice was off"),
+    FeedbackChip("bug", Icons.Filled.BugReport, "แอปค้าง / มีข้อผิดพลาด", "Freezes or errors"),
+    FeedbackChip("slow", Icons.Filled.Timer, "ช้า โหลดนาน", "Slow to load"),
+    FeedbackChip("hard_to_use", Icons.Filled.TouchApp, "ใช้งานยาก", "Hard to use"),
+    FeedbackChip("missing_feature", Icons.Filled.Lightbulb, "ขาดฟีเจอร์ที่ต้องการ", "Missing a feature"),
+    FeedbackChip("privacy", Icons.Filled.Lock, "กังวลเรื่องข้อมูลส่วนตัว", "Privacy concern")
+)
 
 @Composable
 fun FeedbackScreen(
@@ -45,91 +83,81 @@ fun FeedbackScreen(
     val isThai = lang.startsWith("th")
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val authState by authViewModel.uiState.collectAsState()
     val repo = remember { FeedbackRepository() }
     val authRepo = remember { com.lullabyai.app.data.repository.AuthRepository() }
 
-    var rating by remember { mutableStateOf(5) }
-    var selectedCategoryIndex by remember { mutableStateOf(0) }
+    var rating by remember { mutableIntStateOf(5) }
+    val picked = remember { mutableStateListOf<String>() }
     var message by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf(authRepo.currentUser?.email ?: "") }
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
-    var showSuccessDialog by remember { mutableStateOf(false) }
-    var lastSubmission by remember { mutableStateOf<FeedbackSubmission?>(null) }
+    var showSuccess by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var failedSubmission by remember { mutableStateOf<FeedbackSubmission?>(null) }
 
-    val categories = remember(isThai) {
-        if (isThai) {
-            listOf(
-                "⭐ รีวิวและความประทับใจ",
-                "💡 เสนอแนะฟีเจอร์ใหม่",
-                "🐞 รายงานปัญหา / บั๊ก",
-                "👶 คำแนะนำ AI & การใช้งาน",
-                "💬 ข้อเสนอแนะอื่นๆ"
-            )
-        } else {
-            listOf(
-                "⭐ Review & Compliment",
-                "💡 Feature Suggestion",
-                "🐞 Bug / Technical Issue",
-                "👶 AI Guidance & Care",
-                "💬 Other Feedback"
-            )
-        }
+    val chips = if (rating >= 4) PRAISE_CHIPS else ISSUE_CHIPS
+    val ratingLabel = when (rating) {
+        1 -> if (isThai) "ต้องปรับปรุงมาก" else "Needs a lot of work"
+        2 -> if (isThai) "ยังไม่ค่อยพอใจ" else "Not satisfied"
+        3 -> if (isThai) "พอใช้" else "It's okay"
+        4 -> if (isThai) "ดีมาก ชอบเลย" else "Very good"
+        else -> if (isThai) "ยอดเยี่ยมมาก! ประทับใจมาก ❤️" else "Excellent! Love it ❤️"
     }
 
-    val ratingLabels = remember(isThai) {
-        if (isThai) {
-            listOf(
-                "",
-                "⭐ ต้องปรับปรุง (Needs Improvement)",
-                "⭐⭐ พอใช้ (Fair)",
-                "⭐⭐⭐ ปานกลาง (Good)",
-                "⭐⭐⭐⭐ ดีมาก (Very Good)",
-                "⭐⭐⭐⭐⭐ ยอดเยี่ยม ประทับใจมาก! (Excellent!)"
-            )
-        } else {
-            listOf(
-                "",
-                "⭐ Needs Improvement",
-                "⭐⭐ Fair",
-                "⭐⭐⭐ Good",
-                "⭐⭐⭐⭐ Very Good",
-                "⭐⭐⭐⭐⭐ Excellent!"
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) imageUri = uri
+    }
+
+    fun openEmail(submission: FeedbackSubmission, error: String?) {
+        runCatching {
+            context.startActivity(
+                Intent.createChooser(
+                    repo.createEmailIntent(submission, isThai, error),
+                    if (isThai) "ติดต่อทีมงานทางอีเมล" else "Contact the team by email"
+                )
             )
         }
     }
 
     fun submit() {
-        if (message.trim().isBlank()) {
-            Toast.makeText(
-                context,
-                if (isThai) "กรุณากรอกข้อความความคิดเห็นหรือรีวิวของคุณ" else "Please write your review or comments",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
+        if (isSubmitting) return
         isSubmitting = true
-        val submission = FeedbackSubmission(
-            rating = rating,
-            category = categories.getOrElse(selectedCategoryIndex) { "Feedback" },
-            message = message.trim(),
-            userEmail = email.trim().ifBlank { null },
-            userName = authState.profile?.fullName ?: authState.profile?.username
-        )
-        lastSubmission = submission
-
+        errorText = null
         scope.launch {
-            repo.submitFeedback(submission)
+            val version = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull() ?: "unknown"
+            val submission = FeedbackSubmission(
+                rating = rating,
+                highlights = picked.toList(),
+                message = message.trim(),
+                contactEmail = authRepo.currentUser?.email,
+                appVersion = version
+            )
+            val uri = imageUri
+            val image = uri?.let {
+                withContext(Dispatchers.IO) { com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, it, 1280) }
+            }
+            val result = if (uri != null && image == null) {
+                Result.failure(IllegalStateException(if (isThai) "อ่านรูปที่แนบไม่ได้" else "Couldn't read the attached picture"))
+            } else {
+                repo.submit(submission, image)
+            }
+            result
+                .onSuccess { showSuccess = true }
+                .onFailure {
+                    // Name what was received, so a report to the team says what actually failed.
+                    errorText = it.message?.take(200) ?: it::class.simpleName ?: "unknown_error"
+                    failedSubmission = submission
+                }
             isSubmitting = false
-            showSuccessDialog = true
         }
     }
 
     Scaffold(
         topBar = {
             com.lullabyai.app.ui.components.LullabyTopBar(
-                title = if (isThai) "ข้อเสนอแนะและรีวิว" else "Feedback & Review",
+                title = if (isThai) "รีวิวแอปพลิเคชัน" else "Review the App",
                 onBack = onBack,
                 navController = navController
             )
@@ -153,345 +181,367 @@ fun FeedbackScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // Hero Card
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(1.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Brush.linearGradient(listOf(Primary.copy(0.12f), SecondaryContainer.copy(0.2f))))
-                        .padding(18.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+            // Hero: mascot on a soft halo, heart badge, question and subtitle.
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(150.dp)) {
+                    Box(Modifier.size(150.dp).clip(CircleShape).background(Primary.copy(alpha = 0.10f)))
+                    Box(
+                        Modifier
+                            .size(92.dp)
+                            .shadow(10.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(12.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(Primary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.RateReview, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                if (isThai) "เราพร้อมรับฟังทุกความคิดเห็น" else "We Value Your Feedback",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                if (isThai) "ร่วมบอกเล่าประสบการณ์ รีวิว หรือแนะนำฟีเจอร์ เพื่อช่วยพัฒนา NongRak AI ให้ดียิ่งขึ้นค่ะ"
-                                else "Share your reviews, bug reports, or feature ideas to help us improve NongRak AI.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Image(
+                            painter = painterResource(R.drawable.mascot_nongrak),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFD7F5E8),
+                        modifier = Modifier.align(Alignment.Center).offset(x = 34.dp, y = 34.dp).size(28.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Favorite, null, tint = Color(0xFF12805C), modifier = Modifier.size(16.dp))
                         }
                     }
                 }
+                Text(
+                    if (isThai) "คุณคิดอย่างไรกับ NongRak AI?" else "What do you think of NongRak AI?",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (isThai) "ความคิดเห็นของคุณช่วยให้เราพัฒนาผู้ช่วยดูแลลูกน้อยให้ดียิ่งขึ้นในทุกๆ วัน"
+                    else "Your feedback helps us make a better helper for your little one, every day.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
             }
 
-            // Star Rating Section
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(1.dp)
+            // Rating card.
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp).fillMaxWidth(),
+                    Modifier.padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        if (isThai) "ให้คะแนนความพึงพอใจต่อแอปพลิเคชัน" else "How would you rate NongRak AI?",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        if (isThai) "ระดับความพึงพอใจ" else "Your rating",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (i in 1..5) {
-                            val selected = i <= rating
                             IconButton(
-                                onClick = { rating = i },
-                                modifier = Modifier.size(44.dp)
+                                onClick = {
+                                    // Crossing 3↔4 swaps the chip set; old picks would mean the wrong thing.
+                                    if ((i >= 4) != (rating >= 4)) picked.clear()
+                                    rating = i
+                                },
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (selected) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                    contentDescription = "$i Stars",
-                                    tint = if (selected) Color(0xFFFFB300) else Outline.copy(alpha = 0.5f),
+                                    if (i <= rating) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                    contentDescription = if (isThai) "$i ดาว" else "$i stars",
+                                    tint = if (i <= rating) Primary else Outline.copy(alpha = 0.5f),
                                     modifier = Modifier.size(38.dp)
                                 )
                             }
                         }
                     }
-
-                    Text(
-                        ratingLabels.getOrElse(rating) { "" },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (rating >= 4) Primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Category Selection
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    if (isThai) "ประเภทข้อเสนอแนะ" else "Feedback Category",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    categories.forEachIndexed { index, cat ->
-                        val isSelected = selectedCategoryIndex == index
-                        Surface(
-                            onClick = { selectedCategoryIndex = index },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) Primary.copy(0.1f) else MaterialTheme.colorScheme.surface,
-                            modifier = Modifier.fillMaxWidth().border(
-                                width = if (isSelected) 1.5.dp else 1.dp,
-                                color = if (isSelected) Primary else MaterialTheme.colorScheme.outlineVariant.copy(0.5f),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    cat,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Primary else MaterialTheme.colorScheme.onSurface
-                                )
-                                if (isSelected) {
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Review / Feedback Text Area
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (isThai) "รายละเอียดข้อเสนอแนะหรือรีวิว *" else "Your Review & Comments *",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "${message.length}/1000",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Outline
-                    )
-                }
-
-                val placeholderText = if (isThai) {
-                    when (selectedCategoryIndex) {
-                        0 -> "บอกเล่าความรู้สึก ความประทับใจ หรือสิ่งที่ชอบใน NongRak AI..."
-                        1 -> "มีฟีเจอร์หรือเมนูอะไรที่อยากให้เพิ่มเข้ามาในแอปบ้างคะ..."
-                        2 -> "พบปัญหาการใช้งานตรงไหน มีอาการอย่างไร บอกเราได้เลยค่ะ..."
-                        else -> "พิมพ์ความคิดเห็นหรือคำแนะนำของคุณที่นี่..."
-                    }
-                } else {
-                    when (selectedCategoryIndex) {
-                        0 -> "Tell us what you like most about NongRak AI..."
-                        1 -> "What new features would you like to see?..."
-                        2 -> "Describe the issue or bug you encountered..."
-                        else -> "Type your feedback or comments here..."
-                    }
-                }
-
-                OutlinedTextField(
-                    value = message,
-                    onValueChange = { if (it.length <= 1000) message = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 130.dp),
-                    placeholder = { Text(placeholderText, color = Outline, style = MaterialTheme.typography.bodyMedium) },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    )
-                )
-            }
-
-            // User Email / Contact (Optional)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    if (isThai) "อีเมลของคุณ (เพื่อให้ทีมงานตอบกลับ)" else "Your Contact Email (Optional)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("example@email.com", color = Outline) },
-                    leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null, tint = Outline) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    )
-                )
-            }
-
-            // Direct Developer Email Card
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(Icons.Filled.Mail, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
-                    Column {
+                    Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(alpha = 0.10f)) {
                         Text(
-                            if (isThai) "อีเมลผู้พัฒนาโดยตรง:" else "Direct Developer Email:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            FeedbackRepository.DEVELOPER_EMAIL,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
+                            ratingLabel,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
                             color = Primary
                         )
                     }
                 }
             }
 
-            // Submit Button
-            Button(
-                onClick = { submit() },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(100.dp),
-                enabled = !isSubmitting && message.trim().isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
-            ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
-                    Spacer(Modifier.width(8.dp))
-                } else {
-                    Icon(Icons.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
+            // What impressed them / what to fix.
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (rating >= 4) (if (isThai) "จุดที่คุณประทับใจมากที่สุด?" else "What did you like most?")
+                        else (if (isThai) "อยากให้เราปรับปรุงเรื่องไหน?" else "What should we improve?"),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (isThai) "เลือกได้หลายข้อ" else "Pick any",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Text(
-                    if (isThai) "ส่งข้อเสนอแนะและรีวิว" else "Submit Feedback & Review",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    chips.forEach { chip ->
+                        val selected = chip.key in picked
+                        FilterChip(
+                            selected = selected,
+                            onClick = { if (selected) picked.remove(chip.key) else picked.add(chip.key) },
+                            label = { Text(if (isThai) chip.th else chip.en) },
+                            leadingIcon = { Icon(chip.icon, null, modifier = Modifier.size(16.dp)) },
+                            shape = RoundedCornerShape(100.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Primary.copy(alpha = 0.14f),
+                                selectedLabelColor = Primary,
+                                selectedLeadingIconColor = Primary,
+                                iconColor = Primary
+                            )
+                        )
+                    }
+                }
             }
 
-            Spacer(Modifier.height(16.dp))
+            // Comment box.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        if (isThai) "ความคิดเห็นหรือข้อเสนอแนะเพิ่มเติม" else "Anything else to tell us?",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("${message.length}/$MAX_MESSAGE", style = MaterialTheme.typography.labelSmall, color = Outline)
+                }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(Modifier.padding(14.dp).heightIn(min = 110.dp)) {
+                        if (message.isEmpty()) {
+                            Text(
+                                if (isThai) "เล่าความประทับใจ หรือข้อเสนอแนะที่คุณอยากให้ NongRak พัฒนาเพิ่มเติม..."
+                                else "Tell us what you enjoyed, or what NongRak should do better...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Outline
+                            )
+                        }
+                        BasicTextField(
+                            value = message,
+                            onValueChange = { if (it.length <= MAX_MESSAGE) message = it },
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(Primary),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp)
+                        )
+                    }
+                }
+            }
+
+            // Optional picture.
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 1.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val uri = imageUri
+                    Box(
+                        Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Primary.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (uri != null) {
+                            AsyncImage(model = uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Icon(Icons.Filled.AddAPhoto, null, tint = Primary, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (isThai) "แนบภาพประกอบ (ถ้ามี)" else "Attach a picture (optional)",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (isThai) "ภาพที่จะช่วยให้เราเห็นได้อย่างชัดเจนยิ่งขึ้น" else "A screenshot helps us see what you mean",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (uri != null) {
+                        IconButton(onClick = { imageUri = null }) {
+                            Icon(Icons.Filled.Close, contentDescription = if (isThai) "ลบรูป" else "Remove picture")
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            shape = RoundedCornerShape(100.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Filled.Upload, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isThai) "เลือกรูป" else "Choose", fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+
+            // Error: say what failed, and give a way to reach the team anyway.
+            errorText?.let { err ->
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
+                            Text(
+                                if (isThai) "ส่งรีวิวไม่สำเร็จ" else "Couldn't send your review",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Text(
+                            (if (isThai) "ระบบตอบกลับว่า: " else "The server said: ") + err,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            if (isThai) "ลองส่งอีกครั้ง หรือส่งอีเมลหาทีมงานโดยตรง รีวิวและข้อผิดพลาดนี้จะแนบไปให้อัตโนมัติ"
+                            else "Try again, or email the team directly — your review and this error are included.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { submit() }, shape = RoundedCornerShape(100.dp)) {
+                                Text(if (isThai) "ลองอีกครั้ง" else "Try again")
+                            }
+                            Button(
+                                onClick = { failedSubmission?.let { openEmail(it, err) } },
+                                shape = RoundedCornerShape(100.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Filled.MailOutline, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isThai) "ติดต่อทีมงาน" else "Contact team")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Send.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(100.dp))
+                    .background(Brush.verticalGradient(listOf(Primary, Primary.copy(alpha = 0.82f))))
+            ) {
+                TextButton(
+                    onClick = { submit() },
+                    enabled = !isSubmitting,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
+                    } else {
+                        Icon(Icons.Filled.Send, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (isThai) "ส่งรีวิวและให้คะแนน" else "Send review",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+
+            // Store.
+            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        if (isThai) "หรือให้คะแนน 5 ดาวโดยตรงบน Store เพื่อสนับสนุนเรา" else "Or rate us 5 stars on the store to support us",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Surface(
+                        onClick = {
+                            val id = context.packageName
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$id")))
+                            }.onFailure {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$id")))
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(100.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        shadowElevation = 1.dp
+                    ) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.Shop, null, tint = Primary, modifier = Modifier.size(18.dp))
+                            Text("Google Play", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
+            // Who reads it.
+            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(6.dp)) {
+                        Image(painterResource(R.drawable.mascot_nongrak), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.Verified, null, tint = Color(0xFF12805C), modifier = Modifier.size(16.dp))
+                            Text(
+                                if (isThai) "ทีมพัฒนา NongRak AI" else "The NongRak AI team",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF12805C)
+                            )
+                        }
+                        Text(
+                            if (isThai) "ทุกคำติชมถูกส่งตรงถึงทีมพัฒนา เพื่อนำไปปรับปรุงประสบการณ์การดูแลลูกรักของคุณ"
+                            else "Every review goes straight to the team, to make caring for your little one easier.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
         }
     }
 
-    // Success & Email Notification Dialog
-    if (showSuccessDialog) {
+    if (showSuccess) {
         AlertDialog(
-            onDismissRequest = { showSuccessDialog = false },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(Primary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Primary, modifier = Modifier.size(36.dp))
-                }
-            },
-            title = {
+            onDismissRequest = { showSuccess = false; onBack() },
+            icon = { Icon(Icons.Filled.CheckCircle, null, tint = Primary, modifier = Modifier.size(40.dp)) },
+            title = { Text(if (isThai) "ขอบคุณสำหรับรีวิวค่ะ!" else "Thank you for your review!", fontWeight = FontWeight.Bold) },
+            text = {
                 Text(
-                    if (isThai) "ขอบคุณสำหรับข้อเสนอแนะค่ะ!" else "Thank You for Your Feedback!",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium
+                    if (isThai) "รีวิวของคุณถูกบันทึกแล้ว ทีมงานจะนำไปพัฒนา NongRak AI ให้ดียิ่งขึ้น"
+                    else "Your review was saved. The team will use it to make NongRak AI better."
                 )
             },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        if (isThai)
-                            "ความคิดเห็นและรีวิวของคุณถูกบันทึกเรียบร้อยแล้ว และระบบพร้อมส่งข้อมูลแจ้งเตือนตรงถึงทีมงาน (${FeedbackRepository.DEVELOPER_EMAIL}) ค่ะ"
-                        else
-                            "Your review and feedback have been saved and can be directly notified to our development team (${FeedbackRepository.DEVELOPER_EMAIL}).",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(0.4f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                if (isThai) "คะแนนที่ให้: ${"★".repeat(rating)} (${rating}/5)" else "Rating: ${"★".repeat(rating)} (${rating}/5)",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Primary
-                            )
-                            Text(
-                                if (isThai) "หัวข้อ: ${categories.getOrElse(selectedCategoryIndex) { "" }}" else "Category: ${categories.getOrElse(selectedCategoryIndex) { "" }}",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-                }
-            },
             confirmButton = {
-                Button(
-                    onClick = {
-                        val sub = lastSubmission
-                        if (sub != null) {
-                            runCatching {
-                                val intent = repo.createEmailIntent(sub, isThai)
-                                context.startActivity(Intent.createChooser(intent, if (isThai) "ส่งอีเมลแจ้งเตือนถึงผู้พัฒนา" else "Send Email Notification"))
-                            }
-                        }
-                        showSuccessDialog = false
-                        message = ""
-                        onBack()
-                    },
-                    shape = RoundedCornerShape(100.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                ) {
-                    Icon(Icons.Filled.MailOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isThai) "ส่งอีเมลแจ้งเตือนทันที" else "Send Email to Developer")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showSuccessDialog = false
-                        message = ""
-                        onBack()
-                    }
-                ) {
-                    Text(if (isThai) "เสร็จสิ้น" else "Done", color = Outline)
+                Button(onClick = { showSuccess = false; onBack() }, shape = RoundedCornerShape(100.dp)) {
+                    Text(if (isThai) "เสร็จสิ้น" else "Done")
                 }
             }
         )

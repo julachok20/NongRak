@@ -63,4 +63,18 @@ class RelationshipLabelsTest {
         org.junit.Assert.assertTrue(promptEN.contains("Strict rule for multi-child households"))
         org.junit.Assert.assertTrue(promptEN.contains("NEVER jump to asking about another child in the family"))
     }
+
+    @Test
+    fun `reply language follows what the parent typed`() {
+        assertEquals(false, RelationshipLabels.replyInThai("my baby has a fever", appIsThai = true))
+        assertEquals(true, RelationshipLabels.replyInThai("ลูกมีไข้", appIsThai = false))
+        assertEquals(true, RelationshipLabels.replyInThai("555", appIsThai = true))
+        assertEquals(false, RelationshipLabels.replyInThai("555", appIsThai = false))
+    }
+
+    @Test
+    fun `app-added notes do not decide the reply language`() {
+        val outgoing = "[หมายเหตุ: บัญชีนี้มีลูกมากกว่าหนึ่งคน] how much milk should she drink?"
+        assertEquals(false, RelationshipLabels.replyInThai(outgoing, appIsThai = true))
+    }
 }

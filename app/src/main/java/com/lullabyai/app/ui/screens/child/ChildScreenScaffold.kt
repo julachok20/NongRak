@@ -26,12 +26,14 @@ fun ChildScreenScaffold(
     // arrow. Every other child page is a sub-page and keeps one. This lives here rather than in
     // the screen because the scaffold hardcoded the arrow for all 9 of its callers.
     showBack: Boolean = true,
+    titleContent: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
         topBar = {
             LullabyTopBar(
                 title = title,
+                titleContent = titleContent,
                 onBack = if (showBack) ({ navController.popBackStack() }) else null,
                 navController = navController,
                 centerTitle = centerTitle

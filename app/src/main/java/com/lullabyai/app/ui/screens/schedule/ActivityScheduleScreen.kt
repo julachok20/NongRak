@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Insights
@@ -58,17 +59,74 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 
 /* "Serene Clinical", read from the design's own tailwind config. */
-internal val SchBackground = Color(0xFFF8F9FF)
-internal val SchSurface = Color(0xFFFFFFFF)
-internal val SchSurfaceLow = Color(0xFFEFF4FF)
-internal val SchSurfaceContainer = Color(0xFFE5EEFF)
-internal val SchSurfaceHigh = Color(0xFFDCE9FF)
-internal val SchOnSurface = Color(0xFF0B1C30)
-internal val SchOnSurfaceVariant = Color(0xFF444654)
-internal val SchOutline = Color(0xFF747685)
-internal val SchOutlineVariant = Color(0xFFC4C5D6)
-internal val SchPrimary = Color(0xFF173DB8)
-internal val SchError = Color(0xFFBA1A1A)
+// Colour tokens. Light values are the original design hex, so light mode is pixel-identical; dark
+// mode reads the app theme (ui/theme DarkColors) so the schedule matches every other dark screen.
+// Surfaces step UP in dark (card above page, chip above card) - the light design steps down in
+// tint, and mapping it literally would sink inner chips below the card they sit on.
+private val schDark: Boolean
+    @Composable @ReadOnlyComposable get() = com.lullabyai.app.ui.theme.LocalDarkTheme.current
+
+internal val SchBackground: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.background else Color(0xFFF8F9FF)
+internal val SchSurface: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.surfaceContainer else Color(0xFFFFFFFF)
+internal val SchSurfaceLow: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFEFF4FF)
+internal val SchSurfaceContainer: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.surfaceContainerHighest else Color(0xFFE5EEFF)
+internal val SchSurfaceHigh: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.surfaceBright else Color(0xFFDCE9FF)
+internal val SchOnSurface: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.onSurface else Color(0xFF0B1C30)
+internal val SchOnSurfaceVariant: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF444654)
+internal val SchOutline: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.outline else Color(0xFF747685)
+internal val SchOutlineVariant: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.outlineVariant else Color(0xFFC4C5D6)
+internal val SchPrimary: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.primary else Color(0xFF173DB8)
+/** Text/icons on [SchPrimary]. Dark primary is a light blue, so white on it would wash out. */
+internal val SchOnPrimary: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.onPrimary else Color.White
+internal val SchError: Color
+    @Composable @ReadOnlyComposable get() =
+        if (schDark) MaterialTheme.colorScheme.error else Color(0xFFBA1A1A)
+
+// Badge colours (rating, promo, price). Dark keeps the hue but drops the pastel fill to a low-alpha
+// wash with a lighter text tone, so badges read as accents rather than bright blocks.
+internal val SchAmberBg: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0x33FFA000) else Color(0xFFFFF8E1)
+internal val SchOrangeBg: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0x29E65100) else Color(0xFFFFF3E0)
+internal val SchOrangeBorder: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0x66E65100) else Color(0xFFFFE0B2)
+internal val SchOrangeText: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0xFFFFB74D) else Color(0xFFE65100)
+internal val SchOrangeTextStrong: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0xFFFFAB91) else Color(0xFFBF360C)
+internal val SchGreenBg: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0x292E7D32) else Color(0xFFE8F5E9)
+internal val SchGreenBorder: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0x662E7D32) else Color(0xFFC8E6C9)
+internal val SchGreenText: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0xFF81C784) else Color(0xFF2E7D32)
+internal val SchGreenTextStrong: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0xFFA5D6A7) else Color(0xFF1B5E20)
+/** Text on a [SchGreenText]-filled price pill. */
+internal val SchOnGreen: Color
+    @Composable @ReadOnlyComposable get() = if (schDark) Color(0xFF0B2E12) else Color.White
 
 private val ThaiMonths = listOf(
     "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -125,6 +183,14 @@ fun ActivityScheduleScreen(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { viewModel.ensureRecommendations(context) }
 
+    // Calendar access is asked for only when the parent taps connect, never on open.
+    val requestCalendar = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants.isNotEmpty() && grants.values.all { it }) viewModel.enableCalendarSync(context)
+        else viewModel.reportCalendarPermissionDenied()
+    }
+
     /** The suggestion whose time window is being picked, or null when the dialog is closed. */
     var scheduling by remember {
         mutableStateOf<com.lullabyai.app.data.remote.ActivityRecommendation?>(null)
@@ -143,6 +209,7 @@ fun ActivityScheduleScreen(
     LaunchedEffect(state.childId) {
         if (state.childId != null) {
             viewModel.ensureRecommendations(context, generateWhenMissing = false)
+            viewModel.loadCalendarStatus(context)
         }
     }
 
@@ -160,7 +227,7 @@ fun ActivityScheduleScreen(
             FloatingActionButton(
                 onClick = onAdd,
                 containerColor = SchPrimary,
-                contentColor = Color.White,
+                contentColor = SchOnPrimary,
                 shape = CircleShape
             ) { Icon(Icons.Filled.Add, if (isThai) "เพิ่มกิจกรรม" else "Add activity") }
         }
@@ -220,6 +287,26 @@ fun ActivityScheduleScreen(
             item { UpcomingSummary(state.summary, isThai) }
 
             item {
+                CalendarSyncCard(
+                    enabled = state.calendarSyncEnabled,
+                    calendarName = state.calendarName,
+                    syncing = state.calendarSyncing,
+                    lastSyncMillis = state.calendarLastSyncMillis,
+                    failures = state.calendarReport?.failures ?: 0,
+                    isThai = isThai,
+                    onConnect = {
+                        if (com.lullabyai.app.data.calendar.DeviceCalendarSync.hasPermission(context)) {
+                            viewModel.enableCalendarSync(context)
+                        } else {
+                            requestCalendar.launch(com.lullabyai.app.data.calendar.DeviceCalendarSync.PERMISSIONS)
+                        }
+                    },
+                    onSync = { viewModel.syncCalendar(context) },
+                    onDisconnect = { viewModel.disableCalendarSync(context) }
+                )
+            }
+
+            item {
                 RecommendationRail(
                     items = state.recommendations,
                     loading = state.loadingRecommendations,
@@ -274,6 +361,27 @@ fun ActivityScheduleScreen(
                             "end_before_start" -> if (isThai)
                                 "เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม"
                             else "The end time must be after the start time"
+                            "ai_no_response", "ai_failed" -> if (isThai)
+                                "ระบบ AI ไม่ตอบกลับในขณะนี้ ลองกด ขอใหม่ อีกครั้ง"
+                            else "The AI did not respond — tap Refresh to try again"
+                            "ai_unusable_response" -> if (isThai)
+                                "AI ตอบกลับมาในรูปแบบที่ใช้ไม่ได้ ลองกด ขอใหม่ อีกครั้ง"
+                            else "The AI's answer could not be used — tap Refresh to try again"
+                            "calendar_permission_denied" -> if (isThai)
+                                "ต้องอนุญาตการเข้าถึงปฏิทินก่อน จึงจะซิงค์กับ Google Calendar ได้"
+                            else "Calendar access is needed to sync with Google Calendar"
+                            "calendar_not_found" -> if (isThai)
+                                "ไม่พบปฏิทินที่เขียนได้บนเครื่องนี้ กรุณาเพิ่มบัญชี Google ในการตั้งค่าเครื่อง"
+                            else "No writable calendar on this phone — add a Google account in system settings"
+                            "calendar_read_failed" -> if (isThai)
+                                "อ่านปฏิทินไม่สำเร็จ จึงยังไม่ได้ซิงค์ และไม่มีข้อมูลใดถูกลบ"
+                            else "Could not read the calendar, so nothing was synced or deleted"
+                            "calendar_bulk_loss" -> if (isThai)
+                                "กิจกรรมหายไปจากปฏิทินพร้อมกันหลายรายการ จึงหยุดซิงค์ชั่วคราวและไม่ลบข้อมูลใน NongRak"
+                            else "Many events vanished from the calendar at once, so sync paused without deleting anything in NongRak"
+                            "calendar_sync_state_corrupt" -> if (isThai)
+                                "ข้อมูลการซิงค์ในเครื่องเสียหาย กรุณาปิดแล้วเปิดการซิงค์ใหม่"
+                            else "Sync data on this phone is damaged — turn sync off and on again"
                             else -> msg
                         },
                         color = SchError,
@@ -701,7 +809,7 @@ private fun DayCell(
             fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             color = when {
-                selected -> Color.White
+                selected -> SchOnPrimary
                 !inMonth -> SchOnSurfaceVariant.copy(0.4f)
                 else -> SchOnSurface
             }
@@ -715,7 +823,7 @@ private fun DayCell(
                         Modifier
                             .size(4.dp)
                             .background(
-                                if (selected) Color.White else ActivityCategories.color(c),
+                                if (selected) SchOnPrimary else ActivityCategories.color(c),
                                 CircleShape
                             )
                     )
@@ -851,6 +959,90 @@ private fun openGoogleMaps(context: android.content.Context, rec: com.lullabyai.
     }
 }
 
+/** Connect / sync / disconnect for Google Calendar - the "inside" half of the calendar link. */
+@Composable
+private fun CalendarSyncCard(
+    enabled: Boolean,
+    calendarName: String?,
+    syncing: Boolean,
+    lastSyncMillis: Long?,
+    failures: Int,
+    isThai: Boolean,
+    onConnect: () -> Unit,
+    onSync: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(SchSurface)
+            .border(1.dp, SchOutlineVariant, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Event, null, tint = SchPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (isThai) "ซิงค์กับ Google Calendar" else "Sync with Google Calendar",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = SchOnSurface,
+                modifier = Modifier.weight(1f)
+            )
+            if (syncing) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = SchPrimary)
+            }
+        }
+
+        val detail = if (!enabled) {
+            if (isThai) "กิจกรรมจะขึ้นในปฏิทินของคุณ และถ้าย้ายหรือลบในปฏิทิน ที่นี่จะอัปเดตตาม"
+            else "Activities appear in your calendar; moving or deleting them there updates them here"
+        } else {
+            val last = lastSyncMillis?.let {
+                java.time.Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(
+                    java.time.format.DateTimeFormatter.ofPattern(
+                        "d MMM HH:mm",
+                        if (isThai) java.util.Locale("th", "TH") else java.util.Locale.ENGLISH
+                    )
+                )
+            }
+            val name = calendarName ?: "Google Calendar"
+            if (isThai) "เชื่อมกับ $name" + (last?.let { " · ซิงค์ล่าสุด $it" } ?: "")
+            else "Linked to $name" + (last?.let { " · last synced $it" } ?: "")
+        }
+        Text(detail, fontSize = 13.sp, color = SchOnSurfaceVariant)
+
+        if (enabled && failures > 0) {
+            Text(
+                if (isThai) "ซิงค์ไม่สำเร็จ $failures รายการ จะลองใหม่ครั้งถัดไป"
+                else "$failures item(s) failed to sync and will be retried next time",
+                fontSize = 13.sp,
+                color = SchError
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (enabled) {
+                Button(
+                    onClick = onSync,
+                    enabled = !syncing,
+                    colors = ButtonDefaults.buttonColors(containerColor = SchPrimary)
+                ) { Text(if (isThai) "ซิงค์ตอนนี้" else "Sync now") }
+                TextButton(onClick = onDisconnect, enabled = !syncing) {
+                    Text(if (isThai) "ยกเลิกการเชื่อมต่อ" else "Disconnect", color = SchOnSurfaceVariant)
+                }
+            } else {
+                Button(
+                    onClick = onConnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = SchPrimary)
+                ) { Text(if (isThai) "เชื่อมต่อ" else "Connect") }
+            }
+        }
+    }
+}
+
 /**
  * Detailed Pop-up for a recommended place or activity showing real prices, promotions, Google Maps link, etc.
  */
@@ -915,7 +1107,7 @@ private fun PlaceDetailDialog(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .background(Color(0xFFFFF8E1), RoundedCornerShape(6.dp))
+                                .background(SchAmberBg, RoundedCornerShape(6.dp))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Icon(Icons.Filled.Star, null, tint = Color(0xFFFFA000), modifier = Modifier.size(13.dp))
@@ -924,7 +1116,7 @@ private fun PlaceDetailDialog(
                                 text = "$rate",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE65100)
+                                color = SchOrangeText
                             )
                         }
                     }
@@ -998,8 +1190,8 @@ private fun PlaceDetailDialog(
                 if (hasPrice) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFE8F5E9),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC8E6C9)),
+                        color = SchGreenBg,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SchGreenBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -1018,7 +1210,7 @@ private fun PlaceDetailDialog(
                                     Icon(
                                         Icons.Filled.Payments,
                                         contentDescription = null,
-                                        tint = Color(0xFF2E7D32),
+                                        tint = SchGreenText,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(Modifier.width(6.dp))
@@ -1026,12 +1218,12 @@ private fun PlaceDetailDialog(
                                         text = if (isThai) "ราคาและค่าบริการ" else "Admission Price",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF1B5E20)
+                                        color = SchGreenTextStrong
                                     )
                                 }
                                 rec.costBaht?.let { cost ->
                                     Surface(
-                                        color = Color(0xFF2E7D32),
+                                        color = SchGreenText,
                                         shape = RoundedCornerShape(6.dp)
                                     ) {
                                         Text(
@@ -1039,7 +1231,7 @@ private fun PlaceDetailDialog(
                                             else "%,d ฿".format(cost),
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = SchOnGreen,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
                                     }
@@ -1049,7 +1241,7 @@ private fun PlaceDetailDialog(
                                 Text(
                                     text = detail,
                                     fontSize = 12.sp,
-                                    color = Color(0xFF1B5E20),
+                                    color = SchGreenTextStrong,
                                     lineHeight = 16.sp
                                 )
                             }
@@ -1061,8 +1253,8 @@ private fun PlaceDetailDialog(
                 rec.promotion?.takeIf { it.isNotBlank() }?.let { promo ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFFFF3E0),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFE0B2)),
+                        color = SchOrangeBg,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SchOrangeBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -1070,19 +1262,19 @@ private fun PlaceDetailDialog(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.LocalOffer, null, tint = Color(0xFFE65100), modifier = Modifier.size(15.dp))
+                                Icon(Icons.Filled.LocalOffer, null, tint = SchOrangeText, modifier = Modifier.size(15.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     text = if (isThai) "โปรโมชั่นและสิทธิพิเศษ" else "Promotions & Offers",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFE65100)
+                                    color = SchOrangeText
                                 )
                             }
                             Text(
                                 text = promo,
                                 fontSize = 12.sp,
-                                color = Color(0xFFBF360C),
+                                color = SchOrangeTextStrong,
                                 lineHeight = 16.sp
                             )
                         }
@@ -1341,7 +1533,7 @@ private fun RecommendationCard(
                     Modifier
                         .align(Alignment.TopEnd)
                         .padding(6.dp)
-                        .background(Color(0xFFFFF8E1), RoundedCornerShape(4.dp))
+                        .background(SchAmberBg, RoundedCornerShape(4.dp))
                         .padding(horizontal = 5.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1351,7 +1543,7 @@ private fun RecommendationCard(
                         "${rec.rating}",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFE65100)
+                        color = SchOrangeText
                     )
                 }
             }
@@ -1398,16 +1590,16 @@ private fun RecommendationCard(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFFFF3E0), RoundedCornerShape(4.dp))
+                        .background(SchOrangeBg, RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.LocalOffer, null, tint = Color(0xFFE65100), modifier = Modifier.size(10.dp))
+                    Icon(Icons.Filled.LocalOffer, null, tint = SchOrangeText, modifier = Modifier.size(10.dp))
                     Spacer(Modifier.width(3.dp))
                     Text(
                         promo,
                         fontSize = 10.sp,
-                        color = Color(0xFFE65100),
+                        color = SchOrangeText,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

@@ -306,7 +306,13 @@ Keep one or two "home" items for a day nobody wants to leave the house.
             jsonMode = true
         )
         val text = result.text ?: return Result.failure(IllegalStateException("ai_no_response"))
-        return Result.success(parse(text, nearby, lat, lng))
+        val items = parse(text, nearby, lat, lng)
+        // An answer that yields nothing usable is a failure, not an empty success. parse() silently
+        // drops malformed JSON, a missing "items" array and every venue id the model invented;
+        // reporting that as success left the rail blank with no reason, and "the AI broke" is a
+        // different message for a parent than "nothing suits today".
+        if (items.isEmpty()) return Result.failure(IllegalStateException("ai_unusable_response"))
+        return Result.success(items)
     }
 
     /**

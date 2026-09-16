@@ -67,7 +67,14 @@ data class ActivityScheduleUiState(
     val generatedAt: String? = null,
     val loading: Boolean = false,
     val saving: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    /** Google Calendar sync on this phone - per device, so each co-parent turns it on for themselves. */
+    val calendarSyncEnabled: Boolean = false,
+    val calendarName: String? = null,
+    val calendarSyncing: Boolean = false,
+    val calendarLastSyncMillis: Long? = null,
+    /** What the most recent pass did, shown on the sync card so a partial failure is visible. */
+    val calendarReport: com.lullabyai.app.data.calendar.DeviceCalendarSync.Report? = null
 ) {
     private fun matches(a: ChildActivity): Boolean =
         (categoryFilter == null || a.category == categoryFilter) &&
@@ -157,6 +164,16 @@ class ActivityScheduleViewModel(
     private companion object {
         /** Suggestions are regenerated once past this age — the rest of the time the cache serves. */
         const val MAX_RECOMMENDATION_AGE_DAYS = 3
+
+        /** How far ahead activities are mirrored into the phone's calendar. */
+        const val CALENDAR_WINDOW_DAYS = 180L
+
+        /**
+         * Bounds for finding linked activities that moved out of the window. This loads the child's
+         * whole schedule - fine at family scale; add a by-id lookup if schedules reach thousands.
+         */
+        const val ALL_TIME_FROM = "2000-01-01T00:00:00Z"
+        const val ALL_TIME_TO = "2100-01-01T00:00:00Z"
     }
 
     private val recJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -279,6 +296,109 @@ class ActivityScheduleViewModel(
     }
 
     fun clearError() = _uiState.update { it.copy(error = null) }
+
+    // --- Google Calendar sync ---------------------------------------------------------------------
+
+    fun loadCalendarStatus(context: android.content.Context) {
+        viewModelScope.launch {
+            val status = com.lullabyai.app.data.calendar.DeviceCalendarSync.status(context)
+            _uiState.update {
+                it.copy(
+                    calendarSyncEnabled = status.enabled,
+                    calendarName = status.calendarName,
+                    calendarLastSyncMillis = status.lastSyncMillis
+                )
+            }
+            // Sync runs each time Activity opens, but only on phones where the parent turned it on:
+            // a parent who never connected must not get a permission error on every visit.
+            if (status.enabled) syncCalendarNow(context)
+        }
+    }
+
+    /** The permission dialog was declined: say so instead of leaving the button looking broken. */
+    fun reportCalendarPermissionDenied() =
+        _uiState.update { it.copy(error = "calendar_permission_denied") }
+
+    /** Turns sync on once permission is granted, then runs the first pass straight away. */
+    fun enableCalendarSync(context: android.content.Context) {
+        viewModelScope.launch {
+            com.lullabyai.app.data.calendar.DeviceCalendarSync.enable(context)
+                .onSuccess { name ->
+                    _uiState.update {
+                        it.copy(calendarSyncEnabled = true, calendarName = name, error = null)
+                    }
+                    syncCalendarNow(context)
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(error = e.message ?: "calendar_not_found") }
+                }
+        }
+    }
+
+    /** Turns sync off on this phone. Events already written stay in the calendar. */
+    fun disableCalendarSync(context: android.content.Context) {
+        viewModelScope.launch {
+            com.lullabyai.app.data.calendar.DeviceCalendarSync.disable(context)
+            _uiState.update {
+                it.copy(
+                    calendarSyncEnabled = false,
+                    calendarName = null,
+                    calendarReport = null,
+                    calendarLastSyncMillis = null
+                )
+            }
+        }
+    }
+
+    /** One pass - run when the screen opens and from the sync button. */
+    fun syncCalendar(context: android.content.Context) {
+        viewModelScope.launch { syncCalendarNow(context) }
+    }
+
+    private suspend fun syncCalendarNow(context: android.content.Context) {
+        val s = _uiState.value
+        val childId = s.childId ?: return
+        if (s.calendarSyncing) return
+        _uiState.update { it.copy(calendarSyncing = true) }
+
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now()
+        val window = childRepo.listActivities(
+            childId,
+            today.minusDays(1).atStartOfDay(zone).toOffsetDateTime().toString(),
+            today.plusDays(CALENDAR_WINDOW_DAYS).atStartOfDay(zone).toOffsetDateTime().toString()
+        ).getOrElse { e ->
+            _uiState.update { it.copy(calendarSyncing = false, error = e.message) }
+            return
+        }
+
+        val result = com.lullabyai.app.data.calendar.DeviceCalendarSync.run(
+            context = context,
+            childId = childId,
+            windowItems = window,
+            fetchByIds = { ids ->
+                val wanted = ids.toSet()
+                childRepo.listActivities(childId, ALL_TIME_FROM, ALL_TIME_TO)
+                    .map { all -> all.filter { it.id in wanted } }
+            },
+            updateActivity = { id, title, startsAt, endsAt, allDay ->
+                childRepo.updateActivity(id, title, startsAt, endsAt, allDay)
+            },
+            deleteActivity = { id -> childRepo.deleteActivity(id) }
+        )
+
+        val status = com.lullabyai.app.data.calendar.DeviceCalendarSync.status(context)
+        _uiState.update { st ->
+            st.copy(
+                calendarSyncing = false,
+                calendarLastSyncMillis = status.lastSyncMillis,
+                calendarReport = result.getOrNull() ?: st.calendarReport,
+                error = result.exceptionOrNull()?.message ?: st.error
+            )
+        }
+        // A calendar edit may have changed activities: show what is actually stored now.
+        refresh()
+    }
 
     /**
      * Looks the place up in Google Places so the entry carries a real venue — its id, address and

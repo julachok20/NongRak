@@ -4,7 +4,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
 @Serializable
-data class HandoffTask(val text: String, val done: Boolean = false)
+/** [note] is what the caregiver observed while doing it, shown to the parent under the item. */
+data class HandoffTask(val text: String, val done: Boolean = false, val note: String = "")
 
 @Serializable
 data class HandoffUpcoming(val id:String, val title:String, @SerialName("starts_at") val startsAt:String)
@@ -41,6 +42,21 @@ fun handoffActions(h: CareHandoff, userId: String): List<String> = when {
     userId == h.senderId && h.status == "completed" -> listOf("acknowledge")
     else -> emptyList()
 }
+
+/**
+ * What one "send to every caregiver" did.
+ *
+ * Skipped caregivers are reported rather than silently dropped: a caregiver who still holds an open
+ * handoff keeps it (overwriting a shift someone is halfway through would lose their ticks), and the
+ * parent needs to know their new briefing did not reach that person.
+ */
+@Serializable
+data class HandoffBroadcastResult(
+    val sent: Int = 0,
+    val skipped: Int = 0,
+    val recipients: List<String> = emptyList(),
+    @SerialName("skipped_recipients") val skippedRecipients: List<String> = emptyList()
+)
 
 @Serializable
 data class HandoffDraft(

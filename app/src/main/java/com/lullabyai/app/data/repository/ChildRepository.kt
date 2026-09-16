@@ -703,6 +703,34 @@ class ChildRepository {
         Unit
     }
 
+    /**
+     * Applies a Google Calendar edit (title / time) to an activity. Only the mirrored fields change;
+     * category, place, notes and cost stay as the parent set them.
+     *
+     * The updated row is selected back because RLS turns a forbidden UPDATE into "0 rows, no error".
+     * Without that check calendar sync would record the edit as applied and never retry it.
+     */
+    suspend fun updateActivity(
+        activityId: String,
+        title: String,
+        startsAt: String,
+        endsAt: String?,
+        allDay: Boolean
+    ): Result<Unit> = runCatching {
+        val rows = supabase.postgrest.from("child_activities").update(
+            buildJsonObject {
+                put("title", JsonPrimitive(title))
+                put("starts_at", JsonPrimitive(startsAt))
+                put("ends_at", endsAt?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("all_day", JsonPrimitive(allDay))
+            }
+        ) {
+            filter { eq("id", activityId) }
+            select()
+        }.decodeList<ChildActivity>()
+        check(rows.isNotEmpty()) { "activity_update_denied: 0 rows updated for $activityId" }
+    }
+
     /** Every person I can talk to about this child, newest conversation first. */
     suspend fun careConversations(childId: String): Result<List<CareConversation>> = runCatching {
         supabase.postgrest.rpc(

@@ -181,8 +181,10 @@ fun GrowthHistoryScreen(
             } else {
                 items(records, key = { it.id }) { r ->
                     val ageMonths = child?.birthdate?.let { ageMonthsAt(it, r.recordedAt) } ?: 0
-                    val weightStatus = GrowthReference.weightStatus(r.weightKg, ageMonths)
-                    val heightStatus = GrowthReference.heightStatus(r.heightCm, ageMonths)
+                    // Judged at the child's age on the day of this reading, for their sex (WHO).
+                    val ageDays = GrowthReference.ageDaysAt(child?.birthdate, r.recordedAt)
+                    val weightStatus = GrowthReference.weightStatus(r.weightKg, ageDays, child?.gender)
+                    val heightStatus = GrowthReference.heightStatus(r.heightCm, ageDays, child?.gender)
                     // Row-level status/border keys off whichever metric is furthest from normal —
                     // a flagged weight shouldn't be hidden just because height that day was normal.
                     val severity = listOfNotNull(weightStatus, heightStatus).maxByOrNull {
@@ -314,14 +316,14 @@ private fun GrowthMiniStat(icon: androidx.compose.ui.graphics.vector.ImageVector
  *  call (that would mean one AI request per flagged history row just to render a list). Honest
  *  rule-based text, not claimed as AI-generated. */
 private fun growthTip(status: GrowthReference.GrowthStatus, isThai: Boolean): String = when (status.color) {
-    Color(0xFFC62828) -> if (isThai) "ข้อมูลจาก AI แนะนำ: ค่านี้ผิดปกติมากจากช่วงอ้างอิง ควรพบแพทย์เพื่อตรวจประเมินเพิ่มเติม"
-        else "AI tip: This value is far outside the reference range — please see a doctor for further evaluation."
-    else -> if (isThai) "ข้อมูลจาก AI แนะนำ: ค่านี้อยู่นอกช่วงอ้างอิงเล็กน้อย ลองติดตามต่อและปรึกษาแพทย์หากยังไม่เข้าเกณฑ์"
-        else "AI tip: This value is slightly outside the reference range — keep monitoring and consult a doctor if it doesn't normalize."
+    Color(0xFFC62828) -> if (isThai) "คำแนะนำ: ค่านี้ห่างจากเกณฑ์ WHO ตามอายุมาก ตรวจสอบตัวเลขที่บันทึก และควรพบแพทย์เพื่อตรวจประเมิน"
+        else "Tip: This is far from the WHO range for this age — check the entry and see a doctor for an assessment."
+    else -> if (isThai) "คำแนะนำ: ค่านี้อยู่นอกเกณฑ์ WHO ตามอายุ ติดตามต่อ และปรึกษาแพทย์หากครั้งถัดไปยังไม่เข้าเกณฑ์"
+        else "Tip: This is outside the WHO range for this age — keep measuring and consult a doctor if the next reading is still outside."
 }
 
 @Composable
-fun GrowthBandChart(birthdate: String?, records: List<GrowthRecord>, isWeight: Boolean) {
+fun GrowthBandChart(birthdate: String?, records: List<GrowthRecord>, isWeight: Boolean, gender: String? = null) {
     val chronological = records.reversed() // oldest first for left-to-right plotting
     val points = chronological.mapNotNull { r ->
         val v = if (isWeight) r.weightKg else r.heightCm
@@ -335,8 +337,10 @@ fun GrowthBandChart(birthdate: String?, records: List<GrowthRecord>, isWeight: B
         return
     }
     val minAge = points.minOf { it.first }; val maxAge = (points.maxOf { it.first }).coerceAtLeast(minAge + 1)
-    val bandMax = points.maxOf { GrowthReference.band(it.first, isWeight).second }
-    val bandMin = points.minOf { GrowthReference.band(it.first, isWeight).first }
+    // WHO −2 SD … +2 SD for this sex at each month plotted; months past 5 years have no band.
+    val bands = (minAge..maxAge).associateWith { GrowthReference.band(GrowthReference.monthsToDays(it), isWeight, gender) }
+    val bandMax = bands.values.filterNotNull().maxOfOrNull { it.second } ?: points.maxOf { it.second }
+    val bandMin = bands.values.filterNotNull().minOfOrNull { it.first } ?: points.minOf { it.second }
     val valueMax = maxOf(bandMax, points.maxOf { it.second }) * 1.05
     val valueMin = minOf(bandMin, points.minOf { it.second }) * 0.95
 
@@ -346,10 +350,11 @@ fun GrowthBandChart(birthdate: String?, records: List<GrowthRecord>, isWeight: B
 
         // Reference band (min/max lines across the plotted age range)
         val bandTop = Path(); val bandBottom = Path()
+        var started = false
         for (age in minAge..maxAge) {
-            val (bMin, bMax) = GrowthReference.band(age, isWeight)
+            val (bMin, bMax) = bands[age] ?: continue
             val px = x(age)
-            if (age == minAge) { bandTop.moveTo(px, y(bMax)); bandBottom.moveTo(px, y(bMin)) }
+            if (!started) { bandTop.moveTo(px, y(bMax)); bandBottom.moveTo(px, y(bMin)); started = true }
             else { bandTop.lineTo(px, y(bMax)); bandBottom.lineTo(px, y(bMin)) }
         }
         drawPath(bandTop, color = Primary.copy(0.3f), style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))))

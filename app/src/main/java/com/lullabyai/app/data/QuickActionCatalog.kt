@@ -687,5 +687,68 @@ object QuickActionCatalog {
 
         return routes.mapNotNull { r -> all.find { it.route == r } }.distinctBy { it.route }
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Home page "บริการแนะนำ" (recommended services)
+    // ---------------------------------------------------------------------------------------------
+
+    /** Utilities rather than services - nobody needs Settings "recommended" to them. */
+    private val NOT_RECOMMENDABLE: Set<String> = setOf(
+        Screen.Settings.route,
+        Screen.Notifications.route,
+        Screen.WidgetsIntro.route,
+        Screen.PermissionAccess.route
+    )
+
+    /**
+     * Child ages (months, inclusive) where a destination is worth suggesting. A route absent from
+     * this map suits any age. Only destinations whose usefulness genuinely depends on age are here.
+     */
+    private val AGE_WINDOWS: Map<String, IntRange> = mapOf(
+        Screen.MilkRecord.route to 0..36,
+        Screen.WasteRecord.route to 0..48,
+        // Solid food starts around six months.
+        Screen.CalorieCalculator.route to 6..Int.MAX_VALUE,
+        Screen.CalorieCheck.route to 6..Int.MAX_VALUE,
+        Screen.CalorieSummary.route to 6..Int.MAX_VALUE,
+        Screen.RecommendedFood.route to 6..Int.MAX_VALUE,
+        Screen.RefrigeratorScanner.route to 6..Int.MAX_VALUE,
+        Screen.FoodHistory.route to 6..Int.MAX_VALUE,
+        // The first tooth typically erupts around six months.
+        Screen.OralHealth.route to 6..Int.MAX_VALUE,
+        Screen.RecordOralHealthEvent.route to 6..Int.MAX_VALUE,
+        Screen.Exercise.route to 12..Int.MAX_VALUE,
+        // EPDS check-in for the mother: the postpartum year.
+        Screen.MentalHealthAssessment.route to 0..12
+    )
+
+    /**
+     * Picks [count] destinations for the home page's recommended-services row.
+     *
+     * - [ageMonths] null means the birthdate is unknown, so nothing is filtered by age. It is NOT
+     *   treated as a newborn: VaccineSetupCatalog.ageMonthsFromBirthdate returns 0 for a blank date,
+     *   which would push newborn-only suggestions such as the postpartum check-in at a toddler's parent.
+     * - [excludeRoutes] are already visible on the page. They are skipped while enough alternatives
+     *   exist and used to back-fill otherwise, so the row is never short.
+     * - [seed] makes the pick stable for a given value. Recomposition must not reshuffle the cards
+     *   under the user's finger; the caller changes the seed to re-roll on purpose.
+     * - Routes with `{placeholders}` are skipped: opening one without arguments would crash.
+     */
+    fun recommendForHome(
+        ageMonths: Int?,
+        excludeRoutes: Set<String>,
+        seed: Long,
+        count: Int = 4
+    ): List<QuickAction> {
+        val eligible = all
+            .filter { '{' !in it.route && it.route !in NOT_RECOMMENDABLE }
+            .filter { a -> ageMonths == null || AGE_WINDOWS[a.route]?.contains(ageMonths) ?: true }
+            .distinctBy { it.route }
+        val rng = kotlin.random.Random(seed)
+        val fresh = eligible.filter { it.route !in excludeRoutes }.shuffled(rng)
+        if (fresh.size >= count) return fresh.take(count)
+        val backfill = eligible.filter { it.route in excludeRoutes }.shuffled(rng)
+        return (fresh + backfill).take(count)
+    }
 }
 

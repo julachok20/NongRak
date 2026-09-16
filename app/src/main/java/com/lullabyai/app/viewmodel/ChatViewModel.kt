@@ -23,6 +23,11 @@ data class ChatUiState(
     val currentSessionId: String? = null,
     val messages: List<UiChatMessage> = emptyList(),
     val isLoading: Boolean = false,
+    /**
+     * The answer while it is still arriving from Spark, tags held back. Null when nothing is
+     * streaming. Kept out of [messages] so the call screen only ever speaks finished replies.
+     */
+    val streamingText: String? = null,
     val error: String? = null,
     /** Set for one feed, so the companion's "อิ่มแล้ว" banner shows once and then clears. */
     val bondFeed: com.lullabyai.app.data.repository.BondFeed? = null,
@@ -129,7 +134,7 @@ class ChatViewModel : ViewModel() {
             repo.getMessages(sessionId).onSuccess { msgs ->
                 val welcome = welcomeMessage(_uiState.value.parentRelationship, isThai, _uiState.value.parentName)
                 val ui = if (msgs.isEmpty()) listOf(welcome)
-                else msgs.map { UiChatMessage(it.id, it.role, it.content) }
+                else msgs.map { UiChatMessage(it.id, it.role, it.content, medical = it.medical) }
                 _uiState.value = _uiState.value.copy(messages = ui, isLoading = false)
             }.onFailure {
                 _uiState.value = _uiState.value.copy(
@@ -293,20 +298,31 @@ class ChatViewModel : ViewModel() {
                 audioBytes, audioMime,
                 _uiState.value.parentRelationship, persona ?: activePersona, isThai,
                 family = roster,
-                mascotKey = activeMascot
+                mascotKey = activeMascot,
+                // Saved, titled and searched without the "[หมายเหตุ…]" notes built into `outgoing`.
+                displayText = content,
+                onPartial = { partial ->
+                    _uiState.value = _uiState.value.copy(
+                        streamingText = com.lullabyai.app.util.visibleWhileStreaming(partial).ifBlank { null }
+                    )
+                }
             )
-                .onSuccess { response ->
-                    // The AI may append an <AGENT_ACTION> or <NEED_INFO> block (see
-                    // RelationshipLabels.chatSystemPrompt) — strip it into structured data for the
-                    // confirmation card / info popup; the visible bubble stays plain text.
-                    val (displayText, action, needInfo) = com.lullabyai.app.util.parseAgentAction(response)
+                .onSuccess { reply ->
+                    // The AI may append an <AGENT_ACTION> block (see RelationshipLabels.chatSystemPrompt)
+                    // — it becomes the confirmation card; the visible bubble stays plain text.
+                    val (_, action, _) = com.lullabyai.app.util.parseAgentAction(reply.text)
                     val aiMsg = UiChatMessage(
-                        id = java.util.UUID.randomUUID().toString(), role = "model", content = displayText,
-                        agentAction = action, needInfo = needInfo
+                        id = java.util.UUID.randomUUID().toString(), role = "model",
+                        content = com.lullabyai.app.util.chatVisibleText(reply.text),
+                        // Signed command cards replace the old unsigned AGENT_ACTION card for the same answer.
+                        agentAction = if (reply.commands.isEmpty()) action else null,
+                        medical = reply.medical,
+                        commands = reply.commands
                     )
                     _uiState.value = _uiState.value.copy(
                         messages = _uiState.value.messages + aiMsg,
                         isLoading = false,
+                        streamingText = null,
                         lastProvider = com.lullabyai.app.data.remote.ClaudeClient.lastProvider
                     )
                     // Auto Record mode: run the proposed write straight away instead of waiting
@@ -323,6 +339,12 @@ class ChatViewModel : ViewModel() {
                     ) {
                         confirmAgentAction(aiMsg.id, childId)
                     }
+                    // Auto Record covers adding only; the command center has nothing else in phase 1,
+                    // and edits/deletes will always wait for a tap.
+                    if (_uiState.value.autoRecord) {
+                        reply.commands.filter { it.command.startsWith("add_") }
+                            .forEach { confirmCommand(aiMsg.id, it.ticket) }
+                    }
                     // Time spent talking is time spent together. The RPC's cooldown paces this, so
                     // a long conversation builds the bond steadily rather than per message.
                     feedCompanion(xp = 4, announce = false)
@@ -337,7 +359,8 @@ class ChatViewModel : ViewModel() {
                     )
                     _uiState.value = _uiState.value.copy(
                         messages = _uiState.value.messages + errMsg,
-                        isLoading = false
+                        isLoading = false,
+                        streamingText = null
                     )
                 }
         }
@@ -374,6 +397,36 @@ class ChatViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Runs one command-center card. The signed ticket goes back to ai-chat, which checks it and
+     * writes with this person's own login; a refusal keeps its named reason for the card to show.
+     */
+    fun confirmCommand(messageId: String, ticket: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        if (msg.commandStatus[ticket] != null) return
+        val command = msg.commands.find { it.ticket == ticket }?.command.orEmpty()
+        setCommandStatus(messageId, ticket, "running")
+        viewModelScope.launch {
+            val result = com.lullabyai.app.data.remote.SparkChatClient.execute(ticket)
+            val failure = result.exceptionOrNull()?.message
+            if (failure != null) android.util.Log.w("AiCommand", "command=$command failed: $failure")
+            setCommandStatus(messageId, ticket, if (failure == null) "done" else "failed:${failure.take(160)}")
+        }
+    }
+
+    fun cancelCommand(messageId: String, ticket: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        if (msg.commandStatus[ticket] == null) setCommandStatus(messageId, ticket, "cancelled")
+    }
+
+    private fun setCommandStatus(messageId: String, ticket: String, status: String) {
+        _uiState.value = _uiState.value.copy(
+            messages = _uiState.value.messages.map {
+                if (it.id == messageId) it.copy(commandStatus = it.commandStatus + (ticket to status)) else it
+            }
+        )
+    }
+
     fun setAutoRecord(value: Boolean) {
         if (_uiState.value.autoRecord != value) _uiState.value = _uiState.value.copy(autoRecord = value)
     }
@@ -393,145 +446,6 @@ class ChatViewModel : ViewModel() {
     fun cancelAgentAction(messageId: String) {
         _uiState.value = _uiState.value.copy(
             messages = _uiState.value.messages.map { if (it.id == messageId) it.copy(actionStatus = "cancelled") else it }
-        )
-    }
-
-    /** Popup "Submit" — sends the answer as a normal chat message so the AI picks up straight from
-     *  where it left off, and immediately fills into the Child record and Health Book. */
-    fun answerNeedInfo(messageId: String, answer: String, child: Child?) {
-        val request = _uiState.value.messages.find { it.id == messageId }?.needInfo
-        dismissNeedInfo(messageId)
-        val targetChild = lastFamily.find { c ->
-            request?.question?.contains(c.name, ignoreCase = true) == true ||
-                request?.fieldLabel?.contains(c.name, ignoreCase = true) == true
-        } ?: child
-        if (targetChild != null && request != null && answer.isNotBlank()) {
-            viewModelScope.launch {
-                autoFillHealthBookFromAnswer(targetChild.id, request, answer)
-            }
-        }
-        if (answer.isNotBlank()) sendMessage(answer, targetChild, family = lastFamily)
-    }
-
-    private suspend fun autoFillHealthBookFromAnswer(
-        childId: String,
-        request: com.lullabyai.app.data.model.NeedInfoRequest,
-        answer: String
-    ) {
-        val q = request.question.lowercase()
-        val lbl = request.fieldLabel.lowercase()
-        val combined = "$q $lbl"
-        val ans = answer.trim()
-        val childRepo = com.lullabyai.app.data.repository.ChildRepository()
-        val healthRepo = com.lullabyai.app.data.repository.HealthRepository()
-
-        // Extract first decimal or integer number if present
-        val numMatch = Regex("(\\d+(?:\\.\\d+)?)").find(ans)?.groupValues?.get(1)?.toDoubleOrNull()
-
-        when {
-            // Birth weight (น้ำหนักแรกเกิด)
-            "แรกเกิด" in combined && ("น้ำหนัก" in combined || "weight" in combined) -> {
-                if (numMatch != null) {
-                    val grams = if (numMatch < 100.0) numMatch * 1000.0 else numMatch
-                    childRepo.updateChild(childId, mapOf("birth_weight_g" to grams))
-                }
-            }
-            // Weight (น้ำหนักปัจจุบัน)
-            "น้ำหนัก" in combined || "weight" in combined -> {
-                if (numMatch != null) {
-                    val kg = if (numMatch > 100.0) numMatch / 1000.0 else numMatch
-                    childRepo.updateChild(childId, mapOf("weight_kg" to kg))
-                    healthRepo.addGrowthRecord(
-                        com.lullabyai.app.data.model.GrowthRecord(
-                            childId = childId, weightKg = kg, recordedAt = java.time.Instant.now().toString()
-                        )
-                    )
-                }
-            }
-            // Birth length (ส่วนสูงแรกเกิด)
-            "แรกเกิด" in combined && ("ส่วนสูง" in combined || "ยาว" in combined || "height" in combined || "length" in combined) -> {
-                if (numMatch != null) {
-                    childRepo.updateChild(childId, mapOf("birth_length_cm" to numMatch))
-                }
-            }
-            // Height (ส่วนสูงปัจจุบัน)
-            "ส่วนสูง" in combined || "ความสูง" in combined || "height" in combined -> {
-                if (numMatch != null) {
-                    childRepo.updateChild(childId, mapOf("height_cm" to numMatch))
-                    healthRepo.addGrowthRecord(
-                        com.lullabyai.app.data.model.GrowthRecord(
-                            childId = childId, heightCm = numMatch, recordedAt = java.time.Instant.now().toString()
-                        )
-                    )
-                }
-            }
-            // Head circumference (รอบศีรษะ)
-            "รอบศีรษะ" in combined || "รอบหัว" in combined || "head" in combined -> {
-                if (numMatch != null) {
-                    childRepo.updateChild(childId, mapOf("birth_head_cm" to numMatch))
-                }
-            }
-            // Blood group (กรุ๊ปเลือด)
-            "กรุ๊ปเลือด" in combined || "เลือด" in combined || "blood" in combined -> {
-                val group = when {
-                    "ab" in ans.lowercase() -> "AB"
-                    "a" in ans.lowercase() -> "A"
-                    "b" in ans.lowercase() -> "B"
-                    "o" in ans.lowercase() || "โอ" in ans -> "O"
-                    else -> ans.uppercase()
-                }
-                childRepo.updateChild(childId, mapOf("blood_group" to group))
-            }
-            // Delivery type (วิธีการคลอด)
-            "คลอด" in combined || "delivery" in combined -> {
-                val type = when {
-                    "ผ่า" in ans || "cesarean" in ans.lowercase() -> "cesarean"
-                    "ช่วย" in ans || "assisted" in ans.lowercase() -> "assisted"
-                    "ธรรมชาติ" in ans || "natural" in ans.lowercase() -> "natural"
-                    else -> "other"
-                }
-                childRepo.updateChild(childId, mapOf("delivery_type" to type))
-            }
-            // Place of birth (สถานที่คลอด / โรงพยาบาล)
-            "สถานที่คลอด" in combined || "โรงพยาบาล" in combined || "คลินิก" in combined || "place of birth" in combined -> {
-                childRepo.updateChild(childId, mapOf("place_of_birth" to ans))
-            }
-            // Gestational weeks (อายุครรภ์)
-            "อายุครรภ์" in combined || "gestational" in combined -> {
-                if (numMatch != null) {
-                    childRepo.updateChild(childId, mapOf("gestational_weeks" to numMatch.toInt()))
-                }
-            }
-            // Allergies (ประวัติการแพ้)
-            "แพ้" in combined || "allergy" in combined || "allergies" in combined -> {
-                val isNone = ans.contains("ไม่") || ans.contains("none", ignoreCase = true) || ans.contains("ปกติ")
-                if (isNone) {
-                    childRepo.updateChild(childId, mapOf("no_known_allergies" to true))
-                } else {
-                    healthRepo.addAllergy(
-                        childId, name = ans, type = "food", severity = "mild", symptoms = null
-                    )
-                    childRepo.updateChild(childId, mapOf("allergies" to ans))
-                }
-            }
-            // Chronic conditions (โรคประจำตัว)
-            "โรคประจำตัว" in combined || "chronic" in combined -> {
-                val isNone = ans.contains("ไม่") || ans.contains("none", ignoreCase = true) || ans.contains("ปกติ")
-                if (!isNone) {
-                    healthRepo.addChronicCondition(childId, name = ans, notes = null)
-                }
-            }
-            // Date of birth (วันเกิด)
-            "วันเกิด" in combined || "birthdate" in combined -> {
-                childRepo.updateChild(childId, mapOf("birthdate" to ans))
-            }
-        }
-    }
-
-    /** Popup "Skip" — no cooldown by design (see NeedInfoRequest); just hides this instance. */
-    fun dismissNeedInfo(messageId: String) {
-        _uiState.value = _uiState.value.copy(
-            messages = _uiState.value.messages.map { if (it.id == messageId) it.copy(needInfoAnswered = true) else it }
         )
     }
 
@@ -848,6 +762,18 @@ class ChatViewModel : ViewModel() {
         }
     }
 
+    /** The hub card's "เรียนรู้ใหม่": regenerate from the latest records instead of the cached text. */
+    fun refreshChildInfoCardSummary(child: Child, isThai: Boolean = true) {
+        ensureAnalysisChild(child.id)
+        _uiState.value = _uiState.value.copy(childInfoCardSummary = null)
+        viewModelScope.launch {
+            val text = aiRepo.refresh(child.id, "child_summary_card_${langTag(isThai)}") {
+                repo.generateChildInfoCardSummary(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
+            }
+            if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(childInfoCardSummary = text)
+        }
+    }
+
     // Loads from DB cache; generates + saves only if missing.
     fun loadHealthAnalysis(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
@@ -882,7 +808,8 @@ class ChatViewModel : ViewModel() {
     fun loadGrowthInsight(child: Child, isThai: Boolean = true) {
         ensureAnalysisChild(child.id)
         viewModelScope.launch {
-            val text = aiRepo.getOrGenerate(child.id, "growth_${langTag(isThai)}") {
+            // "who" in the key: insights written before WHO grounding must not be served again.
+            val text = aiRepo.getOrGenerate(child.id, "growth_who_${langTag(isThai)}") {
                 repo.generateGrowthInsight(child, isThai = isThai).getOrDefault("กำลังวิเคราะห์...")
             }
             if (isCurrent(child.id)) _uiState.value = _uiState.value.copy(growthInsight = text)

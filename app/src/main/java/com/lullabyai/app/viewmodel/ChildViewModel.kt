@@ -112,6 +112,11 @@ data class ChildUiState(
     val dailyQuestion: String? = null,
     val infoAsks: List<com.lullabyai.app.data.infoask.InfoAskPrompt> = emptyList(),
     val infoAskSaving: Boolean = false,
+    /**
+     * Open questions per child id, for the red badge in the child switcher. Counted from each
+     * child's own row, so switching child is not needed to learn that they owe answers.
+     */
+    val childQuestionCounts: Map<String, Int> = emptyMap(),
     // --- Stitch "AI Suggestions & Guidance" (#11) ---
     val aiGuidance: AiGuidance? = null,
     val aiGuidanceLoading: Boolean = false,
@@ -574,6 +579,27 @@ class ChildViewModel : ViewModel() {
         viewModelScope.launch { loadInfoAskInternal(context, isThai) }
     }
 
+    /**
+     * Counts the open questions for every child at once, so the switcher can flag the children the
+     * parent is not currently looking at. Reads the loaded child rows and local answer history
+     * only — no round trip per child.
+     */
+    fun loadChildQuestionBadges(context: android.content.Context) {
+        if (isGuest()) return
+        val children = _uiState.value.children
+        if (children.isEmpty()) return
+        viewModelScope.launch {
+            val settings = com.lullabyai.app.data.settings.SettingsManager(context)
+            val counts = children.associate { child ->
+                child.id to com.lullabyai.app.data.infoask.InfoAskCatalog.openChildRowCount(
+                    child = child,
+                    answeredEver = settings.infoAskAnsweredFieldIds(child.id)
+                )
+            }
+            _uiState.value = _uiState.value.copy(childQuestionCounts = counts)
+        }
+    }
+
     private suspend fun loadInfoAskInternal(context: android.content.Context, isThai: Boolean) {
         val child = _uiState.value.child ?: return
         val settings = com.lullabyai.app.data.settings.SettingsManager(context)
@@ -643,6 +669,8 @@ class ChildViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null, infoAskSaving = false)
             loadChild()
             loadInfoAskInternal(context, isThai)
+            // The switcher badge counts answers, so it has to drop the moment one is written.
+            loadChildQuestionBadges(context)
             onDone()
         }
     }

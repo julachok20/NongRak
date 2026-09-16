@@ -78,6 +78,33 @@ object InfoAskCatalog {
         listOf("feeding_type", "recent_facility")
     )
 
+    /**
+     * The questions whose answer is decided by the child's own row plus this device's history.
+     *
+     * The rest of the catalog needs a week of sleep, milk, activity and visit rows — one round trip
+     * per child, which is too much to spend on a badge in the child switcher. Counting only these
+     * means the badge can under-report (a child may also owe sleep answers), never over-report.
+     */
+    val CHILD_ROW_FIELDS = listOf(
+        "birthdate", "delivery_type", "place_of_birth", "gestational_weeks", "birth_weight_g",
+        "birth_length_cm", "birth_head_cm", "blood_group", "allergies", "activity_level"
+    )
+
+    /**
+     * How many of [CHILD_ROW_FIELDS] this child still owes an answer to.
+     *
+     * Deliberately blind to "already shown today": skipping the form for today does not answer the
+     * question, and the badge is there to say the gap is still open.
+     */
+    fun openChildRowCount(
+        child: Child,
+        answeredEver: Set<String> = emptySet(),
+        today: LocalDate = LocalDate.now()
+    ): Int {
+        val snapshot = InfoAskSnapshot(child = child, answeredEver = answeredEver, today = today)
+        return CHILD_ROW_FIELDS.count { isOpen(it, snapshot) }
+    }
+
     fun next(snapshot: InfoAskSnapshot): InfoAskPrompt? = openAll(snapshot).firstOrNull()
 
     fun isFilled(prompt: InfoAskPrompt, answer: InfoAskAnswer): Boolean = when (prompt.kind) {

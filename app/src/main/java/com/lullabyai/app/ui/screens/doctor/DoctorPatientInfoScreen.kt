@@ -168,7 +168,7 @@ fun DoctorPatientInfoScreen(childId: String, navController: NavController) {
                                     }
                                 }
                             }
-                            com.lullabyai.app.util.GrowthReference.weightStatus(child.weightKg, ageMonths)?.let { status ->
+                            com.lullabyai.app.util.GrowthReference.current(child, emptyList()).first?.let { status ->
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Icon(Icons.Filled.CheckCircle, null, tint = status.color, modifier = Modifier.size(18.dp))
                                     Text(
@@ -598,7 +598,7 @@ private fun doctorChartData(
                     date = today,
                     weight = child.weightKg?.toString() ?: "",
                     height = child.heightCm?.toString() ?: "",
-                    status = com.lullabyai.app.util.GrowthReference.weightStatus(child.weightKg, ageMonths)
+                    status = com.lullabyai.app.util.GrowthReference.current(child, emptyList()).first
                         ?.let { if (isThai) it.labelTh else it.labelEn } ?: "",
                     note = ""
                 )

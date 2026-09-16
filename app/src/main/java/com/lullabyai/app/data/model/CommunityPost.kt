@@ -30,6 +30,8 @@ data class CommunityPost(
     val content: String,
     val tags: List<String> = emptyList(),
     val imageUrl: String? = null,
+    /** Attached clip; [imageUrl] then holds its first frame, so the card has something to show. */
+    val videoUrl: String? = null,
     val likesCount: Int = 0,
     val isLiked: Boolean = false,
     val commentsCount: Int = 0,
@@ -47,10 +49,22 @@ data class CommunityPostDto(
     val content: String,
     val tags: List<String> = emptyList(),
     @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("video_url") val videoUrl: String? = null,
     @SerialName("likes_count") val likesCount: Int = 0,
     @SerialName("comments_count") val commentsCount: Int = 0,
     @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    /** Set from the Supabase dashboard when the owner removes a post; only its author can still read it. */
+    @SerialName("removed_at") val removedAt: String? = null,
+    @SerialName("removed_reason") val removedReason: String? = null
+)
+
+/** One of the signed-in person's own posts that was removed, for the warning banner on Community. */
+@Serializable
+data class RemovedPost(
+    val id: String,
+    val reason: String?,
+    val preview: String
 )
 
 @Serializable

@@ -118,8 +118,8 @@ fun ChildDevelopmentScreen(
                             Text(child?.name ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text("${childViewModel.calculateAge(s.isThai)} ($ageMonths " + (if (s.isThai) "เดือน" else "mo") + ")", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
-                            Text(if (s.isThai) "ปกติ" else "Normal", modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.primary.copy(0.1f)) {
+                            Text(if (s.isThai) "ปกติ" else "Normal", modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -154,7 +154,7 @@ fun ChildDevelopmentScreen(
                                 CircularProgressIndicator(
                                     progress = { percent / 100f },
                                     modifier = Modifier.fillMaxSize(),
-                                    color = Primary,
+                                    color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                     strokeWidth = 8.dp
                                 )
@@ -165,7 +165,7 @@ fun ChildDevelopmentScreen(
                             Text(if (s.isThai) "แนวโน้มการเรียนรู้" else "Learning trend", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 listOf(0.35f to 0.25f, 0.6f to 0.45f, 0.5f to 0.6f, 0.8f to 0.8f, 1f to 1f).forEach { (alpha, h) ->
-                                    Box(modifier = Modifier.width(8.dp).height((34 * h).dp).clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)).background(Primary.copy(alpha)))
+                                    Box(modifier = Modifier.width(8.dp).height((34 * h).dp).clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha)))
                                 }
                             }
                         }
@@ -178,7 +178,7 @@ fun ChildDevelopmentScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text((if (s.isThai) "ทักษะประจำวัย ($ageMonths เดือน)" else "Age skills ($ageMonths mo)"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     TextButton(onClick = { navController.navigate(Screen.DevelopmentHistory.route) }, contentPadding = PaddingValues(0.dp)) {
-                        Text(if (s.isThai) "ดูทั้งหมด" else "View all", color = Primary, style = MaterialTheme.typography.labelMedium)
+                        Text(if (s.isThai) "ดูทั้งหมด" else "View all", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -189,7 +189,7 @@ fun ChildDevelopmentScreen(
             } else if (shown.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
-                        Text(if (s.isThai) "ยังไม่ถึงวัยสำหรับทักษะในหมวดนี้" else "No age-appropriate skills here yet", color = Outline, style = MaterialTheme.typography.bodyMedium)
+                        Text(if (s.isThai) "ยังไม่ถึงวัยสำหรับทักษะในหมวดนี้" else "No age-appropriate skills here yet", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             } else {
@@ -216,15 +216,15 @@ fun ChildDevelopmentScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(if (s.isThai) "กิจกรรมแนะนำวันนี้" else "Today's activities", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     TextButton(onClick = { navController.navigate(Screen.TaskHistory.route) }, contentPadding = PaddingValues(0.dp)) {
-                        Text(if (s.isThai) "ดูประวัติ" else "History", color = Primary, style = MaterialTheme.typography.labelMedium)
+                        Text(if (s.isThai) "ดูประวัติ" else "History", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
             if (childState.aiTasks.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
-                        if (childState.tasksLoading) CircularProgressIndicator(color = Primary, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        else Text(if (s.isThai) "ยังไม่มีกิจกรรม" else "No activities yet", color = Outline, style = MaterialTheme.typography.bodyMedium)
+                        if (childState.tasksLoading) CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        else Text(if (s.isThai) "ยังไม่มีกิจกรรม" else "No activities yet", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             } else {
@@ -233,16 +233,16 @@ fun ChildDevelopmentScreen(
                         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(
                                 modifier = Modifier.size(36.dp).clip(CircleShape)
-                                    .background(if (task.isCompleted) Primary.copy(0.1f) else MaterialTheme.colorScheme.surfaceVariant)
+                                    .background(if (task.isCompleted) MaterialTheme.colorScheme.primary.copy(0.1f) else MaterialTheme.colorScheme.surfaceVariant)
                                     .selectable(selected = task.isCompleted, onClick = { childViewModel.toggleTask(task.id, task.isCompleted) }),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (task.isCompleted) Icon(Icons.Filled.CheckCircle, null, tint = Primary, modifier = Modifier.size(22.dp))
-                                else Icon(Icons.Filled.RadioButtonUnchecked, null, tint = Outline, modifier = Modifier.size(22.dp))
+                                if (task.isCompleted) Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                else Icon(Icons.Filled.RadioButtonUnchecked, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(22.dp))
                             }
-                            Text(task.taskText, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = if (task.isCompleted) Outline else MaterialTheme.colorScheme.onSurface)
+                            Text(task.taskText, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = if (task.isCompleted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface)
                             IconButton(onClick = { childViewModel.notAvailableTask(task.id) }, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Filled.Close, if (s.isThai) "ไม่สะดวก" else "Not available", tint = Outline, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.Close, if (s.isThai) "ไม่สะดวก" else "Not available", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -332,11 +332,11 @@ private fun FinishedSkillsCard(isThai: Boolean) {
             Box(
                 modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF4CAF50).copy(0.18f)),
                 contentAlignment = Alignment.Center
-            ) { Icon(Icons.Filled.EmojiEvents, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(28.dp)) }
+            ) { Icon(Icons.Filled.EmojiEvents, null, tint = (if (com.lullabyai.app.ui.theme.LocalDarkTheme.current) Color(0xFF81C784) else Color(0xFF2E7D32)), modifier = Modifier.size(28.dp)) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     if (isThai) "เก่งมาก! ทำครบทุกทักษะตามวัยแล้ว" else "Great job! All age skills completed",
-                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32)
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = (if (com.lullabyai.app.ui.theme.LocalDarkTheme.current) Color(0xFF81C784) else Color(0xFF2E7D32))
                 )
                 Text(
                     if (isThai) "ทักษะแนะนำชุดใหม่จะปรากฏเมื่อถึงวัยถัดไป หรือดูทั้งหมดได้ที่ \"ดูทั้งหมด\""
@@ -387,29 +387,29 @@ private fun SkillRow(
                 // Tap circle to toggle achieved (locked when the age hasn't been reached)
                 Box(
                     modifier = Modifier.size(40.dp).clip(CircleShape)
-                        .background(if (done) Primary.copy(0.1f) else MaterialTheme.colorScheme.surfaceVariant)
+                        .background(if (done) MaterialTheme.colorScheme.primary.copy(0.1f) else MaterialTheme.colorScheme.surfaceVariant)
                         .then(if (notYetAge) Modifier else Modifier.selectable(selected = done, onClick = onToggleAchieved)),
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        notYetAge -> Icon(Icons.Filled.Schedule, null, tint = Outline, modifier = Modifier.size(22.dp))
-                        done -> Icon(Icons.Filled.CheckCircle, null, tint = Primary, modifier = Modifier.size(24.dp))
-                        else -> Icon(Icons.Filled.RadioButtonUnchecked, null, tint = Outline, modifier = Modifier.size(24.dp))
+                        notYetAge -> Icon(Icons.Filled.Schedule, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(22.dp))
+                        done -> Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        else -> Icon(Icons.Filled.RadioButtonUnchecked, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(24.dp))
                     }
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(milestone.milestoneName, style = MaterialTheme.typography.bodyMedium, color = if (notYetAge) Outline else MaterialTheme.colorScheme.onSurface)
+                    Text(milestone.milestoneName, style = MaterialTheme.typography.bodyMedium, color = if (notYetAge) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface)
                     if (!done && milestone.skipReason != null) {
                         Text((if (s.isThai) "ข้าม: " else "Skipped: ") + milestone.skipReason, style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                     }
                 }
                 when {
-                    notYetAge -> Surface(shape = RoundedCornerShape(100.dp), color = Outline.copy(0.12f)) {
-                        Text(if (s.isThai) "ยังไม่ถึงวัย" else "Not age yet", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = Outline)
+                    notYetAge -> Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.outline.copy(0.12f)) {
+                        Text(if (s.isThai) "ยังไม่ถึงวัย" else "Not age yet", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
-                    done -> Icon(Icons.Filled.Verified, null, tint = Primary, modifier = Modifier.size(22.dp))
+                    done -> Icon(Icons.Filled.Verified, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
                     else -> IconButton(onClick = onOpenSkip, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Filled.MoreVert, if (s.isThai) "ตัวเลือก" else "Options", tint = Outline)
+                        Icon(Icons.Filled.MoreVert, if (s.isThai) "ตัวเลือก" else "Options", tint = MaterialTheme.colorScheme.outline)
                     }
                 }
             }
@@ -418,7 +418,7 @@ private fun SkillRow(
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 var selectedReason by remember { mutableStateOf(milestone.skipReason ?: "") }
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (s.isThai) "ระบุเหตุผลที่ข้าม:" else "Reason for skipping:", style = MaterialTheme.typography.labelMedium, color = Primary, fontWeight = FontWeight.Bold)
+                    Text(if (s.isThai) "ระบุเหตุผลที่ข้าม:" else "Reason for skipping:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     skipReasons(s.isThai).forEach { reason ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
@@ -428,7 +428,7 @@ private fun SkillRow(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            RadioButton(selected = selectedReason == reason, onClick = { selectedReason = reason }, colors = RadioButtonDefaults.colors(selectedColor = Primary))
+                            RadioButton(selected = selectedReason == reason, onClick = { selectedReason = reason }, colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary))
                             Text(reason, style = MaterialTheme.typography.bodyMedium)
                         }
                     }

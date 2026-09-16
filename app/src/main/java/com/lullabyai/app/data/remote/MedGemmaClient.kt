@@ -33,7 +33,53 @@ object MedGemmaClient {
 
     /** True when an endpoint is configured. Token is optional (Colab/vLLM often has no auth). */
     val isConfigured: Boolean
-        get() = BuildConfig.MEDGEMMA_ENDPOINT.isNotBlank()
+        get() = com.lullabyai.app.data.settings.AiEndpointConfig.effectiveEndpoint.isNotBlank()
+
+    /** {base}/v1/chat/completions, accepting a base that already names the path. */
+    private fun chatUrl(base: String): String {
+        val trimmed = base.trimEnd('/')
+        return if (trimmed.endsWith("/chat/completions")) trimmed else "$trimmed/v1/chat/completions"
+    }
+
+    /**
+     * One real call, with the failure reported instead of swallowed.
+     *
+     * [tryGenerate] returns null on any problem so chat can fall back to Claude, which is right in
+     * production and useless while setting a server up: "no answer" hides a wrong port, a missing
+     * token and a VPN that is not connected. This is what the settings screen's test button uses.
+     */
+    suspend fun testConnection(): Result<String> {
+        val cfg = com.lullabyai.app.data.settings.AiEndpointConfig
+        val endpoint = cfg.effectiveEndpoint
+        if (endpoint.isBlank()) return Result.failure(IllegalStateException("ai_endpoint_missing"))
+        return try {
+            val body = buildJsonObject {
+                put("model", cfg.effectiveModel.ifBlank { "tgi" })
+                put("max_tokens", 16)
+                putJsonArray("messages") {
+                    addJsonObject { put("role", "user"); put("content", "ping") }
+                }
+            }
+            val response = client.post(chatUrl(endpoint)) {
+                if (cfg.effectiveToken.isNotBlank()) {
+                    header("Authorization", "Bearer ${cfg.effectiveToken}")
+                }
+                header("ngrok-skip-browser-warning", "true")
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }
+            val text = response.bodyAsText()
+            if (!response.status.isSuccess()) {
+                return Result.failure(IllegalStateException("http_${response.status.value}: ${text.take(200)}"))
+            }
+            val errors = mutableListOf<String>()
+            val answer = parseText(text, errors)
+                ?: return Result.failure(IllegalStateException(errors.joinToString().ifBlank { "unreadable_response" }))
+            Result.success(answer)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     // Same persona/style/safety rules used across the app
     private val systemPrompt = """
@@ -64,14 +110,14 @@ object MedGemmaClient {
     ): String? {
         if (!isConfigured) { errors += "MedGemma: not configured"; return null }
 
-        // Normalize endpoint → {base}/v1/chat/completions
-        val base = BuildConfig.MEDGEMMA_ENDPOINT.trimEnd('/')
-        val url = if (base.endsWith("/chat/completions")) base else "$base/v1/chat/completions"
+        // Normalize endpoint → {base}/v1/chat/completions. A value typed on the device (a WireGuard
+        // address, say) wins over whatever was compiled into the build.
+        val url = chatUrl(com.lullabyai.app.data.settings.AiEndpointConfig.effectiveEndpoint)
 
         return try {
             // Model id: HF Inference Providers needs the full id (e.g. google/medgemma-4b-it:featherless-ai);
             // a self-hosted TGI/vLLM server accepts "tgi". Configurable via MEDGEMMA_MODEL.
-            val model = BuildConfig.MEDGEMMA_MODEL.ifBlank { "tgi" }
+            val model = com.lullabyai.app.data.settings.AiEndpointConfig.effectiveModel.ifBlank { "tgi" }
             val body = buildJsonObject {
                 put("model", model)
                 put("max_tokens", maxTokens)
@@ -84,8 +130,9 @@ object MedGemmaClient {
 
             val raw = client.post(url) {
                 // Auth only if a token is set (paid HF endpoints need it; Colab/vLLM usually don't)
-                if (BuildConfig.MEDGEMMA_TOKEN.isNotBlank()) {
-                    header("Authorization", "Bearer ${BuildConfig.MEDGEMMA_TOKEN}")
+                val token = com.lullabyai.app.data.settings.AiEndpointConfig.effectiveToken
+                if (token.isNotBlank()) {
+                    header("Authorization", "Bearer $token")
                 }
                 header("ngrok-skip-browser-warning", "true")  // harmless; bypasses ngrok free interstitial
                 contentType(ContentType.Application.Json)

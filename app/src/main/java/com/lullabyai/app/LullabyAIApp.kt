@@ -39,6 +39,8 @@ class NongRakApp : Application() {
         scheduleSleepBedtimeRecommendation()
         // Retry any growth-log writes that failed while offline last session.
         CoroutineScope(Dispatchers.IO).launch { com.lullabyai.app.data.offline.PendingWriteQueue.flush() }
+        // WHO growth tables (~330 KB): read off the main thread so the first growth card doesn't wait.
+        CoroutineScope(Dispatchers.IO).launch { runCatching { com.lullabyai.app.util.GrowthReference.load(this@NongRakApp) } }
     }
 
     // scheduleDeviceSync() pulled Health Connect metrics into device_readings every six hours.

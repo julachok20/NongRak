@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -74,7 +75,8 @@ fun DashboardScreen(
     onNavigateToConnect: () -> Unit = {},
     onNavigateToSignUp: () -> Unit = {},
     onNavigateToHealthSurvey: () -> Unit = onNavigateToVaccine,
-    onNavigateToInfoAsk: () -> Unit = {},
+    /** Opens any QuickActionCatalog destination by route - used by บริการแนะนำ. */
+    onNavigateToRoute: (String) -> Unit = {},
     isTourActive: Boolean = false
 ) {
     val s = com.lullabyai.app.ui.localization.LocalStrings.current
@@ -106,7 +108,7 @@ fun DashboardScreen(
     if (showAddChildPopup) {
         AlertDialog(
             onDismissRequest = { showAddChildPopup = false },
-            icon = { Icon(Icons.Filled.ChildCare, null, tint = Primary) },
+            icon = { Icon(Icons.Filled.ChildCare, null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text(if (isThai) "เพิ่มข้อมูลลูกของคุณ" else "Add your child") },
             text = {
                 Text(
@@ -145,7 +147,7 @@ fun DashboardScreen(
     if (showWidgetPromo) {
         AlertDialog(
             onDismissRequest = { dismissWidgetPromo() },
-            icon = { Icon(Icons.Filled.Widgets, null, tint = Primary) },
+            icon = { Icon(Icons.Filled.Widgets, null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text(if (isThai) "ลองใช้วิดเจ็ตหน้าจอหลัก" else "Try home-screen widgets") },
             text = {
                 Text(
@@ -187,7 +189,7 @@ fun DashboardScreen(
     childState.reclaimableChild?.let { reclaimable ->
         AlertDialog(
             onDismissRequest = { childViewModel.dismissReclaim() },
-            icon = { Icon(Icons.Filled.SwapHoriz, null, tint = Primary) },
+            icon = { Icon(Icons.Filled.SwapHoriz, null, tint = MaterialTheme.colorScheme.primary) },
             title = {
                 Text(
                     if (s.isThai) "กู้คืนสิทธิ์ความเป็นเจ้าของ?" else "Reclaim Child Ownership?",
@@ -261,6 +263,35 @@ fun DashboardScreen(
     val svcMap = services.associateBy { it.key }
     val recentKeys = (recent + listOf("vaccine", "growth", "development", "health")).distinct().take(4)
 
+    // บริการแนะนำ: random picks tailored to the active child's age, avoiding what บริการล่าสุด
+    // already shows. RecentServices stores DashSvc keys while the catalogue speaks routes; these are
+    // the same destinations AppNavigation wires the DashSvc lambdas to.
+    val dashKeyRoutes = remember {
+        mapOf(
+            "vaccine" to com.lullabyai.app.ui.navigation.Screen.VaccineBook.route,
+            "growth" to com.lullabyai.app.ui.navigation.Screen.GrowthHistory.route,
+            "development" to com.lullabyai.app.ui.navigation.Screen.ChildDevelopment.route,
+            "health" to com.lullabyai.app.ui.navigation.Screen.ChildHealth.route,
+            "nutrition" to com.lullabyai.app.ui.navigation.Screen.Nutrition.route,
+            "sleep" to com.lullabyai.app.ui.navigation.Screen.SleepTracker.route
+        )
+    }
+    // One seed per app session: fresh on each launch, but stable across recomposition so cards never
+    // reshuffle under the user's finger. The nonce is bumped by the refresh button to re-roll.
+    val sessionSeed = androidx.compose.runtime.saveable.rememberSaveable { kotlin.random.Random.nextLong() }
+    var recommendNonce by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    val recommendations = remember(child?.id, child?.birthdate, recentKeys, recommendNonce) {
+        // Blank birthdate = unknown age (null), not newborn - see QuickActionCatalog.recommendForHome.
+        val ageMonths = child?.birthdate
+            ?.takeIf { it.isNotBlank() }
+            ?.let { com.lullabyai.app.data.VaccineSetupCatalog.ageMonthsFromBirthdate(it) }
+        com.lullabyai.app.data.QuickActionCatalog.recommendForHome(
+            ageMonths = ageMonths,
+            excludeRoutes = recentKeys.mapNotNull { dashKeyRoutes[it] }.toSet(),
+            seed = sessionSeed + (child?.id?.hashCode() ?: 0) * 31L + recommendNonce
+        )
+    }
+
     Scaffold(
         bottomBar = {
             AppBottomNav(
@@ -273,7 +304,7 @@ fun DashboardScreen(
                 onConnect = onNavigateToConnect
             )
         },
-        containerColor = Color(0xFFF7FAFE)
+        containerColor = DashBackground
     ) { padding ->
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(
             isRefreshing = childState.isLoading,
@@ -326,18 +357,17 @@ fun DashboardScreen(
                         )
                     }
 
-                    // Typed info-ask questions — collects info and writes directly into Health Book
+                    // Home only says that answers are owed and where to give them; the questions
+                    // themselves are asked on Child Info, so there is one place to answer rather
+                    // than two forms that can disagree.
                     if (hasActiveChild && childState.infoAsks.isNotEmpty()) {
-                        val prompts = childState.infoAsks
-                        com.lullabyai.app.ui.components.InfoAskBanner(
+                        HomeQuestionNoticeBanner(
                             isThai = isThai,
+                            questionCount = childState.infoAsks.size,
                             subjectName = com.lullabyai.app.data.infoask.InfoAskCatalog.bannerSubjectName(
-                                prompts, child?.name.orEmpty(), isThai
+                                childState.infoAsks, child?.name.orEmpty(), isThai
                             ),
-                            questionCount = prompts.size,
-                            preview = prompts.take(2).joinToString("\n") { "• ${it.question(isThai)}" },
-                            onClick = onNavigateToInfoAsk,
-                            onDismiss = { childViewModel.dismissInfoAsk(context) }
+                            onOpenChildInfo = onNavigateToChild
                         )
                     }
 
@@ -359,7 +389,7 @@ fun DashboardScreen(
                         if (message != null) {
                             Card(
                                 shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2))
+                                colors = CardDefaults.cardColors(containerColor = DashErrBg)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -369,13 +399,13 @@ fun DashboardScreen(
                                     Icon(
                                         Icons.Filled.ErrorOutline,
                                         contentDescription = null,
-                                        tint = Color(0xFFDC2626),
+                                        tint = DashErrIcon,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Text(
                                         text = message,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF991B1B),
+                                        color = DashErrText,
                                         modifier = Modifier.weight(1f)
                                     )
                                     TextButton(onClick = { childViewModel.clearSyncError() }) {
@@ -395,8 +425,8 @@ fun DashboardScreen(
                                 onNavigateToChild()
                             },
                             shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
+                            colors = CardDefaults.cardColors(containerColor = DashCard),
+                            border = BorderStroke(1.dp, DashBorder),
                             elevation = CardDefaults.cardElevation(2.dp)
                         ) {
                             Row(
@@ -411,23 +441,23 @@ fun DashboardScreen(
                                         .background(Primary.copy(0.12f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Filled.Info, null, tint = Primary, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                 }
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         text = if (isThai) "ข้อมูลของ ${c.name} ยังไม่ครบ" else "${c.name}'s info is incomplete",
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF101828)
+                                        color = DashTitle
                                     )
                                     Text(
                                         text = (if (isThai) "กรอกเพิ่มเติม: " else "Fill in: ") + missing.joinToString(", "),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF667085),
+                                        color = DashSubtle,
                                         fontSize = 11.sp
                                     )
                                 }
-                                Icon(Icons.Filled.ChevronRight, null, tint = Primary)
+                                Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -459,12 +489,60 @@ fun DashboardScreen(
                         onDoctorClick = onNavigateToDevelopment
                     )
 
+                    // SECTION: what a caregiver has to do today. CareRoleViewModel excludes people
+                    // with full access, so a parent never sees their own briefing as a duty.
+                    if (hasActiveChild && !isGuest) {
+                        val careRoleVm: com.lullabyai.app.viewmodel.CareRoleViewModel =
+                            androidx.lifecycle.viewmodel.compose.viewModel()
+                        LaunchedEffect(child?.id) { careRoleVm.load(child?.id) }
+                        val amCaregiver by careRoleVm.amCaregiver.collectAsState()
+                        val caregiverChildId = child?.id
+                        if (amCaregiver && caregiverChildId != null) {
+                            com.lullabyai.app.ui.screens.access.CaregiverDutyBanner(
+                                childId = caregiverChildId,
+                                thai = isThai,
+                                onOpenChecklist = {
+                                    onNavigateToRoute(
+                                        com.lullabyai.app.ui.navigation.Screen.CareHandoverChecklist.route(caregiverChildId)
+                                    )
+                                },
+                                onQuickRecord = {
+                                    onNavigateToRoute(com.lullabyai.app.ui.navigation.Screen.CaregiverUpdate.route)
+                                }
+                            )
+                        }
+                    }
+
+                    // SECTION: ตารางกิจกรรม entry card - the "outside" half of Activity.
+                    if (hasActiveChild && !isGuest) {
+                        ActivityEntryCard(
+                            isThai = isThai,
+                            childId = child?.id,
+                            onOpen = {
+                                onNavigateToRoute(com.lullabyai.app.ui.navigation.Screen.ActivitySchedule.route)
+                            }
+                        )
+                    }
+
                     // SECTION: บริการล่าสุด (Recent Services)
                     RecentServicesSection(
                         isThai = isThai,
                         recentKeys = recentKeys,
                         svcMap = svcMap
                     )
+
+                    // SECTION: บริการแนะนำ (Recommended Services)
+                    if (recommendations.isNotEmpty()) {
+                        RecommendedServicesSection(
+                            isThai = isThai,
+                            children = childState.children,
+                            activeChildId = child?.id,
+                            recommendations = recommendations,
+                            onPickChild = { id -> childViewModel.selectChild(id) },
+                            onShuffle = { recommendNonce++ },
+                            onOpen = { route -> onNavigateToRoute(route) }
+                        )
+                    }
 
                     Spacer(Modifier.height(12.dp))
                 }
@@ -526,7 +604,7 @@ private fun HomeHeader(
             Surface(
                 onClick = onProfileClick,
                 shape = CircleShape,
-                color = Color.White,
+                color = DashCard,
                 shadowElevation = 2.dp,
                 border = BorderStroke(1.5.dp, Primary.copy(alpha = 0.25f)),
                 modifier = Modifier.size(40.dp)
@@ -544,13 +622,13 @@ private fun HomeHeader(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFFEBF1FF)),
+                            .background(DashAvatarBg),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Filled.Person,
                             contentDescription = null,
-                            tint = Primary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -560,9 +638,9 @@ private fun HomeHeader(
             Surface(
                 onClick = onNotificationClick,
                 shape = CircleShape,
-                color = Color.White,
+                color = DashCard,
                 shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, Color(0xFFEAECF0)),
+                border = BorderStroke(1.dp, DashBorderAlt),
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(
@@ -572,7 +650,7 @@ private fun HomeHeader(
                     Icon(
                         Icons.Filled.NotificationsNone,
                         contentDescription = if (isThai) "การแจ้งเตือน" else "Notifications",
-                        tint = Color(0xFF1D2939),
+                        tint = DashIcon,
                         modifier = Modifier.size(22.dp)
                     )
                     Box(
@@ -588,6 +666,62 @@ private fun HomeHeader(
         }
     }
 }
+
+// Home colour tokens. Light values are the original design hex (lowercase literals), so light mode
+// is pixel-identical; dark reads the app theme, with cards on surfaceContainerHigh like the Recent
+// Services cards.
+private val dashDark: Boolean
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = com.lullabyai.app.ui.theme.LocalDarkTheme.current
+
+private val DashBackground: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.background else Color(0xfff7fafe)
+private val DashCard: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White
+private val DashTitle: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onSurface else Color(0xff101828)
+private val DashNotifTitle: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onSurface else Color(0xff1e293b)
+private val DashIcon: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onSurface else Color(0xff1d2939)
+private val DashBody: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xff475467)
+private val DashSubtle: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xff667085)
+private val DashLabel: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xff344054)
+private val DashBorder: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.outlineVariant else Color(0xffe5e7eb)
+private val DashBorderSoft: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.outlineVariant else Color(0xfff2f4f7)
+private val DashBorderAlt: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.outlineVariant else Color(0xffeaecf0)
+private val DashPrimaryText: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.primary else Color(0xff173db8)
+private val DashAvatarBg: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color(0xffebf1ff)
+private val DashErrBg: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.errorContainer else Color(0xfffef2f2)
+private val DashErrIcon: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.error else Color(0xffdc2626)
+private val DashErrText: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) MaterialTheme.colorScheme.onErrorContainer else Color(0xff991b1b)
 
 /**
  * Clean greeting section without emojis and with clean layout
@@ -636,7 +770,7 @@ private fun HomeGreetingCleanSection(
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 ),
-                color = Color(0xFF101828)
+                color = DashTitle
             )
             Text(
                 text = displayGreetingName,
@@ -650,7 +784,7 @@ private fun HomeGreetingCleanSection(
         Text(
             text = if (isThai) "วันนี้ลูกน้อยแข็งแรงดีนะคะ" else "Your baby is healthy and well today",
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-            color = Color(0xFF475467)
+            color = DashBody
         )
     }
 }
@@ -668,7 +802,7 @@ private fun MonthlyMentalHealthBanner(
             .fillMaxWidth()
             .shadow(3.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFF173DB8).copy(alpha = 0.10f)),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
         border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
     ) {
         Column(
@@ -689,7 +823,7 @@ private fun MonthlyMentalHealthBanner(
                     Icon(
                         Icons.Filled.Psychology,
                         contentDescription = null,
-                        tint = Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -700,13 +834,13 @@ private fun MonthlyMentalHealthBanner(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         ),
-                        color = Color(0xFF101828)
+                        color = DashTitle
                     )
                     Text(
                         text = if (isThai) "แบบประเมินสั้นๆ ประจำเดือน เพื่อดูแลสุขภาพใจของคุณพ่อคุณแม่"
                         else "A short monthly check-in to support your emotional wellbeing",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = Color(0xFF667085)
+                        color = DashSubtle
                     )
                 }
             }
@@ -726,6 +860,77 @@ private fun MonthlyMentalHealthBanner(
                     color = Color.White
                 )
             }
+        }
+    }
+}
+
+/**
+ * Home's notice that questions are waiting — the form lives on Child Info, this only points there.
+ */
+@Composable
+private fun HomeQuestionNoticeBanner(
+    isThai: Boolean,
+    questionCount: Int,
+    subjectName: String,
+    onOpenChildInfo: () -> Unit
+) {
+    Card(
+        onClick = onOpenChildInfo,
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(3.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFF173DB8).copy(alpha = 0.10f)),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
+        border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.QuestionAnswer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isThai) "มีคำถาม $questionCount ข้อเกี่ยวกับ$subjectName รอคุณตอบ"
+                    else "$questionCount question${if (questionCount == 1) "" else "s"} about $subjectName waiting",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    ),
+                    color = DashTitle
+                )
+                Text(
+                    text = if (isThai) "แตะเพื่อไปตอบในหน้าข้อมูลลูก"
+                    else "Tap to answer them on the Child Info page",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = DashSubtle
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE11D48))
+            )
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = DashSubtle,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -826,9 +1031,9 @@ private fun QuickActionSection(
 ) {
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
         elevation = CardDefaults.cardElevation(2.dp),
-        border = BorderStroke(1.dp, Color(0xFFF2F4F7)),
+        border = BorderStroke(1.dp, DashBorderSoft),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -847,12 +1052,12 @@ private fun QuickActionSection(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         ),
-                        color = Color(0xFF101828)
+                        color = DashTitle
                     )
                     Text(
                         text = if (isThai) "บันทึกข้อมูลสำคัญได้ง่ายๆ เพียงปลายนิ้ว" else "Log key baby telemetry in one tap",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = Color(0xFF667085)
+                        color = DashSubtle
                     )
                 }
 
@@ -940,7 +1145,8 @@ private fun QuickActionTile(
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = bgColor,
+            // Dark: the pastel tile would glare, so it becomes an 18% wash of its own icon colour.
+            color = if (com.lullabyai.app.ui.theme.LocalDarkTheme.current) iconColor.copy(alpha = 0.18f) else bgColor,
             shadowElevation = 0.dp,
             modifier = Modifier.size(66.dp)
         ) {
@@ -959,7 +1165,7 @@ private fun QuickActionTile(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
             ),
-            color = Color(0xFF344054),
+            color = DashLabel,
             textAlign = TextAlign.Center,
             maxLines = 2
         )
@@ -981,9 +1187,9 @@ private fun NotificationAlertsSection(
 ) {
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
         elevation = CardDefaults.cardElevation(2.dp),
-        border = BorderStroke(1.dp, Color(0xFFF2F4F7)),
+        border = BorderStroke(1.dp, DashBorderSoft),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -1001,7 +1207,7 @@ private fun NotificationAlertsSection(
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     ),
-                    color = Color(0xFF101828)
+                    color = DashTitle
                 )
 
                 TextButton(
@@ -1014,7 +1220,7 @@ private fun NotificationAlertsSection(
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         ),
-                        color = Color(0xFF173DB8)
+                        color = DashPrimaryText
                     )
                 }
             }
@@ -1128,12 +1334,35 @@ private fun NotificationItemCard(
     icon: ImageVector,
     onClick: () -> Unit
 ) {
-    // Dynamic theme: Red for urgent, Soft Blue for scheduled/normal
-    val cardBg = if (isUrgent) Color(0xFFFFF5F5) else Color(0xFFF0F7FF)
-    val borderColor = if (isUrgent) Color(0xFFFFD1D6) else Color(0xFFDBEAFE)
-    val iconBg = if (isUrgent) Color(0xFFFFE4E6) else Color(0xFFDBEAFE)
-    val accentColor = if (isUrgent) Color(0xFFE11D48) else Color(0xFF2563EB)
-    val tagBg = if (isUrgent) Color(0xFFFFE4E6) else Color(0xFFE0EDFE)
+    // Dynamic theme: Red for urgent, Soft Blue for scheduled/normal. Dark keeps the hue as low-alpha
+    // washes under a lighter accent, matching the Recent Services cards.
+    val dark = com.lullabyai.app.ui.theme.LocalDarkTheme.current
+    val accentColor = when {
+        dark && isUrgent -> Color(0xFFFB7185)
+        dark -> Color(0xFF60A5FA)
+        isUrgent -> Color(0xFFE11D48)
+        else -> Color(0xFF2563EB)
+    }
+    val cardBg = when {
+        dark -> accentColor.copy(alpha = 0.10f)
+        isUrgent -> Color(0xFFFFF5F5)
+        else -> Color(0xFFF0F7FF)
+    }
+    val borderColor = when {
+        dark -> accentColor.copy(alpha = 0.30f)
+        isUrgent -> Color(0xFFFFD1D6)
+        else -> Color(0xFFDBEAFE)
+    }
+    val iconBg = when {
+        dark -> accentColor.copy(alpha = 0.20f)
+        isUrgent -> Color(0xFFFFE4E6)
+        else -> Color(0xFFDBEAFE)
+    }
+    val tagBg = when {
+        dark -> accentColor.copy(alpha = 0.20f)
+        isUrgent -> Color(0xFFFFE4E6)
+        else -> Color(0xFFE0EDFE)
+    }
 
     Surface(
         onClick = onClick,
@@ -1175,7 +1404,7 @@ private fun NotificationItemCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         ),
-                        color = Color(0xFF1E293B),
+                        color = DashNotifTitle,
                         modifier = Modifier.weight(1f, fill = false),
                         maxLines = 1
                     )
@@ -1239,7 +1468,7 @@ private fun RecentServicesSection(
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             ),
-            color = Color(0xFF101828),
+            color = DashTitle,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
 
@@ -1274,12 +1503,16 @@ private fun RecentServiceCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    // Light mode keeps this page's exact existing colours; dark mode moves to theme tokens. Pastel
+    // icon backgrounds glare on a dark card, so dark mode uses a wash of the icon's own tint instead.
+    val dark = LocalDarkTheme.current
+    val scheme = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
-        color = Color.White,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, Color(0xFFF2F4F7)),
+        color = if (dark) scheme.surfaceContainerHigh else Color.White,
+        shadowElevation = if (dark) 0.dp else 2.dp,
+        border = BorderStroke(1.dp, if (dark) scheme.outlineVariant else DashBorderSoft),
         modifier = modifier
     ) {
         Column(
@@ -1293,7 +1526,7 @@ private fun RecentServiceCard(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(iconBg),
+                    .background(if (dark) iconTint.copy(alpha = 0.18f) else iconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, null, tint = iconTint, modifier = Modifier.size(24.dp))
@@ -1309,7 +1542,7 @@ private fun RecentServiceCard(
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
                     ),
-                    color = Color(0xFF101828),
+                    color = if (dark) scheme.onSurface else DashTitle,
                     textAlign = TextAlign.Center,
                     maxLines = 1
                 )
@@ -1318,13 +1551,248 @@ private fun RecentServiceCard(
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 9.sp
                     ),
-                    color = Color(0xFF667085),
+                    color = if (dark) scheme.onSurfaceVariant else DashSubtle,
                     textAlign = TextAlign.Center,
                     maxLines = 1
                 )
             }
         }
     }
+}
+
+/**
+ * Section: บริการแนะนำ (Recommended Services).
+ *
+ * A row of child chips, then four random suggestions from QuickActionCatalog tailored to the
+ * active child's age. Tapping a chip makes that child active app-wide - the same selectChild the
+ * rest of the app uses - which re-rolls the suggestions for their age. Cards reuse
+ * RecentServiceCard so the two sections read as one design.
+ */
+@Composable
+private fun RecommendedServicesSection(
+    isThai: Boolean,
+    children: List<com.lullabyai.app.data.model.Child>,
+    activeChildId: String?,
+    recommendations: List<com.lullabyai.app.data.QuickAction>,
+    onPickChild: (String) -> Unit,
+    onShuffle: () -> Unit,
+    onOpen: (String) -> Unit
+) {
+    val dark = LocalDarkTheme.current
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isThai) "บริการแนะนำ" else "Recommended for You",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                ),
+                color = if (dark) scheme.onSurface else DashTitle,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onShuffle, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = if (isThai) "สุ่มบริการใหม่" else "Shuffle suggestions",
+                    tint = if (dark) scheme.primary else Primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        if (children.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                children.forEach { c ->
+                    val selected = c.id == activeChildId
+                    Surface(
+                        onClick = { onPickChild(c.id) },
+                        shape = RoundedCornerShape(100.dp),
+                        color = when {
+                            selected && dark -> scheme.primary
+                            selected -> Primary
+                            dark -> scheme.surfaceContainerHigh
+                            else -> Color.White
+                        },
+                        border = if (selected) null
+                        else BorderStroke(1.dp, if (dark) scheme.outlineVariant else DashBorder)
+                    ) {
+                        Text(
+                            text = c.name.ifBlank { if (isThai) "ลูก" else "Child" },
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = when {
+                                selected && dark -> scheme.onPrimary
+                                selected -> Color.White
+                                dark -> scheme.onSurfaceVariant
+                                else -> DashLabel
+                            },
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            recommendations.forEach { a ->
+                RecentServiceCard(
+                    title = if (isThai) a.labelTh else a.labelEn,
+                    subtitle = (if (isThai) a.subtitleTh else a.subtitleEn).orEmpty(),
+                    icon = a.icon,
+                    iconBg = a.iconBg,
+                    iconTint = a.iconTint,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onOpen(a.route) }
+                )
+            }
+            // Keep card widths identical to บริการล่าสุด if fewer than four come back.
+            repeat((4 - recommendations.size).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/**
+ * Section: ตารางกิจกรรม entry card - the "outside" half of Activity.
+ *
+ * Shows the next upcoming activity and how many are planned for the coming week, and opens the full
+ * Activity screen. A failed load says so on the card rather than pretending the week is empty.
+ */
+@Composable
+private fun ActivityEntryCard(
+    isThai: Boolean,
+    childId: String?,
+    onOpen: () -> Unit
+) {
+    val dark = LocalDarkTheme.current
+    val scheme = MaterialTheme.colorScheme
+    val repo = remember { com.lullabyai.app.data.repository.ChildRepository() }
+
+    // null while loading; otherwise the week's activities or the failure to report.
+    var week by remember(childId) {
+        mutableStateOf<Result<List<com.lullabyai.app.data.model.ChildActivity>>?>(null)
+    }
+    LaunchedEffect(childId) {
+        if (childId == null) return@LaunchedEffect
+        val zone = java.time.ZoneId.systemDefault()
+        // From the start of today, so an all-day entry for today still counts.
+        val from = java.time.LocalDate.now().atStartOfDay(zone).toOffsetDateTime()
+        week = repo.listActivities(childId, from.toString(), from.plusDays(8).toString())
+            .map { list ->
+                list.sortedBy {
+                    runCatching { java.time.OffsetDateTime.parse(it.startsAt).toInstant() }
+                        .getOrNull() ?: java.time.Instant.MAX
+                }
+            }
+    }
+
+    val now = java.time.OffsetDateTime.now()
+    val next = week?.getOrNull()?.firstOrNull { a ->
+        a.allDay || (runCatching { java.time.OffsetDateTime.parse(a.startsAt) }.getOrNull()
+            ?.isAfter(now) ?: false)
+    }
+
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(18.dp),
+        color = if (dark) scheme.surfaceContainerHigh else Color.White,
+        shadowElevation = if (dark) 0.dp else 2.dp,
+        border = BorderStroke(1.dp, if (dark) scheme.outlineVariant else DashBorderSoft),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (dark) scheme.primary.copy(alpha = 0.18f) else Color(0xFFEEF2FF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Event,
+                    contentDescription = null,
+                    tint = if (dark) scheme.primary else Color(0xFF173DB8),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = if (isThai) "ตารางกิจกรรม" else "Activity Schedule",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (dark) scheme.onSurface else DashTitle
+                )
+                val result = week
+                val failed = result?.isFailure == true
+                Text(
+                    text = when {
+                        result == null -> if (isThai) "กำลังโหลด…" else "Loading…"
+                        failed -> if (isThai) "โหลดตารางไม่สำเร็จ แตะเพื่อเปิดดู"
+                        else "Couldn't load the schedule — tap to open"
+                        next != null -> "${next.title} • ${formatActivityWhen(next, isThai)}"
+                        else -> if (isThai) "ยังไม่มีกิจกรรมใน 7 วันข้างหน้า แตะเพื่อวางแผน"
+                        else "Nothing in the next 7 days — tap to plan"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = when {
+                        failed -> if (dark) scheme.error else Color(0xFFB42318)
+                        dark -> scheme.onSurfaceVariant
+                        else -> DashSubtle
+                    },
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                val count = result?.getOrNull()?.size ?: 0
+                if (count > 0) {
+                    Text(
+                        text = if (isThai) "7 วันข้างหน้า: $count รายการ" else "Next 7 days: $count",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (dark) scheme.primary else Color(0xFF173DB8)
+                    )
+                }
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = if (dark) scheme.onSurfaceVariant else Color(0xFF98A2B3),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/** "ศ. 12 ก.ย. 09:00" - date only for all-day entries. */
+private fun formatActivityWhen(a: com.lullabyai.app.data.model.ChildActivity, isThai: Boolean): String {
+    val at = runCatching {
+        java.time.OffsetDateTime.parse(a.startsAt).atZoneSameInstant(java.time.ZoneId.systemDefault())
+    }.getOrNull() ?: return ""
+    val locale = if (isThai) java.util.Locale("th", "TH") else java.util.Locale.ENGLISH
+    val pattern = if (a.allDay) "EEE d MMM" else "EEE d MMM HH:mm"
+    return at.format(java.time.format.DateTimeFormatter.ofPattern(pattern, locale))
 }
 
 @Composable
@@ -1349,7 +1817,7 @@ private fun GuestModeBannerCard(isThai: Boolean, onSignUp: () -> Unit) {
                     .background(Primary.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Lock, null, tint = Primary, modifier = Modifier.size(22.dp))
+                Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(

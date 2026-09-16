@@ -67,6 +67,9 @@ class MainActivity : ComponentActivity() {
 
         // Load persisted state into process-wide holders (multi-child selection + recent services).
         val settingsManager = com.lullabyai.app.data.settings.SettingsManager(applicationContext)
+        // Loads any self-hosted model endpoint typed on this device (encrypted prefs) before the
+        // first AI call; absent one, the build-time value is used.
+        com.lullabyai.app.data.settings.AiEndpointSettings.init(this)
         com.lullabyai.app.data.settings.ChildSelection.init(settingsManager)
         com.lullabyai.app.data.settings.RecentServices.init(settingsManager)
 
@@ -147,12 +150,15 @@ class MainActivity : ComponentActivity() {
                             // Every sign-in path funnels through here, so device trust is checked
                             // once rather than at each of the dozen places that navigate to
                             // Dashboard — eleven of which are easy to update and one easy to miss.
-                            com.lullabyai.app.ui.components.DeviceTrustGate(settingsManager) {
-                                AppNavigation(
-                                    navController = navController,
-                                    startDestination = startDestination,
-                                    settingsViewModel = settingsViewModel
-                                )
+                            // App lock sits outside everything, so no screen shows before the owner is confirmed.
+                            com.lullabyai.app.ui.components.AppLockGate(enabled = settings.appLock) {
+                                com.lullabyai.app.ui.components.DeviceTrustGate(settingsManager) {
+                                    AppNavigation(
+                                        navController = navController,
+                                        startDestination = startDestination,
+                                        settingsViewModel = settingsViewModel
+                                    )
+                                }
                             }
                             // Drawn last so it floats over whatever screen is showing. Tapping it
                             // opens the notification list, which is where the full text lives.

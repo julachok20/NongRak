@@ -20,6 +20,15 @@ object ClaudeClient {
         private set
 
     /**
+     * For answers that did not come through [generateContent] (the Spark pipeline, a daily-limit
+     * notice). Without it the indicator keeps showing the previous cloud model and misreports
+     * who answered.
+     */
+    fun reportProvider(provider: String) {
+        lastProvider = provider
+    }
+
+    /**
      * [maxTokens] controls response length:
      *  - Chat / task generation : 1024  (default — fast, cheap)
      *  - AI analysis screens    : 4096  (full detailed responses)

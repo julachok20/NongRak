@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only. The release config (app/src/main/res/xml/network_security_config.xml) keeps
+  cleartext blocked everywhere.
+
+  Plain HTTP is allowed to the exact addresses the Spark gateway is reached on while developing,
+  and nowhere else:
+    10.8.0.1       - the box over WireGuard (wg0)
+    192.168.20.68  - the box on the home LAN (the tunnel cannot loop back through 3BB's router)
+    localhost      - port-forwarded or on-device testing
+    10.0.2.2       - the Android emulator's alias for the host computer
+
+  Public use goes through the ai-chat edge function over HTTPS and needs none of these.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.8.0.1</domain>
+        <domain includeSubdomains="false">192.168.20.68</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">supabase.co</domain>
+    </domain-config>
+</network-security-config>

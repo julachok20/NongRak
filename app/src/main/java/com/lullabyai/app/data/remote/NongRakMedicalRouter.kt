@@ -8,11 +8,10 @@ package com.lullabyai.app.data.remote
  * disclaimers. An answer about nap routines does not need "this is not a diagnosis" on top; an
  * answer about a rash with a fever absolutely does, and it must be impossible to lose.
  *
- * The warning is prepended to the answer text rather than carried as UI state on purpose. Chat
- * messages are persisted and re-rendered from the database (see ChatRepository.saveMessage), so a
- * warning held only in a composable would silently vanish when the user scrolls back or reopens
- * the session - precisely the case where a stale medical answer is most dangerous. The warning
- * travels with the message.
+ * The standard warning is a banner in the chat, not answer text (product decision 2026-09-13). It
+ * must still never vanish when a session is reopened - the case where a stale medical answer is
+ * most dangerous - so the flag is persisted with the message (chat_messages.medical) rather than
+ * held in a composable. The emergency warning stays in the text: it is an instruction, not a note.
  *
  * Deliberately conservative: when unsure it does NOT claim a question is medical, and when
  * MedGemma is unreachable it returns null so the caller falls back to the normal chain rather
@@ -170,9 +169,11 @@ object NongRakMedicalRouter {
         val body = MedGemmaClient.tryGenerate(prompt, maxTokens = 1024, errors = errors)
             ?: return null
 
-        val warning = if (emergency) emergencyWarning(isThai) else standardWarning(isThai)
+        // The "not a diagnosis" note is the chat's banner now (ChatRepository flags the message and
+        // the flag is stored with it). "Go to hospital now" is not a disclaimer, so it stays on top
+        // of the answer itself.
         return MedicalAnswer(
-            text = "$warning\n\n$body",
+            text = if (emergency) "${emergencyWarning(isThai)}\n\n$body" else body,
             wasEmergency = emergency
         )
     }

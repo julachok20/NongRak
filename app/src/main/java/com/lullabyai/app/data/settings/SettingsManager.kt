@@ -24,7 +24,9 @@ data class AppSettings(
     /** true = the AI logs what it understood without asking; false = it asks first. */
     val autoRecord: Boolean = false,
     /** true = signing in from a new device requires approval from an active device (2FA). */
-    val twoFactorEnabled: Boolean = false
+    val twoFactorEnabled: Boolean = false,
+    /** true = the app asks for face / fingerprint / screen lock before opening (AppLockGate). */
+    val appLock: Boolean = false
 )
 
 class SettingsManager(private val context: Context) {
@@ -229,6 +231,12 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { it[AUTO_RECORD] = value }
     }
 
+    private val APP_LOCK = booleanPreferencesKey("app_lock")
+
+    suspend fun setAppLock(value: Boolean) {
+        context.dataStore.edit { it[APP_LOCK] = value }
+    }
+
     private val SELECTED_MASCOT = stringPreferencesKey("selected_mascot")
 
     /** The AI companion the parent picked at the end of onboarding. Null = never chose. */
@@ -370,7 +378,8 @@ class SettingsManager(private val context: Context) {
             // Defaults to off: the AI asking before it writes is the safe starting point, and
             // the parent opts in to unattended logging once they trust it.
             autoRecord = prefs[AUTO_RECORD] ?: false,
-            twoFactorEnabled = prefs[TWO_FACTOR_ENABLED] ?: false
+            twoFactorEnabled = prefs[TWO_FACTOR_ENABLED] ?: false,
+            appLock = prefs[APP_LOCK] ?: false
         )
     }
 

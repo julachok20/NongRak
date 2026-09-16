@@ -452,7 +452,7 @@ fun AddActivityScreen(
             ) {
                 if (state.saving) {
                     CircularProgressIndicator(
-                        color = Color.White,
+                        color = SchOnPrimary,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(20.dp)
                     )

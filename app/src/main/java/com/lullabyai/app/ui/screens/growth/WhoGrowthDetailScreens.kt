@@ -53,7 +53,7 @@ fun WhoHeightForAgeDetailScreen(
 }
 
 /** Weight-for-age / height-for-age detail — Stitch WHO charts.
- *  Reference band is approximate age-banded range (GrowthReference), NOT real WHO LMS Z-scores. */
+ *  Status and band come from WHO LMS tables by sex and age (GrowthReference). */
 @Composable
 private fun WhoGrowthDetailScreen(
     childViewModel: ChildViewModel,
@@ -72,9 +72,16 @@ private fun WhoGrowthDetailScreen(
     val latestValue = latest?.let { if (isWeight) it.weightKg else it.heightCm }
     val latestWeight = records.firstOrNull { it.weightKg != null }?.weightKg
     val latestHeight = records.firstOrNull { it.heightCm != null }?.heightCm
-    val status = if (isWeight) GrowthReference.weightStatus(latestValue, ageMonthsNow)
-    else GrowthReference.heightStatus(latestValue, ageMonthsNow)
-    val wfhStatus = GrowthReference.weightForHeightStatus(latestWeight, latestHeight)
+    val gender = child?.gender
+    // WHO, for this sex, at the child's age on the day of the reading — not today's age.
+    val latestAgeDays = GrowthReference.ageDaysAt(child?.birthdate, latest?.recordedAt)
+    val status = if (isWeight) GrowthReference.weightStatus(latestValue, latestAgeDays, gender)
+    else GrowthReference.heightStatus(latestValue, latestAgeDays, gender)
+    // สมส่วน needs weight and height from the same day; mixing a new weight with an old height misleads.
+    val pairRecord = records.firstOrNull { it.weightKg != null && it.heightCm != null }
+    val wfhStatus = GrowthReference.weightForHeightStatus(
+        pairRecord?.weightKg, pairRecord?.heightCm, GrowthReference.ageDaysAt(child?.birthdate, pairRecord?.recordedAt), gender
+    )
     val unit = if (isWeight) (if (isThai) "กก." else "kg") else (if (isThai) "ซม." else "cm")
     val title = if (isWeight) (if (isThai) "กราฟน้ำหนักตามเกณฑ์อายุ (WHO)" else "Weight-for-Age Chart (WHO)")
     else (if (isThai) "กราฟส่วนสูงตามเกณฑ์อายุ (WHO)" else "Height-for-Age Chart (WHO)")
@@ -177,14 +184,14 @@ private fun WhoGrowthDetailScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            if (isThai) "แถบสีคือช่วงอ้างอิงคร่าวๆ ตามวัย (ไม่ใช่กราฟเปอร์เซ็นไทล์ WHO จริง)"
-                            else "The shaded band is an approximate age-based reference range (not a real WHO percentile chart)",
+                            if (isThai) "เส้นประคือช่วงปกติตามมาตรฐาน WHO (−2 ถึง +2 SD) ตามอายุและเพศ"
+                            else "Dashed lines are the WHO normal range (−2 to +2 SD) for age and sex",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
                         val hasPoints = records.any { if (isWeight) it.weightKg != null else it.heightCm != null }
-                        if (!hasPoints) EmptyChartState(isThai) else GrowthBandChart(child?.birthdate, records, isWeight)
+                        if (!hasPoints) EmptyChartState(isThai) else GrowthBandChart(child?.birthdate, records, isWeight, gender)
                     }
                 }
             }
@@ -309,7 +316,7 @@ private fun WhoGrowthDetailScreen(
                             }
                         }
                         val nextAge = ageMonthsNow + 3
-                        val mid = GrowthReference.bandMidpoint(nextAge, isWeight = true)
+                        val mid = GrowthReference.median(GrowthReference.monthsToDays(nextAge), isWeight = true, gender)
                         Card(
                             Modifier.weight(1f),
                             shape = RoundedCornerShape(18.dp),
@@ -334,12 +341,12 @@ private fun WhoGrowthDetailScreen(
                                 ) {
                                     Column {
                                         Text(
-                                            "%.1f kg".format(mid),
+                                            mid?.let { "%.1f kg".format(it) } ?: "-",
                                             style = MaterialTheme.typography.titleLarge,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            if (isThai) "(ค่าเฉลี่ยอ้างอิง)" else "(reference mid)",
+                                            if (isThai) "(ค่ามัธยฐาน WHO)" else "(WHO median)",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = Outline,
                                             fontSize = 10.sp
@@ -420,7 +427,7 @@ private fun WhoGrowthDetailScreen(
                 }
                 item {
                     val nextAge = ageMonthsNow + 3
-                    val (bandMin, bandMax) = GrowthReference.band(nextAge, isWeight = false)
+                    val nextBand = GrowthReference.band(GrowthReference.monthsToDays(nextAge), isWeight = false, gender)
                     Card(
                         Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
@@ -435,8 +442,8 @@ private fun WhoGrowthDetailScreen(
                             )
                             Text(
                                 (if (isThai) "อายุ $nextAge เดือน" else "At $nextAge months") + ": " +
-                                    (if (isThai) "ช่วงอ้างอิง ~" else "reference range ~") +
-                                    "%.1f-%.1f $unit".format(bandMin, bandMax),
+                                    (if (isThai) "ช่วงปกติ WHO " else "WHO normal range ") +
+                                    (nextBand?.let { "%.1f-%.1f $unit".format(it.first, it.second) } ?: "-"),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(0.9f)
                             )

@@ -112,44 +112,110 @@ fun CreateCommunityPostScreen(
     val context = LocalContext.current
     var attachedMedia by remember { mutableStateOf<String?>(null) }
     var attachedMediaUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    var isUploadingMedia by remember { mutableStateOf(false) }
+    var attachedIsVideo by remember { mutableStateOf(false) }
+    var isCheckingMedia by remember { mutableStateOf(false) }
+    var mediaError by remember { mutableStateOf<String?>(null) }
 
+    // Picking no longer uploads. community-media is a public bucket, so a file put there is already
+    // reachable by URL even if the post is never created — the upload waits until the check passes.
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         uri?.let { selectedUri ->
             attachedMediaUri = selectedUri
             attachedMedia = selectedUri.toString()
-            scope.launch {
-                isUploadingMedia = true
-                val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
-                if (bytes != null) {
-                    val uploadRes = communityRepo.uploadPostImage(bytes, "jpg")
-                    if (uploadRes.isSuccess) {
-                        attachedMedia = uploadRes.getOrNull()
-                    }
-                }
-                isUploadingMedia = false
-            }
+            attachedIsVideo = false
+            mediaError = null
+        }
+    }
+
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let { selectedUri ->
+            attachedMediaUri = selectedUri
+            attachedMedia = selectedUri.toString()
+            attachedIsVideo = true
+            mediaError = null
         }
     }
 
     fun handlePost() {
-        if (postContent.isBlank()) return
-
+        if (postContent.isBlank() || isCheckingMedia) return
         val currentUserId = runCatching { authState.profile?.id }.getOrNull()
-        val newPost = CommunityPost(
-            userId = currentUserId,
-            authorName = authorDisplayName,
-            authorRole = authorRoleName,
-            authorAvatarUrl = authorAvatarUrl,
-            timeAgo = if (s.isThai) "เมื่อสักครู่" else "Just now",
-            content = postContent.trim(),
-            tags = selectedTags.toList(),
-            imageUrl = attachedMedia
-        )
-        communityRepo.addPost(newPost)
-        navController.popBackStack()
+        val uri = attachedMediaUri
+        scope.launch {
+            isCheckingMedia = true
+            mediaError = null
+            // A video goes up as frames: the edge function screens images, and a whole clip is far
+            // too big to send. Every frame is screened, and one bad frame stops the post.
+            // Decoding video frames / photos takes seconds: off the main thread, or the screen freezes
+            // and Android may show "app not responding" (rememberCoroutineScope runs on Main).
+            val frames = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                when {
+                    uri == null -> emptyList()
+                    attachedIsVideo -> com.lullabyai.app.util.VideoFrames.extract(context, uri)
+                    else -> listOfNotNull(com.lullabyai.app.util.ImageUtils.downscaleToJpeg(context, uri, 1024))
+                }
+            }
+            if (uri != null && frames.isEmpty()) {
+                mediaError = if (s.isThai) "อ่านไฟล์ที่แนบไม่ได้ ลองเลือกไฟล์อื่น"
+                else "Couldn't read the attached file — try another one."
+                isCheckingMedia = false
+                return@launch
+            }
+            val verdict = com.lullabyai.app.data.remote.SparkChatClient.moderateMedia(postContent.trim(), frames)
+            if (!verdict.allowed) {
+                val why = verdict.reasons
+                val th = s.isThai
+                // Say which rule, so the parent can fix the post instead of guessing.
+                mediaError = when {
+                    "monarchy" in why -> if (th) "ชุมชนนี้ไม่อนุญาตเนื้อหาเกี่ยวกับสถาบันพระมหากษัตริย์" else "Content about the monarchy isn't allowed in this community."
+                    "politics" in why -> if (th) "ชุมชนนี้ไม่อนุญาตเนื้อหาการเมือง" else "Political content isn't allowed in this community."
+                    "false_health_advice" in why -> if (th) "คำแนะนำนี้อาจขัดกับแนวทางการดูแลเด็กที่ปลอดภัย ลองเขียนเป็นคำถาม หรือปรึกษาคุณหมอ"
+                        else "This advice may go against safe child-care guidance. Try asking it as a question, or check with a doctor."
+                    "fake_news" in why -> if (th) "ข่าวนี้ยังไม่มีแหล่งที่มาที่น่าเชื่อถือ แนบแหล่งอ้างอิงแล้วลองใหม่"
+                        else "This claim has no credible source. Add a source and try again."
+                    "personal_document" in why -> if (th) "รูปนี้มีข้อมูลส่วนตัว (บัตร/เอกสาร) จึงไม่เผยแพร่" else "This picture shows a personal document, so it wasn't published."
+                    "check_unavailable" in why -> if (th) "ระบบตรวจความปลอดภัยไม่พร้อมตอนนี้ ลองใหม่อีกครั้งภายหลัง" else "The safety check is unavailable right now. Please try again later."
+                    else -> if (th) "เนื้อหานี้ไม่ผ่านการตรวจความปลอดภัย จึงยังไม่ได้เผยแพร่" else "This didn't pass the safety check, so nothing was published."
+                }
+                isCheckingMedia = false
+                return@launch
+            }
+            var imageUrl: String? = null
+            var videoUrl: String? = null
+            if (uri != null) {
+                if (attachedIsVideo) {
+                    val clip = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.lullabyai.app.util.ImageUtils.readBytes(context, uri)
+                    }
+                    videoUrl = clip?.let { communityRepo.uploadPostMedia(it, "mp4").getOrNull() }
+                    if (videoUrl == null) {
+                        mediaError = if (s.isThai) "อัปโหลดวิดีโอไม่สำเร็จ (ไฟล์เกิน 10 MB?)" else "Video upload failed (over 10 MB?)."
+                        isCheckingMedia = false
+                        return@launch
+                    }
+                }
+                // The first screened frame doubles as the card's picture / the clip's thumbnail.
+                imageUrl = frames.firstOrNull()?.let { communityRepo.uploadPostMedia(it, "jpg").getOrNull() }
+            }
+            communityRepo.addPost(
+                CommunityPost(
+                    userId = currentUserId,
+                    authorName = authorDisplayName,
+                    authorRole = authorRoleName,
+                    authorAvatarUrl = authorAvatarUrl,
+                    timeAgo = if (s.isThai) "เมื่อสักครู่" else "Just now",
+                    content = postContent.trim(),
+                    tags = selectedTags.toList(),
+                    imageUrl = imageUrl,
+                    videoUrl = videoUrl
+                )
+            )
+            isCheckingMedia = false
+            navController.popBackStack()
+        }
     }
 
     Scaffold(
@@ -176,7 +242,7 @@ fun CreateCommunityPostScreen(
                 ) {
                     Button(
                         onClick = { handlePost() },
-                        enabled = postContent.isNotBlank(),
+                        enabled = postContent.isNotBlank() && !isCheckingMedia,
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
                         modifier = Modifier
@@ -322,13 +388,14 @@ fun CreateCommunityPostScreen(
                                     )
                                     Column {
                                         Text(
-                                            if (s.isThai) "แนบรูปภาพแล้ว" else "Photo attached",
+                                            if (attachedIsVideo) (if (s.isThai) "แนบวิดีโอแล้ว" else "Video attached")
+                                            else (if (s.isThai) "แนบรูปภาพแล้ว" else "Photo attached"),
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.SemiBold
                                         )
-                                        if (isUploadingMedia) {
+                                        if (isCheckingMedia) {
                                             Text(
-                                                if (s.isThai) "กำลังอัปโหลดรูปภาพ..." else "Uploading image...",
+                                                if (s.isThai) "กำลังตรวจความปลอดภัยก่อนเผยแพร่..." else "Safety check before publishing...",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = Primary
                                             )
@@ -339,6 +406,8 @@ fun CreateCommunityPostScreen(
                                     onClick = {
                                         attachedMedia = null
                                         attachedMediaUri = null
+                                        attachedIsVideo = false
+                                        mediaError = null
                                     },
                                     modifier = Modifier.size(28.dp)
                                 ) {
@@ -346,6 +415,15 @@ fun CreateCommunityPostScreen(
                                 }
                             }
                         }
+                    }
+
+                    mediaError?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Error,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
                     }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -370,7 +448,11 @@ fun CreateCommunityPostScreen(
                                 Spacer(Modifier.width(6.dp))
                                 Text(if (s.isThai) "รูปภาพ" else "Photo", color = Primary)
                             }
-                            TextButton(onClick = { attachedMedia = "video_attached.mp4" }) {
+                            TextButton(onClick = {
+                                videoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                )
+                            }) {
                                 Icon(Icons.Filled.Videocam, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(if (s.isThai) "วิดีโอ" else "Video", color = Primary)

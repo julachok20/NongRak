@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug variant only: allows plain HTTP so a model server on the WireGuard tunnel
+  (http://10.x.x.x:8000) can be reached while developing. The release build keeps
+  usesCleartextTraffic="false" from the main manifest.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic" />
+</manifest>

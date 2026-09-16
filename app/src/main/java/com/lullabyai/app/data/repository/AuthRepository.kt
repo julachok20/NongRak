@@ -246,9 +246,57 @@ class AuthRepository {
     }
 
     suspend fun signOut(): Result<Unit> = runCatching {
-        // LOCAL scope clears the on-device session immediately without a server round-trip, so logout
-        // is instant even on a slow/flaky connection (GLOBAL waits on the network to revoke tokens).
-        supabase.auth.signOut(SignOutScope.LOCAL)
+        val context = com.lullabyai.app.NongRakApp.instance
+        val session = supabase.auth.currentSessionOrNull()
+        val userId = supabase.auth.currentUserOrNull()?.id
+        if (session != null && userId != null &&
+            com.lullabyai.app.data.settings.BiometricLogin.enrolledUserId(context) == userId
+        ) {
+            // Biometric sign-in is on for this account: keep its latest refresh token (encrypted,
+            // released only after face / fingerprint) and clear the session on this phone without
+            // revoking it, so "เข้าสู่ระบบด้วยลายนิ้วมือ" can resume it.
+            val displayName = getProfile().getOrNull()?.let { p ->
+                p.fullName?.trim()?.takeIf { it.isNotEmpty() } ?: p.username?.trim()?.takeIf { it.isNotEmpty() }
+            }
+            com.lullabyai.app.data.settings.BiometricLogin.saveRefreshToken(context, session.refreshToken, displayName)
+            supabase.auth.clearSession()
+        } else {
+            // LOCAL scope clears the on-device session immediately without a server round-trip, so logout
+            // is instant even on a slow/flaky connection (GLOBAL waits on the network to revoke tokens).
+            supabase.auth.signOut(SignOutScope.LOCAL)
+        }
+    }
+
+    /** Settings › Active Sessions: this account's signed-in devices (RPC list_my_sessions, own rows only). */
+    suspend fun listSessions(): Result<List<AuthSessionRow>> = runCatching {
+        supabase.postgrest.rpc("list_my_sessions").decodeList<AuthSessionRow>()
+    }
+
+    /** Signs one other device out. The server refuses the phone in hand (cannot_revoke_current_session). */
+    suspend fun revokeSession(sessionId: String): Result<Boolean> = runCatching {
+        supabase.postgrest.rpc(
+            "revoke_my_session",
+            buildJsonObject { put("p_session_id", JsonPrimitive(sessionId)) }
+        ).decodeAs<Boolean>()
+    }
+
+    /** Signs every device except this one out; returns how many. */
+    suspend fun revokeOtherSessions(): Result<Int> = runCatching {
+        supabase.postgrest.rpc("revoke_my_other_sessions").decodeAs<Int>()
+    }
+
+    /**
+     * Resumes the enrolled account from the key saved at logout. Call only after AppLock.authenticate
+     * succeeded. The key is removed as it is read (refresh tokens rotate), so a failure here means
+     * signing in with a password once more.
+     */
+    suspend fun signInWithBiometricKey(): Result<Unit> = runCatching {
+        val context = com.lullabyai.app.NongRakApp.instance
+        val token = com.lullabyai.app.data.settings.BiometricLogin.takeRefreshToken(context)
+            ?: error("biometric_login_no_saved_key")
+        val session = supabase.auth.refreshSession(token)
+        supabase.auth.importSession(session)
+        ensureProfile(fullName = null, accountType = null)
     }
 
     /** Cancel an unfinished signup: delete the user's data and sign out. */
@@ -275,6 +323,8 @@ class AuthRepository {
         // first (while the session is still valid). Best-effort — never block account deletion on it.
         if (uid != null) runCatching { deleteUserStorage(uid) }
         supabase.postgrest.rpc("delete_account")
+        // The account is gone: its saved biometric sign-in must go too.
+        runCatching { com.lullabyai.app.data.settings.BiometricLogin.clear(com.lullabyai.app.NongRakApp.instance) }
         runCatching { supabase.auth.signOut(SignOutScope.LOCAL) }
         Unit
     }
@@ -410,6 +460,33 @@ class AuthRepository {
         }
     }
 
+    /**
+     * Settings › Personal Info: saves ONE profile column (`username`, `full_name` or `phone`) and reads
+     * it back. Null clears it. A username someone else holds fails as `username_taken`
+     * (profiles_username_key), so the dialog can say so instead of showing a raw Postgres error.
+     */
+    suspend fun updateProfileField(column: String, value: String?): Result<Profile> = runCatching {
+        require(column in setOf("username", "full_name", "phone")) { "field_not_editable: $column" }
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        try {
+            supabase.from("profiles").update(buildJsonObject { put(column, value?.let { JsonPrimitive(it) } ?: JsonNull) }) {
+                filter { eq("id", userId) }
+            }
+        } catch (e: Exception) {
+            if (e.message.orEmpty().contains("profiles_username_key")) error("username_taken")
+            throw e
+        }
+        val saved = getProfile().getOrThrow()
+        val now = when (column) { "username" -> saved.username; "full_name" -> saved.fullName; else -> saved.phone }
+        check(now == value) { "profile_field_not_saved: $column wanted '$value', got '$now'" }
+        saved
+    }
+
+    /** Asks Supabase to move sign-in to [newEmail]. Nothing changes until the link sent to the new address is opened. */
+    suspend fun requestEmailChange(newEmail: String): Result<Unit> = runCatching {
+        supabase.auth.updateUser { email = newEmail }
+    }
+
     /** Separate opt-in consent for using (de-identified) data to improve/train AI models — a
      *  distinct PDPA purpose from the mandatory signup consent, so it gets its own timestamp
      *  the same way [signUp]'s consent_given_at does. Off by default; can be withdrawn any time. */
@@ -475,18 +552,110 @@ class AuthRepository {
     }
 
     /**
-     * PDPA right to data portability: gathers ALL of the user's data into a HUMAN-READABLE
-     * Thai report (not raw JSON, so parents can actually read it). RLS guarantees only the
-     * current user's rows are returned.
+     * PDPA right to data portability: every table the app keeps about this user, read through RLS so
+     * only their own rows come back. A table that fails to load is kept with its error, so the export
+     * says "could not load" instead of silently showing it as empty.
      */
-    suspend fun exportUserData(): Result<String> = runCatching {
+    suspend fun collectUserData(): Result<UserDataExport> = runCatching {
         supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
-        suspend fun tbl(name: String): List<JsonObject> = runCatching {
-            supabase.from(name).select().decodeList<JsonObject>()
-        }.getOrDefault(emptyList())
+        UserDataExport(
+            UserDataExport.TABLES.map { (table, title) ->
+                runCatching { supabase.from(table).select().decodeList<JsonObject>() }.fold(
+                    onSuccess = { UserDataExport.Section(table, title, it, null) },
+                    onFailure = { UserDataExport.Section(table, title, emptyList(), it.message ?: it::class.simpleName) }
+                )
+            }
+        )
+    }
 
-        // English DB columns → friendly Thai labels
-        val labels = mapOf(
+    suspend fun hasCompletedOnboarding(): Boolean {
+        return try {
+            // No user_id filter — RLS already scopes to owned + synced (member) children; adding one
+            // here would hide synced children and wrongly report "not onboarded" for that account.
+            val list = supabase.from("children").select {
+                limit(1)
+            }.decodeList<Map<String, String>>()
+            list.isNotEmpty()
+        } catch (e: Exception) {
+            false
+        }
+    }
+}
+
+/** One row of `list_my_sessions()` — a device signed into this account. */
+@kotlinx.serialization.Serializable
+data class AuthSessionRow(
+    val id: String,
+    @kotlinx.serialization.SerialName("created_at") val createdAt: String? = null,
+    @kotlinx.serialization.SerialName("last_active_at") val lastActiveAt: String? = null,
+    @kotlinx.serialization.SerialName("user_agent") val userAgent: String? = null,
+    val ip: String? = null,
+    @kotlinx.serialization.SerialName("is_current") val isCurrent: Boolean = false
+)
+
+/** Result of [AuthRepository.collectUserData]: a readable Thai report (for the PDF) or raw JSON. */
+data class UserDataExport(val sections: List<Section>) {
+    data class Section(val table: String, val title: String, val rows: List<JsonObject>, val error: String?)
+
+    /** Human-readable Thai report: English columns become Thai labels, internal ids are left out. */
+    fun toReport(exportedOn: String): String {
+        fun value(e: JsonElement): String = when (e) {
+            is JsonNull -> ""
+            is JsonPrimitive -> e.content
+            else -> e.toString()
+        }
+        val sb = StringBuilder()
+        sb.append("ข้อมูลส่วนบุคคลของฉัน — NongRak AI\n")
+        sb.append("ส่งออกเมื่อ: $exportedOn\n")
+        sb.append("เอกสารนี้รวบรวมข้อมูลทั้งหมดที่แอปจัดเก็บเกี่ยวกับคุณและบุตรหลาน ตามสิทธิ์ PDPA\n\n")
+        for (section in sections) {
+            sb.append("======== ${section.title} ========\n")
+            when {
+                section.error != null -> sb.append("  (โหลดข้อมูลส่วนนี้ไม่สำเร็จ: ${section.error})\n\n")
+                section.rows.isEmpty() -> sb.append("  (ไม่มีข้อมูล)\n\n")
+                else -> section.rows.forEachIndexed { i, row ->
+                    sb.append("  รายการที่ ${i + 1}\n")
+                    row.entries.filter { it.key !in SKIP }.forEach { (k, v) ->
+                        val text = value(v)
+                        if (text.isNotBlank() && text != "null") sb.append("    • ${LABELS[k] ?: k.replace("_", " ")}: $text\n")
+                    }
+                    sb.append("\n")
+                }
+            }
+        }
+        return sb.toString()
+    }
+
+    /** Machine-readable copy: every column as stored, one key per table, plus any load errors. */
+    fun toJson(exportedOn: String): String = kotlinx.serialization.json.Json { prettyPrint = true }.encodeToString(
+        JsonObject.serializer(),
+        buildJsonObject {
+            put("exported_at", JsonPrimitive(exportedOn))
+            for (section in sections) {
+                put(section.table, kotlinx.serialization.json.JsonArray(section.rows))
+            }
+            val errors = sections.filter { it.error != null }
+            if (errors.isNotEmpty()) {
+                put("errors", buildJsonObject { errors.forEach { put(it.table, JsonPrimitive(it.error)) } })
+            }
+        }
+    )
+
+    companion object {
+        val TABLES = listOf(
+            "profiles" to "โปรไฟล์ผู้ใช้",
+            "children" to "ข้อมูลบุตรหลาน",
+            "medical_history" to "ประวัติการรักษา",
+            "health_records" to "บันทึกสุขภาพ",
+            "vaccine_records" to "สมุดวัคซีน",
+            "allergies" to "ประวัติการแพ้",
+            "growth_records" to "การเจริญเติบโต",
+            "development_milestones" to "พัฒนาการ",
+            "ai_tasks" to "กิจกรรมที่ AI แนะนำ",
+            "chat_messages" to "ประวัติการสนทนากับ AI"
+        )
+        private val SKIP = setOf("id", "user_id", "child_id", "session_id", "avatar_url", "updated_at")
+        private val LABELS = mapOf(
             "full_name" to "ชื่อ-นามสกุล", "username" to "ชื่อผู้ใช้", "email" to "อีเมล",
             "consent_given_at" to "ให้ความยินยอมเมื่อ", "created_at" to "สร้างเมื่อ",
             "name" to "ชื่อ", "birthdate" to "วันเกิด", "gender" to "เพศ",
@@ -501,55 +670,5 @@ class AuthRepository {
             "task_text" to "กิจกรรม", "is_completed" to "ทำเสร็จแล้ว", "completed_at" to "เสร็จเมื่อ",
             "metric_type" to "การวัด", "value" to "ค่า", "unit" to "หน่วย", "type" to "ประเภท"
         )
-        val skip = setOf("id", "user_id", "child_id", "session_id", "avatar_url", "updated_at")
-        fun valStr(e: JsonElement): String = when (e) {
-            is JsonNull -> ""
-            is JsonPrimitive -> e.content
-            else -> e.toString()
-        }
-        fun render(rows: List<JsonObject>): String {
-            if (rows.isEmpty()) return "  (ไม่มีข้อมูล)\n\n"
-            val sb = StringBuilder()
-            rows.forEachIndexed { i, row ->
-                sb.append("  รายการที่ ${i + 1}\n")
-                row.entries.filter { it.key !in skip }.forEach { (k, v) ->
-                    val value = valStr(v)
-                    if (value.isNotBlank() && value != "null") {
-                        sb.append("    • ${labels[k] ?: k.replace("_", " ")}: $value\n")
-                    }
-                }
-                sb.append("\n")
-            }
-            return sb.toString()
-        }
-
-        val sb = StringBuilder()
-        sb.append("ข้อมูลส่วนบุคคลของฉัน — NongRak AI\n")
-        sb.append("ส่งออกเมื่อ: ${java.time.LocalDate.now()}\n")
-        sb.append("เอกสารนี้รวบรวมข้อมูลทั้งหมดที่แอปจัดเก็บเกี่ยวกับคุณและบุตรหลาน ตามสิทธิ์ PDPA\n\n")
-        sb.append("======== โปรไฟล์ผู้ใช้ ========\n"); sb.append(render(tbl("profiles")))
-        sb.append("======== ข้อมูลบุตรหลาน ========\n"); sb.append(render(tbl("children")))
-        sb.append("======== ประวัติการรักษา ========\n"); sb.append(render(tbl("medical_history")))
-        sb.append("======== บันทึกสุขภาพ ========\n"); sb.append(render(tbl("health_records")))
-        sb.append("======== สมุดวัคซีน ========\n"); sb.append(render(tbl("vaccine_records")))
-        sb.append("======== ประวัติการแพ้ ========\n"); sb.append(render(tbl("allergies")))
-        sb.append("======== การเจริญเติบโต ========\n"); sb.append(render(tbl("growth_records")))
-        sb.append("======== พัฒนาการ ========\n"); sb.append(render(tbl("development_milestones")))
-        sb.append("======== กิจกรรมที่ AI แนะนำ ========\n"); sb.append(render(tbl("ai_tasks")))
-        sb.append("======== ประวัติการสนทนากับ AI ========\n"); sb.append(render(tbl("chat_messages")))
-        sb.toString()
-    }
-
-    suspend fun hasCompletedOnboarding(): Boolean {
-        return try {
-            // No user_id filter — RLS already scopes to owned + synced (member) children; adding one
-            // here would hide synced children and wrongly report "not onboarded" for that account.
-            val list = supabase.from("children").select {
-                limit(1)
-            }.decodeList<Map<String, String>>()
-            list.isNotEmpty()
-        } catch (e: Exception) {
-            false
-        }
     }
 }

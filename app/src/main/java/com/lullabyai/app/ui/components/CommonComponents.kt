@@ -574,6 +574,8 @@ fun LullabyTopBar(
     onBack: (() -> Unit)? = null,
     navController: NavController? = null,
     centerTitle: Boolean = false,
+    /** Replaces the title text — used by Child Hub for the profile-switcher pill. */
+    titleContent: (@Composable () -> Unit)? = null,
     showNotification: Boolean = navController != null,
     showProfile: Boolean = navController != null,
     /**
@@ -589,12 +591,18 @@ fun LullabyTopBar(
 ) {
     val avatarUrl = LocalAvatarUrl.current
     val titleSlot: @Composable () -> Unit = {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = Primary,
-            fontWeight = FontWeight.Bold
-        )
+        if (titleContent != null) {
+            titleContent()
+        } else {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                // Theme primary, not the light constant: identical in light, and readable in dark on
+                // the 142 screens that use this bar.
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
     val navSlot: @Composable () -> Unit = {
         if (onBack != null) {
@@ -618,7 +626,7 @@ fun LullabyTopBar(
                     Icon(
                         Icons.Filled.Notifications,
                         contentDescription = "การแจ้งเตือน",
-                        tint = if (importantCount > 0) Error else MaterialTheme.colorScheme.onSurface,
+                        tint = if (importantCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(30.dp)
                     )
                     if (importantCount > 0) {
@@ -627,12 +635,12 @@ fun LullabyTopBar(
                                 .offset(x = 6.dp, y = (-4).dp)
                                 .size(20.dp)
                                 .clip(CircleShape)
-                                .background(Error),
+                                .background(MaterialTheme.colorScheme.error),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 if (importantCount > 9) "9+" else importantCount.toString(),
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onError,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -648,7 +656,7 @@ fun LullabyTopBar(
                 )
             }) {
                 Box(
-                    modifier = Modifier.size(28.dp).clip(CircleShape).background(Primary.copy(alpha = 0.12f)),
+                    modifier = Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
                     if (!avatarUrl.isNullOrBlank()) {
@@ -657,7 +665,7 @@ fun LullabyTopBar(
                             modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop
                         )
                     } else {
-                        Icon(Icons.Filled.Person, contentDescription = "โปรไฟล์", tint = Primary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Person, contentDescription = "โปรไฟล์", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
                 }
             }

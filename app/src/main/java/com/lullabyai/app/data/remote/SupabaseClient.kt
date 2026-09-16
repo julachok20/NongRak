@@ -29,6 +29,14 @@ val supabase = createSupabaseClient(
             explicitNulls = false
         }
     )
+    // Name the phone in every request. Supabase records the User-Agent on each sign-in, which is what
+    // Settings › Active Sessions shows; without this every session read "ktor-client".
+    @OptIn(io.github.jan.supabase.annotations.SupabaseInternal::class)
+    httpConfig {
+        install(io.ktor.client.plugins.UserAgent) {
+            agent = com.lullabyai.app.util.DeviceLabel.userAgent()
+        }
+    }
     install(Auth) {
         // Deep link config so Google OAuth returns to the app: lullabyai://auth
         scheme = "lullabyai"

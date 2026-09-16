@@ -144,6 +144,31 @@ class InfoAskCatalogTest {
     }
 
     @Test
+    fun `child row count sees gaps without any logs and ignores shown-today`() {
+        val complete = InfoAskCatalog.openChildRowCount(
+            child = child(noKnownAllergies = true),
+            answeredEver = setOf("activity_level"),
+            today = today
+        )
+        assertEquals("a fully filled row owes nothing", 0, complete)
+
+        val gappy = child(bloodGroup = null, placeOfBirth = null, noKnownAllergies = false)
+        assertEquals(
+            "blood group, place of birth, allergies and the never-answered activity level",
+            4,
+            InfoAskCatalog.openChildRowCount(gappy, today = today)
+        )
+    }
+
+    @Test
+    fun `child row count never counts fields that need logs`() {
+        val ids = InfoAskCatalog.CHILD_ROW_FIELDS
+        assertFalse(ids.contains("sleep_last_night"))
+        assertFalse(ids.contains("feeding_type"))
+        assertFalse(ids.contains("guardian_name"))
+    }
+
+    @Test
     fun `banner names both child and parent when mixed`() {
         val mixed = listOf(
             InfoAskPrompt("sleep_last_night", InfoAskSubject.CHILD, InfoAskKind.CHIPS, "q", "q"),

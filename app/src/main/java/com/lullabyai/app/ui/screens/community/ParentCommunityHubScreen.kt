@@ -99,6 +99,7 @@ fun ParentCommunityHubScreen(
     }
 
     val posts by communityRepo.posts.collectAsState(initial = emptyList())
+    val removedMine by communityRepo.removedMine.collectAsState(initial = emptyList())
     val blogs by communityRepo.blogs.collectAsState(initial = communityRepo.getProfessionalBlogs())
 
     var searchQuery by remember { mutableStateOf("") }
@@ -215,6 +216,42 @@ fun ParentCommunityHubScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // The owner removed one of this person's posts (migration 20260915230000): tell them.
+            if (removedMine.isNotEmpty()) {
+                item {
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                androidx.compose.material.icons.Icons.Filled.Warning, null,
+                                tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp)
+                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    if (s.isThai) "โพสต์ของคุณถูกลบ ${removedMine.size} รายการ" else "${removedMine.size} of your posts were removed",
+                                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                removedMine.take(3).forEach { removed ->
+                                    val reason = removed.reason?.takeIf { it.isNotBlank() }
+                                        ?: if (s.isThai) "ไม่เป็นไปตามแนวทางชุมชน" else "Against community guidelines"
+                                    Text("\"${removed.preview}\" — $reason", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer)
+                                }
+                                Text(
+                                    if (s.isThai) "ผู้อื่นจะไม่เห็นโพสต์นี้แล้ว" else "Others can no longer see it.",
+                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            TextButton(onClick = { communityRepo.dismissRemoved(removedMine.map { it.id }) }) {
+                                Text(if (s.isThai) "รับทราบ" else "OK", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Search Bar
             item {
                 OutlinedTextField(
@@ -835,15 +872,44 @@ private fun CommunityPostCard(
             )
 
             if (!post.imageUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = post.imageUrl,
-                    contentDescription = "Post image",
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 240.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                )
+                val mediaContext = androidx.compose.ui.platform.LocalContext.current
+                val thumbnail: @Composable () -> Unit = {
+                    Box(contentAlignment = Alignment.Center) {
+                        AsyncImage(
+                            model = post.imageUrl,
+                            contentDescription = if (post.videoUrl.isNullOrBlank()) "Post image" else "Video thumbnail",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                        if (!post.videoUrl.isNullOrBlank()) {
+                            Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f)) {
+                                Icon(
+                                    Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White,
+                                    modifier = Modifier.padding(8.dp).size(26.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                if (post.videoUrl.isNullOrBlank()) {
+                    thumbnail()
+                } else {
+                    // ponytail: no in-app player — the clip opens in the phone's own video app.
+                    Surface(
+                        onClick = {
+                            runCatching {
+                                mediaContext.startActivity(
+                                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(post.videoUrl))
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Transparent
+                    ) { thumbnail() }
+                }
             }
 
             // Tags (clickable to filter)

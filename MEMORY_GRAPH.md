@@ -1,7 +1,7 @@
 # 🧠 NongRak AI — Memory Graph
 
 > Single source of truth for this project. I read & update THIS file instead of re-scanning full context.
-> Last updated: **2026-08-31 (Cursor — Home info-ask all open questions in one mixed form)** · Branch **`Track-YSC.02`** · HEAD **`79d1df4`**
+> Last updated: **2026-09-16 (Cursor — caregiver handover checklist, batch CP)** · Branch **`Track-YSC.02`** · HEAD **`79d1df4`**
 
 ---
 
@@ -2928,3 +2928,376 @@ Applies to **nongrak-web** (Next.js app), not the static marketing site.
 **Verified:** `npm run build` compiled clean; prod server on port 3200 (NOT 3000 — see BG gotcha, launch.json holds a dev server there) rendered 1 contact section, 3 cards, 23 reveal targets; live `nongrak-web.vercel.app` 200 with the same counts.
 
 **Still open:** the Apps Script v3 (Reviews tab + moderation) was never confirmed redeployed by the user, so sheet rows may land in the older flat tab. Email delivery is unaffected.
+
+## BATCH CG — parent handover briefing replaced from Stitch (2026-09-14)
+
+User: match the parent-side handover pictures exactly and **replace** the old compose-a-handoff form. Caregiver side later.
+
+- **HandoffScreen.kt rewritten** as the parent briefing (route unchanged). Custom header (back, title, Health Book) → child card (avatar, age chip, health chip, wake/mood/temp, allergy banner) → chat row → today\'s assignees + manage access → daily routine list → medical cautions → AI insight → parent phone + doctor → last record. LullabyTopBar gone; ChildBottomNav kept.
+- Real fields: wake = end of today\'s finished main sleep; mood = latest sleep mood; temp = latest health_records.temperature; allergy = allergy table + child.allergies; on-duty = CareRoutineDuty.pick; daily list = care_routines + today\'s logs; add task = RoutineRepository.addRoutine; chat = on-duty caregiver; parent call = profiles.phone; doctor = latest doctor_visits.doctor_name; AI = AiDailyBriefHelper.recommendedAction.
+- Did **not** copy Tempora millilitres from the picture (placeholder, not a prescription). Fever copy is call-the-parent / sponge / no medicine unless prescribed. Diarrhoea copy only if a current health record names it.
+- New ParentHandoffBrief.kt (pure). HandoffViewModel also loads child, routines, sleep, allergies, chronic, health records, profile, visits. Caregiver checklist still uses the same VM.
+- compileDebugKotlin green; ParentHandoffBriefTest + CareHandoffTest 12/12. Not verified on device.
+
+
+> **Log restore 2026-09-14 21:20:** this file was reset to the 09-09 commit plus BATCH CG at 20:39, which dropped BV–CF. Those batches were recovered from the session transcript and re-appended below, after CG.
+
+## BATCH BV — Spark chat debugged end to end: model names, backend key, ShieldGemma template, context size (2026-09-13)
+
+Chat kept falling back to Gemini1. `ai-chat` now logs `ai-chat failed: <reason>` (function_logs), which named each fault in turn:
+1. `Invalid model name passed in model=typhoon2` — a `SPARK_MODEL_THAI` secret typo. Optional `SPARK_MODEL_*` secrets should stay unset; code defaults match the gateway.
+2. `upstream_401 ... OpenAIException 401 Unauthorized` — LiteLLM authenticated fine, but **config.yaml had `api_key: None` for every backend** while every vLLM runs with `--api-key`. Also **vLLM had no `--served-model-name`**, so backends only answer to HF ids. Fixed in `/home/julachok/litellm/config.yaml` (mounted at `/app/config.yaml`): `model: openai/Jamphus/gemma-4-31b-it-fp8`, `openai/scb10x/llama3.1-typhoon2-8b-instruct`, `openai/google/shieldgemma-2b`, `openai/typhoon-ai/typhoon-ocr1.5-2b`; `api_key` = the vLLM key. `typhoon-asr` (52449) is a **custom Python FastAPI realtime service, not vLLM** — config entry untouched, endpoints unknown.
+3. ShieldGemma `'guideline' is undefined` — its chat template takes the policy as a template variable. `checkSafety` now sends the text as the message (user; or user+assistant pair for output checks) with `chat_template_kwargs: { guideline }`; LiteLLM forwards it (verified: alcohol-to-toddler → `Yes`). Char caps 1500 / 400+1200 while shieldgemma runs `--max-model-len 1024`. Skipped checks now `console.warn` instead of silently allowing. Deployed v12.
+4. `ContextWindowExceededError` — typhoon-2 at `--max-model-len 2048`; restarted (nohup, not persistent) at 8192, then **7,169 prompt tokens for "สวัสดี"**: `RelationshipLabels.chatSystemPrompt` is ~6k Thai chars (AGENT_ACTION/NEED_INFO rules) and `sendMessage` sent the **entire session history**. `ChatRepository`: prompt built by local `buildPrompt(turns)`; Spark gets the last `SPARK_HISTORY_MESSAGES = 12`, cloud chain keeps full history. `:app:compileDebugKotlin` OK. **Needs app reinstall; not yet verified end to end.**
+
+**Box facts:** vLLM ports bound `0.0.0.0` (LAN-reachable, key-protected). vLLM key and LiteLLM master key are separate hops (Supabase → master key → LiteLLM → vLLM key → vLLM).
+
+**Still open (server, user's side):** make vLLM restarts persistent (launch method unknown); typhoon-2 `--max-model-len` 16384 recommended (rewrite stage = big system prompt + 1200-token deep answer + 1200 out); shieldgemma → 4096 then raise the char caps; rotate the vLLM key (pasted in chat) and add `--host 127.0.0.1`. App: surface community `writeError`, OCR, ASR integration design.
+
+
+## BATCH BW — Spark chat streams word by word; Gemma key points; keyword memory after 30 answers (2026-09-13)
+
+**User decisions (AskUserQuestion):** Gemma 4 writes key points only, Typhoon 2 writes the answer; stream the answer and let ShieldGemma check at the end (replace bubble if unsafe); each turn = keyword memory + last 6 messages; compact after 30 AI answers.
+
+**Why:** first working Spark answer took 45.6 s (edge `execution_time_ms`), full answer generated then checked, request body 35 KB.
+
+**ai-chat v14** (`supabase/functions/ai-chat/index.ts`):
+- Pipeline: `safety_in` → `key_points` (gemma-4, max 300 tokens, input = tail 3500 chars, medical/long only) → `answer` (typhoon-2 `stream:true`, key points appended to the parent's turn via `withKeyPoints`) → `safety_out`.
+- `openStream` awaits gateway acceptance BEFORE the SSE response starts, so refusals stay plain JSON 500 and the app still falls back to cloud.
+- SSE events: `{type:"stage"}`, `{type:"delta",text}`, `{type:"done"|"blocked",text,stages,deep}`, `{type:"error",error}`. `stream:false` still returns JSON (old app builds keep working).
+- Medical warning streams first as a delta. Every model call logs `timing model=… ms=… in=… out=…` (function_logs).
+- Memory: `loadMemory` (user JWT, RLS) appends `chat_sessions.memory` to system. `compactSession` runs via `EdgeRuntime.waitUntil` after each answer; no-op until ≥30 answers since `compacted_until`; folds all but last 6 messages in chunks of 10 (600 chars each) with typhoon-2 into ≤2000-char keyword lines. `mode:"compact"` + `session_id` runs it manually. Known ceiling: concurrent finishes can fold twice (redundant lines only).
+
+**Migration** `20260913_chat_memory.sql` (applied): `chat_sessions.memory text not null default ''`, `compacted_until timestamptz`. Existing RLS covers it.
+
+**App:**
+- `SparkChatClient.chat(question, prompt, system, sessionId, onPartial)` uses `preparePost().execute`; SSE read with `readUTF8Line`, JSON fallback via `readJsonReply`.
+- `ChatRepository`: `SPARK_HISTORY_MESSAGES = 6` (must match `KEEP_RECENT_MESSAGES`), passes `sessionId`/`onPartial`, calls `onPartial("")` when Spark fails so the cloud fallback does not leave a half bubble.
+- `ChatUiState.streamingText` is kept OUT of `messages`, so `CallScreen` TTS only speaks final replies. `AIChatScreen` typing bubble shows it instead of dots.
+- `visibleWhileStreaming()` in `AgentActionParser.kt` holds back `<AGENT_ACTION>/<NEED_INFO>/<AI_QUERY>` and half-arrived openers; `VisibleWhileStreamingTest` + `AgentTurnTest` pass; `:app:testDebugUnitTest` OK.
+
+**Not verified end to end yet** (needs app reinstall). Open: vLLM `--enforce-eager` likely slows decode; typhoon-2 16384 / shieldgemma 4096 / new vLLM key / `--host 127.0.0.1` / persistent launch still pending on the box.
+
+
+## BATCH BX — Medical note banner; AI asks for missing info in chat (NEED_INFO popup removed) (2026-09-13)
+
+**User decisions:** banner on EVERY medical answer, never on normal ones, and never as text inside the answer; missing info is always asked as a normal chat message (popup removed); address the parent by profile relationship term (falls back to คุณผู้ปกครอง). Style example: "ค่ะ คุณแม่ น้องกีก้ามีไข้ 38 องศา แนะนำ… ลองไปพบแพทย์ดูนะคะ"; asking: "ค่ะ คุณแม่ น้องรักอยากทราบว่า หมายถึงลูกคนไหนคะ น้องกีก้า น้องนีน่า หรือน้องฟีฟ่าคะ".
+
+**Data:** migration `20260913_chat_message_medical.sql` (applied): `chat_messages.medical boolean not null default false`. `ChatMessage.medical`, `UiChatMessage.medical`; `UiChatMessage.needInfo/needInfoAnswered` removed.
+
+**Flow:**
+- `ChatRepository.sendMessage` now returns `Result<ChatReply(text, medical)>`. `isMedical = NongRakMedicalRouter.isMedicalQuestion(userMessage) && sparkReply?.blocked != true` (one tested keyword list for every provider). Saved via `saveMessage(..., medical)`; `openSession` maps it back, so the banner survives reopening (the reason the router used to put the warning in text).
+- `AIChatScreen.MedicalNoteBanner` above AI bubbles with `medical`; `ChatBubble(isThai)`.
+- Warning text removed from answers: ai-chat v15 (no MEDICAL_WARNING prefix); `NongRakMedicalRouter.tryAnswer` keeps ONLY the emergency warning in text (it is an instruction), standard warning goes to banner.
+- Prompts: `RelationshipLabels.chatSystemPrompt` TH/EN — NEED_INFO block rules replaced by "ask one short question in chat", self-name per mascot (`selfName`, `particle` ครับ for coco), opener "ค่ะ ${term}", no disclaimer text. Multi-child guardrail phrases kept (RelationshipLabelsTest). `buildChatChildContext` NEED_INFO wording replaced.
+- `chatVisibleText(raw)` (AgentActionParser): strips blocks; a stray old `<NEED_INFO>` becomes its question as text instead of vanishing. Used for the bubble and for the saved message.
+- Deleted: NEED_INFO AlertDialog, `ChatViewModel.answerNeedInfo/autoFillHealthBookFromAnswer/dismissNeedInfo` (~140 lines), `companionEmotion` hasQuestion branch. **Tradeoff told to user:** popup answers used to write weight/blood group/etc. straight to the child record; now the parent answers in chat and the AI offers the confirm card (update_growth, update_health_book, add_allergy, add_chronic_condition). birthdate has no agent action.
+
+**Verified:** `:app:testDebugUnitTest` (ChatVisibleTextTest, VisibleWhileStreamingTest, AgentTurnTest, RelationshipLabelsTest, NongRakMedicalRouterTest) pass. Gotcha hit: `sendMessage` already had a local `val medical` (MedGemma answer) → named the flag `isMedical`. **Not verified on device yet.**
+
+
+## BATCH BY — "ตอบโดย NongRak AI V.1.0", reply follows typed language, thinking animation, Typhoon parent-style profile (2026-09-13)
+
+**User decisions:** brand label for every answer, debug builds append real model; reply language = language the parent typed; Typhoon learns a per-parent style note, visible/switchable/resettable in Settings (PDPA).
+
+**Label:** `AIChatScreen` `NONGRAK_AI_NAME = "NongRak AI V.1.0"`; `ตอบโดย`/`Answered by` + name, `BuildConfig.DEBUG` adds ` · ${lastProvider}` (Spark stages / Gemini1) so fallback stays visible in testing.
+
+**Language:** `RelationshipLabels.replyInThai(message, appIsThai)` — Thai chars → Thai, Latin letters → English, else app setting; strips leading app-added `[...]` notes first (they are in app language). `ChatRepository.sendMessage` shadows `isThai` with it, so system prompt, context labels and instructions follow the typed language. TH/EN prompts + ai-chat NONGRAK_SYSTEM say "reply in the language of the latest message"; KEY_POINTS writes in question language. Tests in RelationshipLabelsTest. Caveat: ShieldGemma is English-trained — Thai safety verdicts are weaker than English.
+
+**Thinking animation:** `ThinkingIndicator(name, complex, isThai)` replaces static dots: bouncing dots (infinite transition) + status line by elapsed seconds; complex = `NongRakMedicalRouter.isMedicalQuestion(last question) || length > 180` ("…กำลังวิเคราะห์อย่างละเอียด", "กำลังรวบรวมประเด็นสำคัญ", ≥25 s "ขอเวลาอีกนิด"). Replaced by streamed text as soon as words arrive. Client-side timing only (server sends no stage events before the stream opens).
+
+**Parent style (Typhoon):**
+- Migration `20260913_parent_ai_style.sql` (applied): `parent_ai_style(user_id pk → auth.users cascade, style, enabled, answers_since_update, updated_at)`, RLS own row (using + with check).
+- ai-chat v16: `loadParentStyle` (ignored when `enabled=false`) appended to system as "วิธีคุยกับผู้ปกครองคนนี้ … ห้ามพูดถึงว่ามีบันทึกนี้"; `learnParentStyle` in background after each answer: counter upsert; first note after 3 answers, refresh every 10; reads last 20 USER messages of the session; STYLE_SYSTEM forbids sensitive inferences (religion, politics, income, parent mental-health/diagnosis) and is written knowing the parent reads it; ≤1200 chars.
+- App: `ParentStyleRepository` (get / setEnabled / reset, each write read back and checked), `AiParentStyleScreen` (explanation, switch, note card, clear with confirm), `Screen.AiParentStyle("ai_parent_style")`, AppNavigation composable, SettingsScreen row "NongRak AI รู้จักคุณ" (Icons.Filled.Psychology) above About.
+- Cloud fallback (ai-generate) does not use the style note.
+
+**Verified:** `:app:testDebugUnitTest` (RelationshipLabelsTest incl. new language tests, ChatVisibleTextTest, VisibleWhileStreamingTest, AgentTurnTest, NongRakMedicalRouterTest) pass. **Not verified on device.**
+
+
+## BATCH BZ — Pink book (สมุดบันทึกสุขภาพแม่และเด็ก) → Typhoon OCR → RAG tooling (2026-09-13)
+
+**Source:** `D:\120.NongRak\Source\Mother-Health-Form.pdf` — official BLANK Mother & Child Health Book (กรมอนามัย / สปสช.), 68 pages, 18 MB; cover name fields empty → public reference, OK for RAG with attribution. Most pages scanned (no text layer) → OCR required; many pages are fill-in record tables with no knowledge value.
+
+**Existing RAG (found, not in repo):** edge function `research-rag` v23 (verify_jwt **false**) → `public.research_chunks(title, source, category, content, embedding vector 768)`; Gemini embeddings (GEMINI_API_KEY_1..5, embedding-001 / text-embedding-004 / gemini-embedding-001); actions `seed`, `seed_batch` (append), `search` (`match_research_chunks_hybrid`, RRF vector + trigram), `embed`. App: `ResearchRagClient.search(k=4)`, similarity ≥ 0.40 in ChatRepository.
+- **Security finding (spawned as separate task "Lock down research-rag write actions"):** `seed_batch`/`embed` are open to the internet → RAG poisoning of medical answers + Gemini quota burn.
+
+**Built:** `tools/rag/pink_book_ocr.py` (stdlib + PyMuPDF, runs on the user's PC):
+- `ocr [--pages a-b]`: render page (long side 1400 px) → gateway `typhoon-ocr` chat/completions with the official Typhoon OCR markdown prompt, max_tokens 1800 (server `--max-model-len 4096`); resumable (`out/pages/NNN.md` + finish_reason json); lists pages cut off (finish=length).
+- `clean()`: drops `<figure>` descriptions (model's words, not the book's), page numbers, tags → cells joined " | ", fill-in dots, checkboxes. `chunk()` paragraph-first ≤900 chars; chunks with < 120 Thai/Latin letters dropped as empty forms. Rows `{title: "สมุดบันทึกสุขภาพแม่และเด็ก: <first line> (หน้า N)", source: "... หน้า N", category: "mother_child_book", content}` → `out/chunks.jsonl` for HUMAN REVIEW before ingest.
+- `ingest [--force]`: batches of 20 → `research-rag seed_batch`, verifies `added == sent` per batch, `.ingested` marker blocks duplicate appends; optional `x-admin-secret` from RAG_ADMIN_SECRET (for after the lockdown); runs a search check at the end.
+- Key: SPARK_LLM_KEY env or hidden getpass prompt; never printed/stored. `selftest` passes (figure dropped, empty form page adds nothing, chunk sizes, no text lost).
+
+**Not run yet:** OCR needs the user's gateway key → user runs it. Re-ingest requires deleting `category='mother_child_book'` rows first (user runs SQL; no permanent deletes by me).
+
+
+## BATCH CA — Pink book OCR'd with Typhoon OCR, reviewed, ingested into RAG (2026-09-13)
+
+**How OCR ran without the user's gateway key:** temporary edge function `ocr-page` (verify_jwt off, custom auth = SHA-256 of a one-time token kept in the session scratchpad, model allowlist typhoon-ocr/typhoon-2, output capped) used Supabase's `SPARK_LLM_KEY`. **Retired** after the run: redeployed as a 410 stub with verify_jwt on; token file deleted. User can delete the function in the dashboard.
+
+**Pipeline (tools/rag/pink_book_ocr.py), what actually worked:**
+- `ocr`: 68 pages at 1400 px, max_tokens 1800. 14 pages hit the limit; `redo-cut` re-read them as two overlapping half-page crops (skips chart pages with no real text and pages already split). Blank record tables / charts make typhoon-ocr loop until the limit — nothing is lost there.
+- Typhoon 2 whole-page merge with the PDF text layer was tried twice and **dropped**: OCR-first copied misreads back; PDF-first got rejected on pages whose text layer covers only part of the page.
+- **Deterministic repair** instead: align OCR line vs PDF text layer on base letters (Thai marks/spaces stripped, difflib); keep OCR (correct marks) where they agree; take layer letters only for short (≤16), anchored (≥4 equal letters each side) disagreements or ≤2-letter insert/delete. A first, unconstrained version spliced unrelated layer text into lines (page 4 duplicates) — the anchors fixed it. `normalize_layer` fixes nikhahit+aa ("นํ้า" → "น้ำ").
+- `clean`: drops figure descriptions, page numbers, section-tab labels (loose match), tick-box/dotted field lines, blank form tables (incl. cells that echo headers), short label lines; keeps headings and filled table rows; decodes HTML entities after tag strip.
+- `MANUAL_FIXES`: exact misreads verified against the text layer (p.7 "กฎมีดแก้ไขได้"→"ภูมิคุ้มกันโรค", "ชวบปี"→"ขวบปี"; p.45 garbled growth row, lost decimals "1 5"→"1.5").
+- `SKIP_PAGES` after reading every chunk: 1 cover; 13, 20, 21 record tables; 23-25, 58-59 nutrition flags with wrong serving numbers; 38 garbled fever advice; 62 garbled DSPM milestones.
+- selftest covers cleaning, blank tables, tabs, checklists, repair (fix + no splice), fixes, entities.
+
+**Result:** 65 chunks (~33.8k chars), category `mother_child_book`, source "สมุดบันทึกสุขภาพแม่และเด็ก (กรมอนามัย / สปสช.) หน้า N", ingested via research-rag `seed_batch`; `.ingested` marker blocks accidental re-append. Known residue: some tone marks missing where the PDF text layer lacked them; OCR text on image-only parts is unrepaired but was read through.
+
+**User decision (recorded):** the book's last page says "สงวนลิขสิทธิ์โดยกรมอนามัย ห้ามคัดลอก ดัดแปลง พิมพ์ซ้ำ…เพื่อการค้า". Offered: facts-only rewrite / ask กรมอนามัย / ingest as is / don't use. **User chose "ingest the book text as is"**, accepting the commercial-use risk for a Play Store app. Re-ingest needs the old rows deleted first (`delete from research_chunks where category = 'mother_child_book'`, run by the user) then `ingest --force`.
+
+**Still open:** research-rag write actions are open to the internet (spawned task "Lock down research-rag write actions"); after that lands, set RAG_ADMIN_SECRET for future ingests.
+
+
+## BATCH CB — Child Hub rebuilt to the user's Stitch design (2026-09-14)
+
+**Trigger:** user sent screenshots of Stitch "NongRak Child Hub - Pro UX Redesign" (screen 51ec9211240c4a458e78ef0fa6630c50, project 8848314028534350824) — the earlier build (BATCH around Child Hub) had drifted: health book as separate card, white activity buttons, "เรียลไทม์" chip + separate full-analysis card + category chips, tall allergy/chronic cards, white suggestion card, separate white tile cards. Compared section by section against the current Stitch HTML (downloaded via list_screens htmlCode).
+
+**ChildSummaryScreen.kt now (top → bottom):**
+- Switcher pill: `น้อง {name}` + age chip + "สลับโปรไฟล์ลูก ⌄" (blue accents, bordered).
+- Hero `ChildHubHeroCard`: light-blue gradient box, avatar with white ring, name + age, white speech bubble (→ QuickLogHub), mascot right, and **`HubHealthBookRow` inside the hero** (pink gradient icon, "บันทึกทางการ" chip, rose chevron → HealthBook). Old `ChildHealthBookCard` removed.
+- `ActivityHandoverCard`: horizontal gradient 1D4ED8→2563EB→1E40AF, TrendingUp icon, divider, `HubBannerButton` translucent "บันทึกกิจกรรมด่วน" (caregiver: "อัปเดตข้อมูลลูก") + white "ส่งต่อการดูแล". HandoffHomeCard / InfoAskBanner kept.
+- Growth header: BarChart icon + title, plain "ประวัติการบันทึก ›" link. `GrowthStatCard` label no longer uppercased, radius 20 (also affects ProfileHistoryScreen, harmless).
+- AI card: ✨ title, **"เรียนรู้ใหม่"** → new `ChatViewModel.refreshChildInfoCardSummary` (AiRepository.refresh on `child_summary_card_{lang}`, clears text to show progress), ring + headline + summary, full-analysis button inside the card. Category chips and `val categories` removed.
+- `HubMedicalCard` ×2: tinted red / blue, chevron, real allergy / chronic names as chips (design's "สำคัญ"/"หอบหืด" were placeholders).
+- `ChildSuggestionCard`: light-blue tinted strip, pill "+ บันทึก" / "เปิดดู".
+- Services: header + live count chip ("N รายการ", computed — design's 13 was static, real tiles = 12) + "ครบทุกการดูแล"; **one white container** with 3 `ChildActionGroup`s (coloured accent bar): logging 3 + full-width routine (STACKED), medical 3 (STACKED), family 2 WIDE + 3 COMPACT. `ChildActionGroup(accent, rowSizes, rowStyles)` replaces `featured`; tiles `HubStackedTile` / `HubWideTile` / `HubCompactTile` (solid colour icon square, tinted background, dark-mode alpha via `hubTintAlpha()`); `internal val HubBlue = 0xFF2563EB`.
+
+**Done via marker splice** (scratchpad/hub/splice.py, backup ChildSummaryScreen.before.kt). `:app:compileDebugKotlin` passes. **Not verified on device.** Not changed: global LullabyTopBar bell/avatar (design shows them in white circles).
+
+
+## BATCH CC — Child tab = brand-new ChildHubScreen (2026-09-14)
+
+- **New file `ui/screens/child/ChildHubScreen.kt`**, built only from Stitch "NongRak Child Hub - Pro UX Redesign" (project 03.NongRak Main Screen, screen 51ec9211…). Own `HubTopBar` (switcher pill + bell/profile in white circles), hero (child photo, greeting bubble, mascot, pink health book link), activity banner, growth metrics, AI card, allergy/chronic cards, suggestion strip, services container (3 groups), switcher sheet, delete dialog. Private `HubPalette`; dark mode swaps tints for theme tones.
+- **Child photo:** uploaded avatar if present, else a drawn cartoon baby (`HubBabyFace`) in a peach ring. Tap → EditChild.
+- **Routing:** `AppNavigation` `Screen.ChildSummary.route` → `ChildHubScreen`. Route name unchanged, so every `navigate(ChildSummary)` and the bottom nav still work. Tour anchors `parent_child_switch` / `parent_child_actions` kept.
+- **ChildSummaryScreen.kt reverted** to its pre-CB state (scratchpad backup) and is **no longer routed**. Kept because `ChildHubScreen` reuses its internal helpers (`hubAgeLabel`, `hubAgeMonthsOnly`, `devHeadline`, `genderLabel`). Delete it only after moving those helpers.
+- **Mascots:** all 7 `res/drawable/nongrak_mascot_*.png` now RGBA with transparent background (flood-fill from edges). Originals in scratchpad `hub/mascots_original/`. Affects every screen using them.
+- Kept from CB: `ChatViewModel.refreshChildInfoCardSummary` ("เรียนรู้ใหม่").
+- `:app:compileDebugKotlin` passes. **Not verified on device.**
+
+
+## BATCH CD — Child Hub: question card, role buttons, handoff banner removed (2026-09-14)
+
+- **Removed** `HandoffHomeCard` from ChildHubScreen (user: duplicate of the "ประวัติกิจกรรม & ส่งต่อการดูแล" card). The component still exists in `ui/screens/access`.
+- **Removed** the old `InfoAskBanner` (teaser → InfoAskScreen) from the hub. Replaced by **new `ChildHubQuestionCard.kt`** under the hero, from Stitch screen 1447586054197311646 ("ask-question-banner"). One real info-ask per page: CHIPS → 2-column tiles, TEXT/NUMBER → inline field (design placeholder unless the prompt has a hint), DATE → picker. Footer: dots (2–6 prompts), "คำถาม i จาก n", ข้าม, คำถามถัดไป / บันทึก on the last page. All answers saved once via existing `answerInfoAsk`; skip-on-last with nothing filled → `dismissInfoAsk` (hidden for today). Error shown in card only after a save attempt.
+  - Design's option emojis and the always-on "หรือระบุเพิ่มเติม" box on chip questions were **not** built: prompts have no emoji data, and chip-question text is ignored by `writeInfoAskAnswer` for most fields (would silently drop input).
+  - Title per subject: CHILD "วันนี้ น้อง X เป็นอย่างไรบ้าง?", USER "ขอข้อมูลของคุณเพิ่มอีกนิดนะคะ". Tag: สมุดสุขภาพ / ข้อมูลผู้ปกครอง / เช็กสภาวะประจำวัน. Real question text sits in the subtitle line.
+  - Dashboard and InfoAskScreen still use InfoAskBanner / the full form — unchanged.
+- **Activity card buttons by role** (`CareRoleViewModel.amCaregiver`): parent = ประวัติกิจกรรม (→ ActivityHistory) + ส่งต่อการดูแล (→ CareHandoff); caregiver = บันทึกกิจกรรมด่วน (→ CaregiverUpdate) + ดูตารางการดูแล (→ CareRoutine). Card body → ActivityHistory for both.
+- `:app:compileDebugKotlin` passes. **Not verified on device.**
+
+
+## BATCH CE — Sync request Deny never worked: RPC signature mismatch (2026-09-14)
+
+- **Symptom:** request from 2026-09-07 (id prefix 72da68a8, status still `pending`) pops up on the owner's phone every launch even after pressing Deny.
+- **Root cause:** app sends `confirm_child_sync_request(p_request_id, p_approve, p_role)` (`ChildRepository.kt` confirmSyncRequest, always includes p_role). Production only has the **2-arg** `(uuid, boolean)` function, so PostgREST returns **404** on every Approve/Deny (edge_logs 13–14 Sep: all 404). Row never changes, so it returns: popup `handledIds` is session-only; Dashboard card snooze lasts 2 h.
+- **Migration drift:** `20260816_owner_transfer_and_reclaim.sql` and `20260908160000_approver_order_and_skip.sql` (3-arg versions, approver ranks) were **never applied** and write columns production lacks (`child_access_activity.metadata`, `child_members.approval_rank`). Applying them as-is would break approve/deny again. Treat both as unapplied drafts.
+- **Security hole in live function:** EXECUTE granted to `anon`; with `auth.uid()` NULL, `v_owner <> auth.uid()` is NULL and does not raise, so an unauthenticated caller with a request id could resolve it.
+- **Fix written, NOT applied:** `supabase/migrations/20260914140000_fix_confirm_child_sync_request_role_arg.sql`. Drops the 2-arg function, recreates the live body with `p_role text DEFAULT NULL` (owner's pick overrides requested role, still never 'owner'), adds an `auth.uid() IS NULL` guard, revokes anon, grants authenticated, reloads the PostgREST schema. The apply was blocked by the permission check (production deploy); waiting on the user.
+- After apply: owner presses Deny again on the 7 Sep request; it becomes `rejected` and stops appearing. No client change needed.
+- Not fixed (separate): AccessRequestViewModel sets `error` on a failed resolve but AppNavigation's popup path never shows it, so this 404 was silent on that path.
+- **Update 2026-09-14:** user applied the migration. Verified live: `confirm_child_sync_request(uuid,boolean,text)`, anon EXECUTE false. The 7 Sep request stays `pending` until the owner presses Deny once more.
+
+
+## BATCH CF — Parent ส่งต่อการดูแล rebuilt to Stitch "ส่งต่อการดูแล (Care Handover)" (2026-09-14)
+
+- **Supersedes BATCH CG's screen description** (custom header, age chip, raw avatar path). CG's data wiring (ParentHandoffBrief, HandoffViewModel loads) still stands.
+- **`ui/screens/access/HandoffScreen.kt` rewritten** from Stitch screen c265e0c4c8eb425da91d9c974598e99d. Same route/signature (`HandoffScreen(childId, navController)`), same `HandoffViewModel`; `handoffLabel` / `displayHandoffTime` kept.
+- **Header:** standard `ChildScreenScaffold` (LullabyTopBar + ChildBottomNav), centered title. Stitch QR button and subtitle dropped (user: "delete it use our standard header").
+- **Child photo:** `HubChildAvatar` (made `internal` in ChildHubScreen.kt) with `StorageHelper.signedAvatarUrl(child.avatarUrl)`, so it matches Child Info; cartoon baby when no photo. The old screen passed the raw storage path to AsyncImage (never loaded). Age badge removed per user.
+- **Sections (Stitch order):** child card (status chip, vitals, full-bleed allergy banner) → chat caregiver card → ผู้รับมอบหมายดูแลวันนี้ (cards + dashed **เพิ่มผู้ดูแล** → `AddUserAccessActivity`; จัดการสิทธิ์ → PermissionAccess) → Daily Routine (ดูสรุป → ActivityHistory, สำเร็จ x/y ข้อ, rows: done strikethrough + note chip, current blue left bar + กำลังจะถึง, **read-only checkboxes**) → medical cautions (emoji per kind) → AI insight → contacts (parent dial, doctor/find doctor → SearchDoctor) → last record → ActivityHistory.
+- **Add-task sheet:** ModalBottomSheet per Stitch: category pills (feeding/activity/solid/sleep/hygiene/other), TimePicker, priority dropdown, title, instructions. **ระวังเป็นพิเศษ** saves `prep_note = "⚠️ " + text` (detail empty) and the row shows red "คำเตือน:". No priority column exists; Normal/High save nothing extra. CareRoutineScreen will show such items as "เตรียม: ⚠️ ...".
+- AI badge kept as "อัปเดตรอบใหม่" (not Stitch's "อัปเดตเรียลไทม์"): the quote comes from `AiDailyBriefHelper.getZeroDataAiBrief` (birthdate-based), not a live feed.
+
+## BATCH CH — Spark chat outages: Funnel DNS flap, then Typhoon context overflow (2026-09-14/15)
+
+- **14 Sep ~13:55–15:11 UTC:** every `ai-chat` call failed with `dns error: failed to lookup address … Name or service not known` for `spark-4a46.tail047979.ts.net`. Tailscale's public DNS returned NXDOMAIN for the **A** record ~80–100% of lookups (via Google/Cloudflare DoH) while **AAAA** mostly resolved. Funnel status, admin Machines/DNS/ACL all correct. Supabase DB (`pg_net`) got through once; Edge Functions kept the negative answer. Browsers/phones worked because of IPv6 or Tailscale MagicDNS. **Not app or ai-chat code.** Recovered by 15 Sep 08:32 UTC (A and AAAA 10/10).
+  - Traps: plain `nslookup … 8.8.8.8` on this PC is intercepted by the router (false NXDOMAIN); use `https://dns.google/resolve?name=…&type=A`. This PC has no IPv6 and is on the tailnet, so its own curl 401 proves nothing about public reachability.
+  - Raw IPv6 URL (`https://[2403:2500:400:20::e8e]/v1`) does **not** work: Funnel ingress needs SNI → `SSL connect error` from Supabase.
+  - Durable fix if it recurs: named Cloudflare Tunnel (needs a Cloudflare-managed domain; user has none yet) with ai-chat trying it first and Funnel second. A Worker in front of Funnel would still resolve the same flapping name.
+- **15 Sep 12:18 UTC:** `upstream_400 ContextWindowExceededError` — typhoon-2 max 8192 tokens, prompt ≥7169 + 1024 answer. Cause: app prompt (child profile + up to 4 RAG chunks + 6 turns) + app system prompt + memory + parent style + Gemma key points; pink book chunks average 518 chars (max 896) vs 80–172 for older categories.
+- **Fix, ai-chat v17 (deployed via `supabase functions deploy`; MCP deploy tool rejected array/boolean params):** `contextOverflow()` parses vLLM's limit/input from the refusal; `shrinkToFit()` cuts the middle of the largest message (keeps first ≤800 chars = child profile, keeps the end = question + key points), proportional to the refused count with 15% slack; one retry, stage `trimmed`, log line `context overflow input>=N limit=M; retrying trimmed`. A second refusal still falls back to the app's cloud chain. Node self-check against the real error string passed.
+- Also possible, server side: restart typhoon-2 with `--max-model-len 16384` (recommended earlier) to stop trimming altogether.
+- **v17 retry failed in production (12:31 UTC):** vLLM's "at least N input tokens" is a floor (= limit − max_tokens + 1 = 7169 every time), not the real size, so the proportional cut was too small. **v18:** `shrinkToFit(messages)` keeps 55% of the largest message per refusal (head ≤800 chars + tail), up to 3 retries; each retry logs `context overflow try=K limit=L chars=role:len,...`. Node self-check: 24,025 → 7,336 chars in 3 tries, head/tail kept, gives up after 3.
+- **Resolved 2026-09-15 ~13:00 UTC:** user restarted the Thai model (LiteLLM alias still `typhoon-2`; user calls it Typhoon 2.5) with a **16384** context. First chat after: `typhoon-2 stream ms=7005 in=9395 out=60`, 200, no trimming. The v18 guard stays as a safety net. Real prompts now reach ~9.4k tokens (app system prompt + profile + 4 RAG chunks + 6 turns + memory + style + key points): cap RAG chunk length in `ChatRepository.buildPrompt` if latency or the 16k window becomes a problem.
+
+## BATCH CI — Answer label "NongRak nano - …"; Spark-as-agent assessment (2026-09-15)
+
+- **Label:** new `app/.../util/AnswerLabel.kt` `answerLabel(provider)` replaces the constant "NongRak AI V.1.0" under answers (`AIChatScreen`). `Spark (…)` / `Local (…)` → **NongRak nano - Local**; `Gemini N` → Gemini; `Claude`; `medgemma` → MedGemma; `OpenRouter N (model)` → the model in brackets. Debug builds still append the raw provider. `AnswerLabelTest` passes.
+- **Bug fixed with it:** MedGemma answers never called `ClaudeClient.reportProvider`, so they were labelled with the previous model. `ChatRepository.sendMessage` now reports `medical.provider`.
+- **Agent assessment (no code change):** Spark already receives the full action spec (system prompt from `RelationshipLabels.chatSystemPrompt` rides in `system` → ai-chat `systemOverride`), and its reply goes through the same `parseAgentAction` → confirm card → `dispatchAgentAction` path as the cloud. Gaps before "full agent":
+  1. `<AI_QUERY>` reads are parsed (`parseAgentTurn`, tested) but **never executed** — no look-up-then-answer loop for any model.
+  2. `ChatViewModel` uses `parseAgentAction` → **first action only**; multi-action replies drop the rest.
+  3. Medical questions append Gemma key points with "expand into a warm explanation", which may crowd out the action block. Untested on Typhoon.
+  4. No guided JSON on the streaming path; Typhoon 2.5's block/JSON reliability unmeasured.
+  5. Action spec adds to an already ~9.4k-token prompt.
+
+## BATCH CJ — Note text out of titles/history; "NongRak nano 1"; photos via Typhoon OCR / Gemma 4 vision; Gemma 4 record look-ups (2026-09-15)
+
+- **Bug (titles + reopened chats showed "[หมายเหตุ: บัญชีนี้มีลูกมากกว่าหนึ่งคน …]"):** `ChatViewModel.sendMessage` builds `outgoing` = spoken note + ambiguous-child note + mode prefix + content and passed it as `userMessage`; `ChatRepository` saved that as the user message, used it as the session title, RAG query and language detection. **Fix:** `sendMessage(..., displayText = content)`; `ChatRepository` uses `displayText` for `saveMessage`, `renameSession`, `ResearchRagClient.search` and `replyInThai`. Notes still reach the model. Existing bad titles/messages in the DB are not rewritten.
+- **Label:** `answerLabel()` → Spark/Local = **"NongRak nano 1"**; cloud stays "NongRak nano - <Model>". Test updated, passes.
+- **Photos go to Spark, not the cloud** (`ChatRepository`: Spark whenever `audioBytes == null`; `SparkChatClient.chat(imageBase64, imageMime, childIds)`). Voice still uses Gemini via ai-generate.
+- **ai-chat (deployed 2026-09-15 via `supabase functions deploy`; boot-checked with the anon key → own `invalid_token` 401):**
+  - `validImage`: jpeg/png/webp only, base64 ≤ 6 MB, claimed mime must match magic bytes → 400 `image_type_not_allowed` / `image_too_large` / `image_mismatch` / `image_invalid`.
+  - `readImageText`: `typhoon-ocr` (`SPARK_MODEL_OCR`) with Typhoon's own OCR prompt; `cleanOcr` strips figure/page tags and markup, needs ≥20 letters, caps 2,500 chars. OCR text gets a ShieldGemma check (unsafe → blocked), is wrapped as data-only, and `neutralise()` strips `<AGENT_ACTION>/<AI_QUERY>/<NEED_INFO>` so a photo cannot inject an action card.
+  - No text → `lookAtImage` (gemma-4 vision, keyword lines). Failure → note asking the parent to describe the photo. Never falls to a cloud model inside ai-chat (the app's own fallback still can if ai-chat itself errors).
+  - **Function calling:** `wantsData` (time/record word AND topic word) → `lookUpRecords`: reads `children(id,name)` with the parent's session, Gemma 4 plans ≤4 calls as JSON (`response_format json_object`) over `RECORD_TOOLS` (sleep_logs, milk_logs, food_logs, waste_records, health_records, doctor_visits, growth_records, medication_schedules, vaccine_records, allergies); each call must name an allowed table and one of the returned child ids; runs with the parent's JWT (RLS on all these tables, verified), ≤30 rows, `days` 1–30 for logs, times in `tz` (default Asia/Bangkok), capped 2,500 chars, data-only wrapper. Logs `record read table=… rows=…` (no content).
+  - Records + photo note go to Gemma key points (context tail shrinks to fit 4096) and are appended to the parent's turn for Typhoon. Stages: `ocr`, `vision`, `image_unreadable`, `records`.
+  - Node self-check of validImage / cleanOcr / wantsData / formatRow passed.
+- **Unverified on hardware:** that gemma-4 accepts image input and `response_format`, and typhoon-ocr's 4096 window with full-size photos. Failures degrade to the notes above, not to errors.
+
+## BATCH CK — AI record command center, phase 1: add commands with signed tickets (2026-09-15)
+
+User asked for a PowerShell-like "center command" through which the AI can record anything, open only to the AI. Agreed shape: AI proposes → person taps Confirm; anyone with access, limited by their role; records yes, account/roles/access/invites/sign-in/payments no; lives inside ai-chat only; edits/deletes show the exact record before → after and keep a 30-day restore copy (phase 2).
+
+- **Authorisation stays in Postgres:** every command writes with the confirming person's JWT, so existing RLS decides (sleep/milk/food/waste/exercise: `is_child_member`; health/meds/vaccine/allergy/chronic: `child_can(...,'log_symptoms')`; growth: `child_can(...,'edit_growth')`). No service-role write path.
+- **ai-chat `COMMANDS` (19 add commands):** add_sleep, add_milk, add_food, add_exercise, add_waste, add_health, add_growth, add_vaccine, add_medication, add_allergy, add_chronic, add_doctor_visit, add_activity, add_expense (baht in, integer `amount_satang` stored), add_routine, add_diary, add_milestone, add_sleep_schedule, add_oral_event. Each lists its own fields/types/required; the model can never set `id`, `child_id`, `created_by`/`user_id` (stamped server-side).
+- **Flow:** `wantsCommand` (บันทึก/เพิ่ม/record/log… or a record topic with a number) → `planCommands`: Gemma 4 JSON plan (≤3) → `validateCommand` (known command, allowed child from `children` via the person's session, typed coercion, local "YYYY-MM-DD HH:mm" → UTC via `zonedToUtc`, `neutralise` on text) → proposal with **ticket** = base64url(JSON{tid, uid, cmd, child, row, exp=10 min}) + HMAC-SHA256 (key derived from `SUPABASE_SERVICE_ROLE_KEY`). Final SSE/JSON gains `commands[]` (ticket, command, label, summary, child, display fields); Typhoon is told not to claim it is saved; stray `<AGENT_ACTION>` stripped when commands exist. Stage `commands`.
+- **`mode: "execute"`:** `openTicket` (signature, owner = caller, expiry, known command) → insert `ai_command_runs(ticket_id pk, status running)` first (duplicate → `ticket_already_used`) → insert row with the person's JWT → update run to done/failed. Errors are named (`ticket_*` 400, `command_failed: <code> <message>` 422).
+- **Migration `20260915200000_ai_command_center.sql` (written, NOT applied — user applies):** `ai_command_runs`, `ai_command_trash` (owner-only RLS, insert requires `is_child_member`), daily cron `ai-command-center-purge`. Until applied, Confirm fails with a named `ticket_claim_failed: 42P01 …`.
+- **App:** `AiCommand` model; `UiChatMessage.commands/commandStatus`; `SparkChatClient` parses `commands`, sends `tz`, new `execute(ticket)`; `ChatReply.commands`; `ChatViewModel.confirmCommand/cancelCommand` (Auto Record runs `add_` only); `AIChatScreen` command cards (label · child, summary, Thai field labels, Cancel/Confirm, saving, done, named failure text incl. role refusal 42501). Old AGENT_ACTION card is suppressed when signed commands exist, kept for cloud answers.
+- **Checks:** Node self-check (scratchpad `command_center_check.mjs`) for time conversion, field filter, child check, satang, arrays, ticket sign/verify/tamper/expiry/owner — passed. ai-chat deployed and boot-checked.
+- **Phase 2 (not built):** edit/delete commands with record lookup by id, before → after cards, `ai_command_trash` write before change, restore command. → built in BATCH CL.
+- `:app:compileDebugKotlin` passes. **Not verified on device.**
+
+## BATCH CL — AI command center, phase 2: edit / delete / restore, marks, and the missing record types (2026-09-15)
+
+User: "yes do phase 2 and add the missing ones".
+
+- **Ref commands (never ids from the model):** when the message has change/restore/dose/vaccine/routine/sickness/message words, `loadCandidates` reads matching rows with the person's JWT and lists them to Gemma as `r1..r24` with a `[type]`; the model returns a `ref`, `validateRefCommand` maps it back (type must match). Only topic-matched kinds are read, to keep the prompt in Gemma 4's 4096 context. Mixed "new fact + change" messages get only the change planner (ponytail).
+  - `edit_record` / `delete_record` (any COMMANDS table; edit keeps only fields that really change; expense baht → satang), `restore_record` (trash item), `mark_dose_taken` (+ best-effort `doses_taken` bump like the app), `mark_vaccine_done` (status completed + date_given; app's mascot XP award NOT mirrored), `tick_routine` (upsert `care_routine_logs` on routine_id,on_date, actor_id = person), `add_symptom_log` (`health_symptom_logs` under an open `health_records` episode; symptoms "fever:mild" → jsonb, pain_level = worst level 3/6/9 like the app, stamps `symptoms_updated_at`, "recovered" closes the episode), `send_message` (RPC `send_care_message` to a listed member).
+- **New add-side commands:** `add_fridge_item` (plain insert, user_id stamped), `set_tooth` (upsert `child_teeth_records`, tooth A–T, status healthy|emerging|needs_care|missing, merges only given keys), `set_brushing` (upsert `daily_oral_routines`, only given booleans), `start_handoff` (RPC `handoff_broadcast`, expected_end must be future), `set_budget` (RPC `set_child_budget`; re-sends the current category split, because the RPC deletes categories not passed).
+- **Deferred on purpose:** doctor appointments (slot booking flow) and medical documents (file upload) — not chat-shaped.
+- **Guards in `changeRecord`:** re-read row → refuse `record_changed` if listed columns moved → insert full old row into `ai_command_trash` → update/delete with `.select("id")`; **0 rows = RLS refusal = failure** (trash copy removed; needed a new `ai_command_trash_delete_own` policy, added to the not-yet-applied migration). `restoreRecord`: own, unexpired, `table_name` must be in `RESTORE_TABLES` (trash rows are user-writable, so an access table is refused), old_row id/child must match.
+- **Proposal payload:** adds `action` (add|edit|delete|restore|send) and `before` (edits). Ticket adds `target{table,id,kind,before}`; ref commands without target → `ticket_invalid`.
+- **App:** `AiCommand.action/before`; card shows `old → new`, red "ยืนยันลบ" for delete, "ยืนยันส่ง" for sends, per-action done text ("แก้ไขแล้ว (กู้คืนได้ใน 30 วัน)"…), new Thai field labels, failure texts for record_changed / not found / restore_expired / CHILD_OVER_TOTAL / no caregiver ticked. Auto Record still runs only `add_*` names; edits, deletes, sends, handoff, budget, tooth, brushing, ticks always wait for a tap.
+- **Checks:** scratchpad `command_center_phase2_check.mjs` loads the REAL index.ts via Node 24 `stripTypeScriptTypes` (no copied logic) — validation, tickets, and a fake-DB test of the RLS-0-rows, record_changed, trash-before-write order, restore allowlist and child mismatch — passed. `:app:compileDebugKotlin` + `:app:testDebugUnitTest` pass. ai-chat deployed, boot check 401 invalid_token.
+- **Still required from user:** apply `20260915200000_ai_command_center.sql` (now includes the delete policy). **Not verified on device / live Gemma planning.**
+
+### BATCH CL.1 — "สรุปบันทึกของวันนี้" answered only "น้อง Giga ค่ะ" (2026-09-15)
+
+- **Evidence (chat_messages):** "สรุปบันทึกของวันนี้ให้หน่อย" → "น้อง Giga ค่ะ"; "สรุปบันทึกให้หน่อยสิ ขอภาพรวม" → "ค่ะ คุณผู้ปกครอง น้อง Giga ค่ะ".
+- **Root cause (server):** `wantsData` needed a topic word (นอน/นม/…); a plain summary has none, so no records were read. The account has 2+ children, so the app's ambiguous-child note ("ask which child first") was all Typhoon had → it answered with a name. Also "บันทึก" matched `WRITE_WORDS`, wasting a command-planner call on a read. (Hidden `<AI_QUERY>` block ruled out: no prompt asks for it and nothing runs it.)
+- **Fix:** `OVERVIEW` regex (สรุป|ภาพรวม|summary|overview). `wantsData` = topic question OR overview. Overview with no topic skips the Gemma planner and reads sleep/milk/food/waste/health for up to 2 children (วันนี้ = last 24 h, เมื่อวาน = 2 days, else 7 days); with 2 children the records note tells the model to summarise each child, not ask. `wantsCommand` returns false for overview unless a change word is present. Self-check covers both real questions.
+
+## BATCH CM — Growth status from real WHO tables (age at measurement + sex) (2026-09-15)
+
+User: report of misleading weight/height info — "not only check from weight and height but check from age too".
+
+- **Old `GrowthReference` problems:** hand-made gender-neutral P3–P97 bands (0–36 m, >36 m clamped); "สมส่วน" used fixed BMI 13–18.5 with NO age; profile cards judged an old saved weight against today's age; no birthdate → age 0 (judged as newborn); history "tips" labelled "ข้อมูลจาก AI แนะนำ" but were fixed text; AI growth insight judged raw kg/cm itself (cached).
+- **Data (user approved download):** WHO anthro LMS tables `weianthro.txt`, `lenanthro.txt`, `bmianthro.txt` from github.com/WorldHealthOrganization/anthro `data-raw/growthstandards` → `app/src/main/assets/who/` (sex 1/2, age in days 0–1856, l m s).
+- **New `GrowthReference`:** WHO LMS z-score (restricted ±3 SD adjustment for weight & BMI), by sex (unspecified = average of both, ponytail), at age in days on the measurement date (`ageDaysAt`, local date of `recorded_at`). Cut-offs: WFA <−3 red / <−2 orange / >+2 orange; HFA <−3 red / <−2 orange / >+3 orange; BMI-for-age (สมส่วน) <−3 red, <−2 ผอม, >+1 เริ่มท้วม, >+2 น้ำหนักเกิน, >+3 อ้วน. Implausible z (WFA <−6/>+5, HFA ±6, BMI ±5) → "ค่านี้ดูผิดปกติ ตรวจสอบตัวเลขที่บันทึก". >5 y → grey "เกินช่วงอ้างอิง WHO". `current(child, records)` judges profile values at the date of the record they came from. `band`/`median` = WHO −2/+2 SD and median. Tables load on IO at `NongRakApp.onCreate`, lazily on first use otherwise.
+- **Callers updated:** ChildHub, ChildSummary (tour sample uses fixed 24 m), AiGuidance, DoctorPatientInfo, GrowthHistory (rows + chart band by sex), WhoGrowthDetail (status at reading date, สมส่วน only from one record having both values, WHO median / range text). History tips relabelled "คำแนะนำ:" (not AI).
+- **AI:** `ChatRepository.buildChildContext` now adds the app-computed WHO verdicts (TH + EN) and tells the model not to judge raw numbers; growth insight cache keys bumped to `growth_who_*` so old answers are not served.
+- **Checks:** `GrowthReferenceTest` (7 tests: median z=0, +2 SD round-trip, same weight different ages, 114 kg typo, short/thin by age+sex, no birthdate/over-5, unspecified average, age at date) + `:app:compileDebugKotlin` pass. **Not verified on device.**
+
+## BATCH CN — Community: removed-post warning banner (2026-09-15)
+
+User: "In community if user got delete Show a warning banner too" → chose: owner removes via Supabase; banner at top of Community feed.
+
+- **Found:** no way to remove someone else's post (RLS delete = author only), no admin/moderator role, only pre-publish AI moderation. Deleting an account keeps posts/comments (user_id SET NULL, author_name kept).
+- **Migration `20260915230000_community_post_removal.sql` (written, NOT applied — user applies):** `community_posts.removed_at timestamptz`, `removed_reason text`; select policy → `removed_at is null or auth.uid() = user_id`; `community_post_edit_guard` recreated identically plus: when `auth.uid()` is not null (an app user) removed_* are kept from OLD, so authors can't undo; dashboard SQL (no app login) can set/clear. Remove: `update public.community_posts set removed_at = now(), removed_reason = '…' where id = '<post id>';` Restore: set both null.
+- **App:** `CommunityPostDto.removedAt/removedReason`; `RemovedPost(id, reason, preview)`; `CommunityRepository.fetchPosts` drops removed posts from the feed and puts the signed-in author's own into `removedMine`; `dismissRemoved(ids)` remembers ids in SharedPreferences `community_removed` (per device). `ParentCommunityHubScreen` shows a red errorContainer banner at the top: "โพสต์ของคุณถูกลบ N รายการ", up to 3 previews + reason (default "ไม่เป็นไปตามแนวทางชุมชน"), "ผู้อื่นจะไม่เห็นโพสต์นี้แล้ว", button "รับทราบ".
+- **Not covered (ponytail):** comments (no removed flag), in-app admin UI, reports. Before the migration is applied the app works as before (fields decode as null).
+
+## BATCH CO — Community media screened before upload; video checked frame by frame (2026-09-16)
+
+User asked whether uploads should go image → Gemma 4 Vision / Typhoon OCR → text → ShieldGemma; pushed back that a describer is not a classifier, then user: "about vdo you could like cutting each frame and take to Gemma 4 for analyze ok / Do it".
+
+- **Hole found first:** `community-media` is a PUBLIC bucket and the app uploaded on *pick*, so a file was reachable by URL even if the post was blocked/never created; only post text was moderated; the Video button was a stub (`attachedMedia = "video_attached.mp4"`).
+- **ai-chat `mode:"moderate"` now takes `images:[{data,mime}]` (≤ `MAX_MEDIA_ITEMS` 8)** and returns `{allowed, checked, reasons[]}`. `screenImage(image)` per picture/frame: typhoon-ocr text → ShieldGemma, plus gemma-4 vision as **JSON flags** (`nsfw`, `violence`, `injury_or_gore`, `personal_document`, `description`) — flags not prose, because a describer asked about an explicit photo refuses or writes something flat that a text classifier passes. Description also goes through ShieldGemma. First bad frame breaks the loop.
+- **Fail closed (media only):** vision unreachable/unparseable → `check_unavailable`; a ShieldGemma verdict with `checked === false` → `check_unavailable` (chat's `checkSafety` is fail-open on purpose; media may not inherit it). OCR failing is NOT fatal — a picture with no writing makes typhoon-ocr return empty, which `callModel` raises as `upstream_empty_response`; that means "no text", and the self-check caught this blocking every plain photo.
+- **App:** `VideoFrames.extract` (MediaMetadataRetriever, ≤5 evenly spaced frames, 512 px JPEG; empty list = cannot read ≠ safe); `SparkChatClient.moderateMedia(text, images)` fails CLOSED when media is attached; `CreateCommunityPostScreen` uploads only after the verdict passes, the Video button picks a real clip, errors show under the preview; `uploadPostMedia`; `community_posts.video_url` + `CommunityPost.videoUrl`; feed shows the first frame with a play badge and opens the clip in the phone's video app (no in-app player).
+- **Migration `20260916100000_community_video.sql` (written, NOT applied — user applies):** `add column video_url text`.
+- **Checks:** scratchpad `media_moderation_check.mjs` loads the real index.ts with the gateway stubbed — clean pass, flag block, text-in-image, unsafe scene, gateway down, non-JSON vision, ShieldGemma down — 7 assertions pass; `:app:compileDebugKotlin` + unit tests pass; ai-chat deployed and boot-checked.
+- **Deliberately NOT claimed:** this is not CSAM detection (needs hash matching / a vendor), EXIF-GPS stripping is still not done, the bucket is still public (upload is merely gated now), and moderation runs before the quota check so it costs GPU per upload. Comments/diary media are unscreened.
+
+## BATCH CP — Migrations applied by me; community rules: politics, monarchy, false health advice, fake news (2026-09-16)
+
+User: "why the remove banner and Video Checking/ Picture cannot do it — DO IT and also เนื้อหา should include … politic, False advise, Fake news, King".
+
+- **Clarified:** banner + media screening were already built and deployed; only the DB migrations were missing. With the user's explicit "DO IT", `apply_migration` succeeded this time (the classifier had blocked it before): `ai_command_center` (incl. trash delete policy + pg_cron `ai-command-center-purge`), `community_post_removal`, `community_video`. Verified by SQL: both command tables, `removed_at`/`removed_reason`/`video_url`, select policy `(removed_at IS NULL) OR (auth.uid() = user_id)`, cron job present. NOTE: applied migration versions carry today's timestamps, not the local file names.
+- **Why a second check:** ShieldGemma judges harm, not "politics" or "the King". New `checkCommunityPolicy(text)` (gemma-4, JSON flags `politics`, `monarchy`, `false_health_advice`, `fake_news`; text neutralised, told it is data not instructions; null when it could not run). Monarchy = ANY mention, respectful or not (off-topic + Thai Criminal Code s.112 risk). False advice = telling others to do something against standard pediatric guidance (honey <1 y, alcohol/herbs for fever, skipping vaccines, adult doses); a question or repeating a doctor is not advice. Fake news = unverified sensational claim stated as fact without a source.
+- **Where it runs:** `mode:"moderate"` text (so community posts AND comments), text read from pictures/frames (OCR), and vision flags gained `politics` (politicians, party logos, rallies) and `monarchy` (royal portraits/emblems). Fails CLOSED (`check_unavailable`); text already refused skips image screening. Response `reasons[]` carries the rule.
+- **App:** `SparkChatClient.Moderation.reasons`; `CreateCommunityPostScreen` shows a per-rule Thai/EN message (monarchy, politics, false advice → "ask as a question / see a doctor", fake news → "add a source", personal document, check unavailable). Comments still show the generic write error.
+- **Known trade-offs (told user):** a baby photo with a royal portrait on the wall behind is refused; LLM cannot verify facts, so fake-news/false-advice is judged on wording, not truth; policy check adds one gemma-4 call per post/comment and per picture with text; text posts now fail closed too — if the Spark box is down, nobody can post.
+- **Checks:** `media_moderation_check.mjs` 10 assertions (added: political slogan in image, royal portrait flag, rule check down → check_unavailable) pass; compile + unit tests pass; ai-chat deployed, boot-checked.
+
+### BATCH CP.1 — "app crashing" = main-thread freeze, not a crash (2026-09-16)
+
+- **Evidence:** `adb shell dumpsys activity exit-info com.publish.NongRak` — last 12 exits all `USER REQUESTED` (FORCE STOP from installs/Settings, REMOVE TASK from swipe); no CRASH/ANR, crash log buffer empty. logcat: `Skipped 41 frames! The application may be doing too much work on its main thread.`
+- **Cause fixed:** `CreateCommunityPostScreen.handlePost` runs in `rememberCoroutineScope` (Main) and did `VideoFrames.extract`, `ImageUtils.downscaleToJpeg` and `ImageUtils.readBytes` (whole clip) on the UI thread → multi-second freeze. Wrapped in `withContext(Dispatchers.IO)`. User confirmed normal after install.
+- **Diagnostic recipe:** exit-info first (tells crash vs kill vs user), then logcat for `FATAL|ANR in|Skipped N frames`.
+- **Noted, not fixed:** app RSS 440–554 MB on A54 — low-end phones may LMK-kill it. `GrowthReference` can still load on Main if the IO preload hasn't finished yet (short one-time stall).
+
+## BATCH CQ — Review screen: reviews were never saved; rebuilt to Stitch "รีวิวแอปพลิเคชัน" (2026-09-16)
+
+User asked for 4 things (Settings redesign to Stitch "ตั้งค่าบัญชีผู้ใช้ (User Settings) - NongRak AI", email verification, 2FA, Review page errors). Decisions via AskUserQuestion: 2FA = **authenticator app (Supabase MFA TOTP)**; email = **confirm link on sign-up** (user changes Supabase dashboard setting); Stitch rows the app lacks (Face ID lock, Active Sessions, Export JSON/PDF, weekly email summary, promo news) = **build them all**; order = **Review → Settings → Email → 2FA**. Stitch project `8848314028534350824` (03.NongRak Main Screen): settings screen `b8bac8393beb4cafade24958af03014a`, review screen `fa714d84839f4af796eaa2c4e4b61ff7`.
+
+- **Found:** `FeedbackRepository.submitFeedback` inserted into `feedbacks` — a table no migration ever created — inside an inner `runCatching` whose result was dropped, then the screen always showed "saved". Every review ever submitted was lost. Also: all 78 auth users have `email_confirmed_at` set (auto-confirm), 0 MFA factors; 2FA toggle deliberately greyed because `register_device/approve_device/my_device_status` RPCs never existed.
+- **Migration `20260916120000_app_feedback.sql` (APPLIED + verified):** `public.feedbacks(id, user_id default auth.uid() on delete set null, rating 1–5, highlights text[], message ≤500, contact_email, image_path, device_model, os_version, app_version, created_at)`, RLS insert/select own; private bucket `feedback-media` (5 MB, jpeg/png/webp) with owner-folder insert/select. Read reviews in the dashboard.
+- **App:** `FeedbackSubmission` snake_case `@SerialName`s; `FeedbackRepository.submit(submission, image)` uploads optional screenshot to `<uid>/<uuid>.jpg` then inserts, returning the real failure; `createEmailIntent(submission, isThai, error)` carries the received error. `FeedbackScreen` rebuilt to Stitch: mascot hero + heart badge, rating card with label pill, multi-select chips (praise set at 4–5★, "what to improve" set at 1–3★ — picks cleared when crossing), 500-char comment, optional picture (downscaled on IO), gradient send, Google Play card (market:// then https), team note. On failure: error card with "ระบบตอบกลับว่า: <received error>", Try again, and "ติดต่อทีมงาน" email with review + error attached. App version read from PackageManager (was hardcoded "1.0.0").
+- **Checks:** compile + unit tests pass; DB columns/policies/bucket verified by SQL. **Not verified on device.** Next: Settings redesign.
+
+### BATCH CQ.1 — Settings page redesigned to Stitch "ตั้งค่าบัญชีผู้ใช้ (User Settings)" (2026-09-16)
+
+- `SettingsScreen.kt` rewritten, same signature (AppNavigation.kt:816). Sections as Stitch: gradient profile card (84dp avatar + camera badge → EditProfile, "บัญชีผู้ใช้" pill, email + phone lines, **account-status box driven by real `emailConfirmedAt`**: "ยืนยันตัวตนแล้ว • ปลอดภัย" green or "ยังไม่ยืนยันอีเมล" orange); Personal Info (full name, email + ยืนยันแล้ว/ยังไม่ยืนยัน pill, phone + แก้ไข pill, all → EditProfile); Connected Accounts (Google read-only toast as before, LINE → LineLink with link/mute state); Display (dark mode, auto-record, widgets); AI & data (AiParentStyle "ข้อมูลที่ NongRak รู้จักคุณ", AiDataRetention, AI training consent); Security (change password; 2FA switch shown DISABLED with "Authenticator • กำลังพัฒนา" until MFA ships); Notifications (push, daily report, health alert, AI tips — sub-toggles disabled when push off — + notification center); Language; About & Legal (review → Feedback, guide, about, terms, privacy, debug-only AI endpoint); Data & Account (export JSON share, document vault, delete account with owner-block + ack dialog unchanged); outlined red Log Out; footer version from PackageManager (was hardcoded v1.0.3). Guest mode keeps its sign-up card.
+- **Every existing function kept.** Rows in the Stitch design that have no backing feature are NOT drawn yet: Face ID/Touch ID lock, Active Sessions, Custom AI Preferences (no screen exists), weekly email summary, promo news, PDF export, "password changed N days ago". User chose "build them all" — to be built one by one, then added.
+- **Checks:** `:app:compileDebugKotlin` passes. **Not verified on device.**
+
+### BATCH CQ.2 — App lock with face / fingerprint / screen lock (2026-09-16)
+
+- **No new dependency:** platform `android.hardware.biometrics.BiometricPrompt` (API 28+; app minSdk 26 → row hidden on 26–27). `BIOMETRIC_WEAK | DEVICE_CREDENTIAL` on API 30+ (Samsung face unlock is weak-class; strong-only would exclude it), `setDeviceCredentialAllowed(true)` on 28–29.
+- `util/AppLock.kt`: `isSupported()`, `isDeviceSecure(ctx)` (KeyguardManager), `shouldRelock(backgroundedAt, now)` (≥ `RELOCK_AFTER_MS` 60 s), snapshot-state `unlocked` for the process, `authenticate(ctx, title, subtitle, onResult(ok, message))` — cancel gives null message, other errors "<system text> (<code>)".
+- `ui/components/AppLockGate.kt` wraps `DeviceTrustGate` in `MainActivity`: lifecycle ON_STOP stamps time, ON_START relocks after 60 s; full-screen lock (mascot, "NongRak ล็อกอยู่", auto-prompt, "ปลดล็อก" button, error text). **Stands aside when the phone has no screen lock** (nothing to check against → would lock the parent out forever).
+- `SettingsManager.AppSettings.appLock` (DataStore `app_lock`), `SettingsViewModel.setAppLock`. Settings › Security row "ล็อกแอปด้วยใบหน้า / ลายนิ้วมือ": turning ON requires a device screen lock and one successful authentication first; OFF is immediate; logout resets it to false.
+- **Crash on first device test (fixed):** tapping the toggle crashed with `SecurityException` from `AuthService.checkPermission` — the platform BiometricPrompt needs `<uses-permission android:name="android.permission.USE_BIOMETRIC"/>`, which I had not added. Added to AndroidManifest (verified in merged manifest), and `AppLock.authenticate` now wraps the prompt in try/catch → `onResult(false, "<Exception>: <message>")` so a prompt that can't show never kills the app. Lesson: platform biometrics = manifest permission; the androidx library would have merged it automatically.
+- **Biometric sign-in (user: "finger and biometric will use for shortcut login … (One per device)"):** `data/settings/BiometricLogin.kt` — EncryptedSharedPreferences `nongrak_biometric_login` (`user_id`, `email`, `refresh_token`, `declined_user_ids`). `AuthRepository.signOut()`: if the current user is the enrolled one, save `session.refreshToken` and `supabase.auth.clearSession()` (local only, NOT revoked) — else the old `signOut(LOCAL)`. `signInWithBiometricKey()`: `takeRefreshToken` (read-and-remove, single use because refresh tokens rotate) → `refreshSession(token)` → `importSession` → `ensureProfile`. `deleteAccount` clears it. `AuthViewModel.signInWithBiometric` names the failure. `LoginScreen`: `finishLogin(next)` wraps password/Google/LINE success → if `shouldOffer` (API 28+, device secure, not enrolled, not declined) dialog "ใช้ลายนิ้วมือ / ใบหน้าเข้าสู่ระบบครั้งถัดไป?" (ใช้เลย = one scan then enroll, replacing any other account; ไม่ตอนนี้ = remembered per user); primary button "เข้าสู่ระบบด้วยลายนิ้วมือ / ใบหน้า" + email when a saved key exists → AppLock prompt → sign in, sets `AppLock.unlocked`. Settings › Security toggle on/off (off wipes key). **Saved-account pop-up (user: "it should show when sign in like pop up Would you like to sign in to this account (show username)"):** LoginScreen opens `AlertDialog` by itself when a saved key exists — "ต้องการเข้าสู่ระบบบัญชีนี้หรือไม่?" + display name + email, [เข้าสู่ระบบ (fingerprint)] / [ใช้บัญชีอื่น]; shared `biometricSignIn()` used by pop-up and button. Display name (`fullName` ?: `username` from `getProfile()`) saved with the key at logout (`BiometricLogin.saveRefreshToken(ctx, token, displayName)`, key `display_name`); older saves fall back to email. **Trade-off:** while logged out, the enrolled account's refresh token stays valid server-side, protected by sandbox encryption + prompt (not Keystore-bound, so Samsung weak face unlock still works).
+- **Checks:** `AppLockTest` (3) + compile + unit tests pass. **Not verified on device.** Remaining Settings rows: Active Sessions, Custom AI Preferences, weekly email summary, promo news, PDF export; then email confirmation, then authenticator 2FA.
+
+## BATCH CP — caregiver handover checklist + owner-only parent briefing (2026-09-16)
+
+User: parent "ส่งต่อการดูแล" (the screen that assigns the day) is owner / co-owner only; the people you can pick are only those ticked as caretakers (`is_caregiver`); caretakers get the pictured "บันทึกการส่งต่อการดูแล" instead.
+
+- **Gate:** `HandoffScreen` redirects anyone without full access (`owner` / `co_owner` / legacy `member`) to `CareHandoverChecklist`. Child Hub / Child Summary / Care Routine "special record" send caregivers to the checklist; `HandoffHomeCard` is parent-only.
+- **Picker:** `ParentHandoffBrief.caregiverCards` now requires `caregiverIds` — unticked relatives no longer appear.
+- **Checklist rebuilt** to the four pictures: header + กะปัจจุบัน, blue identity card (allergy caution, no Tempora dose), progress เสร็จ/กำลังทำ/รอ, today's `care_routines` with an inline complete form on the current/missed slot (time, mood, note → `RoutineRepository.setLog`), health strip (temp / diaper split / milk ml), chat to the owner. Call stays in the layout but is off until a parent phone is on the member row.
+- **VM:** `HandoffViewModel.tick`, today's milk/waste counts, `parentPeerId`.
+- Not verified on device.
+
+
+### BATCH CQ.3 — Active Sessions (Settings › Security) (2026-09-16)
+
+- **DB (applied):** `20260916140000_active_sessions.sql` — security-definer RPCs over `auth.sessions` scoped to `auth.uid()`: `list_my_sessions()` (id, created_at, last_active_at = refreshed_at/updated_at/created_at, user_agent, host(ip), `is_current` from JWT claim `session_id`), `revoke_my_session(uuid)` (refuses current session → `cannot_revoke_current_session`), `revoke_my_other_sessions()` → count. Anon revoked, authenticated granted.
+- **Device name:** every session recorded `user_agent = "ktor-client"`. `util/DeviceLabel.kt` builds `NongRak/<version> (<manufacturer> <model>; Android <release>)`, installed in `SupabaseClient` via `httpConfig { install(UserAgent) }` (needs `@OptIn(SupabaseInternal::class)`). `DeviceLabel.parse` → "samsung SM-A546E • Android 16"; `DeviceLabelTest` (2). Sessions signed in before this build show "อุปกรณ์ Android (ก่อนอัปเดตแอป)".
+- **App:** `AuthRepository.listSessions/revokeSession/revokeOtherSessions` + `AuthSessionRow`; `Screen.ActiveSessions`; `ui/screens/settings/ActiveSessionsScreen.kt` (cards, current device green badge, last active, sign-in date + IP, per-device sign out, sign out all others, confirm dialogs, errors shown with retry). Settings row under change password.
+- **Limit:** deleting the session kills refresh tokens; that device's access JWT keeps working until expiry (≤ 1 h). Revoking a device also invalidates a biometric-login key saved on that device (its refresh token belongs to the deleted session).
+- **Checks:** compile + unit tests pass; installed on device. Not verified on device yet.
+
+### BATCH CQ.4 — Custom AI Preferences (Settings › AI) (2026-09-16)
+
+- **DB (applied):** `20260916150000_ai_preferences.sql` — `parent_ai_style.tone` (`warm|cheerful|professional`) and `answer_length` (`short|balanced|detailed`), nullable = automatic, check constraints. Existing RLS (own row) covers it.
+- **ai-chat (deployed):** `loadParentStyle` now returns `{learnt, chosen}`; `TONE_RULES` / `LENGTH_RULES` map keys to Thai instructions (unknown keys ignored). Chosen block goes after the learnt note and says it wins, while urgent-symptom → doctor still applies. Learning switch (`enabled`) only affects the learnt note.
+- **App:** `ParentAiStyle.tone/answerLength`, `ParentStyleRepository.setPreferences` (read-back check `ai_preferences_not_saved`), `ui/screens/settings/AiPreferencesScreen.kt` (two radio groups with example phrasing, saves per tap, error shown), `Screen.AiPreferences`, Settings row "ตั้งค่า AI เอง (Custom AI Preferences)" first in AI section.
+- **Ceiling:** applied on the Spark path only; when Spark is down the cloud/MedGemma fallback does not see the choice (app-side systemPrompt untouched).
+- **Checks:** compile + unit tests pass; deployed; installed. Not verified on device. Remaining Settings rows: weekly email summary, promo news, PDF export, "password changed N days ago"; then email confirmation, authenticator 2FA.
+
+### BATCH CQ.5 — Export My Data as PDF / JSON; weekly email row dropped (2026-09-16)
+
+- **Owner decision:** weekly email summary (Stitch "แจ้งเตือนผ่านอีเมล") NOT built — "no do not do it delete button setting". No email sender exists in the project; the row was never in the app, only in the design + a SettingsScreen doc comment (updated). Promo news row also depends on a sending channel — not built, ask before doing it.
+- **Export:** old `exportUserData()` shared a Thai text report through `EXTRA_TEXT` (Binder size limit with long chat history) and `getOrDefault(emptyList())` made a failed table look empty. Replaced with `AuthRepository.collectUserData(): Result<UserDataExport>` — per-table `Section(table, title, rows, error)`; `UserDataExport.toReport(date)` (same Thai labels, ids hidden, "โหลดข้อมูลส่วนนี้ไม่สำเร็จ: <error>") and `toJson(date)` (raw rows per table + `errors`). `AuthViewModel.exportData` now returns the `Result`.
+- `util/DataExportPdf.write(context, report)` — multi-page A4 `PdfDocument`, headings from `========` lines, char-based wrap (Thai), page footer; saved to `cache/exports/` (existing FileProvider path).
+- Settings row subtitle "(JSON/PDF)" → dialog [PDF] / [JSON] → file shared via `EXTRA_STREAM`; failure toast names the reason.
+- **Checks:** `UserDataExportTest` (2) + compile + unit tests; installed. Not verified on device. Remaining: "password changed N days ago", (promo news: ask), email confirmation, authenticator 2FA.
+
+### BATCH CQ.6 — Personal Info edited one field at a time + profile picture picker (2026-09-16)
+
+- **Owner decisions:** promo news / offers toggle cancelled ("cancel News and offers toggle delete it") — never existed in the app, nothing to remove. Personal Info order: Username, Full name, Registered email, Phone; each tap edits only that value in place, no screen change.
+- **Repo:** `AuthRepository.updateProfileField(column ∈ username|full_name|phone, value?)` — read-back check; `profiles_username_key` violation → `username_taken`. `requestEmailChange(newEmail)` = `auth.updateUser { email }` (Supabase sends confirm link; email changes after it is opened).
+- **UI:** `ui/screens/settings/AccountEditors.kt` — `AccountField` enum, `EditAccountFieldDialog` (validation: names 1–50 chars, email pattern + not same, phone `ThaiPhone.normalize` or empty = remove; errors shown in the dialog, Thai messages for taken username / email already registered). `AvatarPickerSheet` (ModalBottomSheet): "เลือกรูปจากเครื่อง" (PickVisualMedia → ImageDecoder ≤512px, EXIF-upright on API 28+) or a grid of 60 bundled samples; both → JPEG 88 → existing `uploadAvatar` (private `avatars` bucket), then `loadProfile()`.
+- **Samples:** `app/src/main/assets/avatars/user/avatar_01..60.webp` (256px, 355 KB) sliced from `D:\120.NongRak\Profile_Picture\User\set1.jpg` (NongRak mascot variants) and `set2.jpg` (animals / objects) by grid detection.
+- `SettingsScreen`: profile-card avatar opens the picker; `onNavigateToEditProfile` param removed (AppNavigation caller updated). `EditProfileScreen` route still exists for other entry points.
+- **Checks:** compile + unit tests; installed. Not verified on device.

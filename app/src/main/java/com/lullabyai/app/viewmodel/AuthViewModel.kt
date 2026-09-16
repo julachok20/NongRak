@@ -67,6 +67,21 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+    /** Sign in with the key saved for biometric login. The caller has already passed the face / fingerprint prompt. */
+    fun signInWithBiometric(onSuccess: (mustChangePassword: Boolean) -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState(isLoading = true)
+            repo.signInWithBiometricKey()
+                .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess(repo.mustChangePassword()) }
+                .onFailure {
+                    // The key is single-use and now gone: say so, and name what failed.
+                    _uiState.value = AuthUiState(
+                        error = "เข้าสู่ระบบด้วยลายนิ้วมือไม่สำเร็จ กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง (${it.message?.take(80) ?: "unknown"})"
+                    )
+                }
+        }
+    }
+
     /** Complete forced change with just a new password (no current-password re-check), clears the flag. */
     fun completeForcedChange(newPassword: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
@@ -195,13 +210,13 @@ class AuthViewModel : ViewModel() {
         }
     }
 
-    /** PDPA data export — returns the user's full data as a JSON string (or null on failure). */
-    fun exportData(onReady: (String?) -> Unit) {
+    /** PDPA data export: collects every table, then hands back the result or the reason it failed. */
+    fun exportData(onReady: (Result<com.lullabyai.app.data.repository.UserDataExport>) -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            val json = repo.exportUserData().getOrNull()
+            val result = repo.collectUserData()
             _uiState.value = _uiState.value.copy(isLoading = false)
-            onReady(json)
+            onReady(result)
         }
     }
 

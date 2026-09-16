@@ -29,6 +29,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setHealthAlert(value: Boolean) = viewModelScope.launch { manager.setHealthAlert(value) }
     fun setAiTips(value: Boolean) = viewModelScope.launch { manager.setAiTips(value) }
     fun setAutoRecord(value: Boolean) = viewModelScope.launch { manager.setAutoRecord(value) }
+    fun setAppLock(value: Boolean) = viewModelScope.launch { manager.setAppLock(value) }
     fun setTwoFactorEnabled(value: Boolean) = viewModelScope.launch { manager.setTwoFactorEnabled(value) }
     fun setHasSeenTour(value: Boolean) = viewModelScope.launch { manager.setHasSeenTour(value) }
     fun setHasSeenDoctorTour(value: Boolean) = viewModelScope.launch { manager.setHasSeenDoctorTour(value) }

@@ -24,6 +24,22 @@ import kotlinx.serialization.json.put
  * analysis calls have no free-text user input, so that escape hatch never fired: switching the
  * app to English never changed the AI's output language. [isThai] now drives it explicitly.
  */
+/**
+ * How many past messages the Spark pipeline sees word for word. Anything older reaches it as the
+ * keyword memory ai-chat keeps in chat_sessions.memory (folded in after 30 answers). The whole
+ * session — still the cloud chain's input — overflowed Typhoon 2 at 7,169 tokens on "สวัสดี".
+ * Must match KEEP_RECENT_MESSAGES in supabase/functions/ai-chat.
+ */
+private const val SPARK_HISTORY_MESSAGES = 6
+
+/** One chat answer. [text] may still carry an <AGENT_ACTION> block; [medical] shows the disclaimer banner. */
+data class ChatReply(
+    val text: String,
+    val medical: Boolean,
+    /** Spark command-center proposals (signed tickets); empty for cloud answers. */
+    val commands: List<com.lullabyai.app.data.model.AiCommand> = emptyList()
+)
+
 private fun analysisSystemPrompt(isThai: Boolean): String = if (isThai)
     "คุณคือ \"น้องรัก\" (NongRak) ผู้ช่วย AI สำหรับพ่อแม่ในการเลี้ยงดูเด็กแรกเกิดถึง 3 ปี " +
         "ตอบเป็นภาษาไทยเสมอ ห้ามใช้สัญลักษณ์พิเศษหรือ markdown ห้ามใช้ emoji " +
@@ -95,7 +111,7 @@ class ChatRepository {
         }.decodeList<ChatMessage>()
     }
 
-    private suspend fun saveMessage(sessionId: String, role: String, content: String) {
+    private suspend fun saveMessage(sessionId: String, role: String, content: String, medical: Boolean = false) {
         val userId = supabase.auth.currentUserOrNull()?.id ?: return
         // Insert an explicit JSON object so every column is always sent. (Using the data class
         // would drop fields equal to their default — e.g. role="user" — causing a NOT NULL error.)
@@ -105,6 +121,7 @@ class ChatRepository {
                 put("session_id", sessionId)
                 put("role", role)
                 put("content", content)
+                put("medical", medical)
             }
         )
         // Bump session's updated_at so it sorts to the top — best-effort, must not break the insert
@@ -144,27 +161,42 @@ class ChatRepository {
          */
         family: List<Child> = emptyList(),
         /** Mascot key (nongrak, coco, bunny, pingu) to anchor AI persona and mannerisms. */
-        mascotKey: String? = null
-    ): Result<String> = runCatching {
+        mascotKey: String? = null,
+        /**
+         * The Spark answer so far, each time more of it arrives. Called with "" when Spark fails
+         * part-way and the cloud chain takes over, so a half-written bubble does not linger.
+         */
+        onPartial: (String) -> Unit = {},
+        /**
+         * The parent's own words, without the instruction notes ChatViewModel puts in front of
+         * [userMessage] ("[หมายเหตุ: …]", call and mode notes). This is what gets saved, used as the
+         * session title, searched in RAG and language-detected; the notes only ride to the model.
+         */
+        displayText: String = userMessage
+    ): Result<ChatReply> = runCatching {
+        // Reply in the language the parent actually typed (Thai or English), whatever the app is
+        // set to. Everything below — system prompt, context labels, instructions — follows it.
+        @Suppress("NAME_SHADOWING")
+        val isThai = RelationshipLabels.replyInThai(displayText, isThai)
+
         // Retrieve prior history (memory) BEFORE adding the new message
         val history = runCatching { getMessages(sessionId).getOrDefault(emptyList()) }.getOrDefault(emptyList())
 
         val targetChild = com.lullabyai.app.util.ChildMention.resolve(userMessage, family, fallback = child) ?: child
         val childContext = buildChatChildContext(family, targetChild, relationship, isThai)
 
-        val conversation = history.joinToString("\n") { msg ->
-            val who = if (msg.role == "user") (if (isThai) "ผู้ใช้" else "User") else (if (isThai) "ผู้ช่วย" else "Assistant")
-            "$who: ${msg.content}"
-        }
-
         // RAG: pull grounding knowledge from the curated handbook/research corpus (pgvector). Best-effort
         // and optional — only chunks with decent similarity are used so off-topic questions are unaffected.
         // Skipped for image-only messages (no text to match on).
-        val ragChunks = if (userMessage.isNotBlank())
-            com.lullabyai.app.data.remote.ResearchRagClient.search(userMessage, k = 4).filter { it.similarity >= 0.40 }
+        val ragChunks = if (displayText.isNotBlank())
+            com.lullabyai.app.data.remote.ResearchRagClient.search(displayText, k = 4).filter { it.similarity >= 0.40 }
         else emptyList()
 
-        val prompt = buildString {
+        fun buildPrompt(turns: List<ChatMessage>): String = buildString {
+            val conversation = turns.joinToString("\n") { msg ->
+                val who = if (msg.role == "user") (if (isThai) "ผู้ใช้" else "User") else (if (isThai) "ผู้ช่วย" else "Assistant")
+                "$who: ${msg.content}"
+            }
             if (childContext.isNotEmpty()) { appendLine(childContext); appendLine() }
             if (ragChunks.isNotEmpty()) {
                 appendLine(
@@ -181,16 +213,17 @@ class ChatRepository {
             }
             appendLine(
                 if (isThai) "ตอบข้อความล่าสุดของผู้ใช้ต่อไปนี้อย่างเป็นธรรมชาติ โดยใช้บริบทข้างต้น:"
-                else "Respond naturally to the user's latest message in English using the above context:"
+                else "Respond naturally to the user's latest message using the above context:"
             )
             append(userMessage)
         }
+        val prompt = buildPrompt(history)
 
         // Persist the user's message FIRST so it survives even if the AI call fails
         // (no response caching for chat — every message is its own conversation turn).
         // A spoken turn has no text of its own: the model hears the audio, so nothing was
         // transcribed on this side. The history keeps a marker rather than an empty bubble.
-        val historyText = userMessage.ifBlank {
+        val historyText = displayText.ifBlank {
             when {
                 audioBytes != null -> if (isThai) "[ข้อความเสียง]" else "[Voice message]"
                 imageBytes != null -> if (isThai) "[ส่งรูปภาพ]" else "[Sent an image]"
@@ -227,13 +260,42 @@ class ChatRepository {
                 "Never put placeholders like [current_time] in params."
         }
 
+        // Text turns go to the Spark pipeline first (ShieldGemma -> Typhoon 2 -> Gemma 4 ->
+        // Typhoon 2 -> ShieldGemma, in the ai-chat edge function). A reply ShieldGemma BLOCKED is
+        // final: falling back to the cloud chain would hand the same request to a model that never
+        // saw the safety check. Only transport or gateway failures fall through, so a box that is
+        // off costs one failed request and the parent still gets an answer.
+        // Voice still needs Gemini (ai-generate). Text and photos go to Spark: a photo is read by
+        // Typhoon OCR, or Gemma 4 vision when it has no text, on the family's own hardware.
+        val spark = if (audioBytes == null) {
+            com.lullabyai.app.data.remote.SparkChatClient.chat(
+                question = userMessage,
+                prompt = if (history.size > SPARK_HISTORY_MESSAGES) buildPrompt(history.takeLast(SPARK_HISTORY_MESSAGES)) else prompt,
+                system = systemPrompt,
+                sessionId = sessionId,
+                imageBase64 = if (imageBytes != null) imageB64 else null,
+                imageMime = if (imageBytes != null) mediaMime else null,
+                childIds = family.map { it.id }.ifEmpty { listOfNotNull(targetChild?.id) },
+                onPartial = onPartial
+            )
+        } else null
+        val sparkReply = spark?.getOrNull()
+        val sparkFailure = spark?.exceptionOrNull()?.message.orEmpty()
+        if (spark != null && sparkReply == null) {
+            android.util.Log.w("ChatRepository", "Spark skipped: $sparkFailure")
+            onPartial("")
+        }
+        // The daily cap is a decision, not an outage: answering from the cloud instead would make
+        // the limit meaningless, so the parent is told plainly.
+        val limitReached = sparkFailure.startsWith("daily_limit_reached")
+
         // Medical questions go to MedGemma first and come back with the warning already on top
         // (see NongRakMedicalRouter). Text only: an image question still needs the vision chain.
         // A null answer means "not medical", "MedGemma unreachable" or "the call failed", all of
         // which fall through to the normal chain - a parent asking about a fever must get an
         // answer either way, so this never blocks a reply.
         val medicalErrors = mutableListOf<String>()
-        val medical = if (imageB64 == null) {
+        val medical = if (imageB64 == null && sparkReply == null && !limitReached) {
             com.lullabyai.app.data.remote.NongRakMedicalRouter.tryAnswer(
                 userMessage = userMessage,
                 contextPrompt = systemPrompt.orEmpty(),
@@ -247,28 +309,47 @@ class ChatRepository {
 
         // Call the AI (useSearch=false for chat: the system prompt already has the knowledge base).
         // maxTokens 4096: Thai is token-heavy, so a smaller limit truncates answers mid-sentence.
-        val aiText = medical?.text ?: ClaudeClient.generateContent(
-            prompt, useSearch = false, maxTokens = 4096,
-            system = systemPrompt,
-            jsonMode = false,
-            imageBase64 = imageB64, imageMimeType = mediaMime
-        )
+        // The chat's "answered by" label reads ClaudeClient.lastProvider, which only the cloud chain
+        // sets. Without this, a Spark answer would still be labelled with the previous cloud model.
+        when {
+            sparkReply != null -> ClaudeClient.reportProvider(
+                "Spark (" + sparkReply.stages.joinToString(" → ").ifBlank { "typhoon-2" } + ")"
+            )
+            limitReached -> ClaudeClient.reportProvider("Spark (daily limit)")
+            medical != null -> ClaudeClient.reportProvider(medical.provider)
+        }
 
-        val response = aiText
+        val aiText = when {
+            sparkReply != null -> sparkReply.text
+            limitReached ->
+                if (isThai) "วันนี้ใช้งานผู้ช่วย AI ครบโควตาแล้ว พรุ่งนี้ใช้งานได้ตามปกติค่ะ"
+                else "You've reached today's AI limit. It resets tomorrow."
+            else -> medical?.text ?: ClaudeClient.generateContent(
+                prompt, useSearch = false, maxTokens = 4096,
+                system = systemPrompt,
+                jsonMode = false,
+                imageBase64 = imageB64, imageMimeType = mediaMime
+            )
+        }
 
-        // Persist the CLEANED text only — the raw response can carry an <AGENT_ACTION>/<NEED_INFO>
-        // sentinel block (see ChatViewModel.sendMessage), and saving that verbatim would show the
-        // literal tag/JSON as chat text the next time this session's history is reopened.
+        // Every medical answer gets the disclaimer banner (AIChatScreen) instead of warning text.
+        // Stored with the message so the banner is still there when the chat is reopened. A reply
+        // ShieldGemma blocked is a refusal, not advice.
+        val isMedical = com.lullabyai.app.data.remote.NongRakMedicalRouter.isMedicalQuestion(userMessage) &&
+            sparkReply?.blocked != true
+
+        // Persist the CLEANED text only — the raw response can carry an <AGENT_ACTION> block (see
+        // ChatViewModel.sendMessage), and saving that verbatim would show the literal tag/JSON as
+        // chat text the next time this session's history is reopened.
         runCatching {
-            val (displayText, _, _) = com.lullabyai.app.util.parseAgentAction(response)
-            saveMessage(sessionId, "model", displayText)
+            saveMessage(sessionId, "model", com.lullabyai.app.util.chatVisibleText(aiText), isMedical)
             if (history.none { it.role == "user" }) {
-                val title = userMessage.take(30) + if (userMessage.length > 30) "..." else ""
+                val title = displayText.take(30) + if (displayText.length > 30) "..." else ""
                 renameSession(sessionId, title)
             }
         }
 
-        response
+        ChatReply(aiText, isMedical, sparkReply?.commands.orEmpty())
     }
 
     /**
@@ -295,21 +376,21 @@ class ChatRepository {
             appendLine()
             if (isThai) {
                 appendLine("★ ข้อมูลเด็กหลักในการสนทนานี้: ${primary.name}")
-                appendLine("คำสั่งสำคัญสำหรับการตอบคำถามและการขอข้อมูล (<NEED_INFO>):")
+                appendLine("คำสั่งสำคัญสำหรับการตอบคำถามและการถามข้อมูลเพิ่มในแชท:")
                 appendLine("- ให้ตอบคำถามและให้คำแนะนำโดยมุ่งเน้นที่ '${primary.name}' เป็นหลัก")
                 if (otherKids.isNotEmpty()) {
                     val otherNames = otherKids.joinToString(", ") { it.name }
-                    appendLine("- ห้ามถามข้อมูลเพิ่มเติม (<NEED_INFO>) เกี่ยวกับเด็กคนอื่น ($otherNames) เด็ดขาดในขณะที่กำลังสนทนาเรื่องของ '${primary.name}'")
-                    appendLine("- การถามข้อมูลผ่านบล็อก <NEED_INFO> ต้องเจาะจงเฉพาะ '${primary.name}' เท่านั้น และต้องระบุชื่อ '${primary.name}' ในคำถามเสมอ")
+                    appendLine("- ห้ามถามข้อมูลเพิ่มเติมเกี่ยวกับเด็กคนอื่น ($otherNames) เด็ดขาดในขณะที่กำลังสนทนาเรื่องของ '${primary.name}'")
+                    appendLine("- การถามข้อมูลเพิ่มต้องเจาะจงเฉพาะ '${primary.name}' เท่านั้น และต้องระบุชื่อ '${primary.name}' ในคำถามเสมอ")
                 }
             } else {
                 appendLine("★ Primary child of focus in this conversation: ${primary.name}")
-                appendLine("Critical instructions for replies and requesting info (<NEED_INFO>):")
+                appendLine("Critical instructions for replies and asking for info in chat:")
                 appendLine("- Focus answers and care recommendations primarily on '${primary.name}'.")
                 if (otherKids.isNotEmpty()) {
                     val otherNames = otherKids.joinToString(", ") { it.name }
-                    appendLine("- NEVER request additional info (<NEED_INFO>) about other children ($otherNames) while discussing '${primary.name}'.")
-                    appendLine("- Any proactive questions via <NEED_INFO> MUST be strictly about '${primary.name}' and specify '${primary.name}' by name.")
+                    appendLine("- NEVER ask for additional info about other children ($otherNames) while discussing '${primary.name}'.")
+                    appendLine("- Any follow-up questions MUST be strictly about '${primary.name}' and name '${primary.name}'.")
                 }
             }
             appendLine()
@@ -317,7 +398,7 @@ class ChatRepository {
             append(buildChildContext(primary, relationship = null, isThai))
             appendLine()
             otherKids.forEach { c ->
-                appendLine(if (isThai) "— ${c.name} (ข้อมูลเด็กคนอื่นในครอบครัว — ใช้เป็นบริบทเสริม ห้ามถาม <NEED_INFO> ของเด็กคนนี้) —" else "— ${c.name} (Other child in family — background reference only, DO NOT ask <NEED_INFO> for this child) —")
+                appendLine(if (isThai) "— ${c.name} (ข้อมูลเด็กคนอื่นในครอบครัว — ใช้เป็นบริบทเสริม ห้ามถามข้อมูลของเด็กคนนี้) —" else "— ${c.name} (Other child in family — background reference only, DO NOT ask questions about this child) —")
                 append(buildChildContext(c, relationship = null, isThai))
                 appendLine()
             }
@@ -353,12 +434,30 @@ class ChatRepository {
         }.getOrNull()
 
         // Prefer live tables over denormalized child-row caches so chat never contradicts the hubs.
-        val latestGrowth = runCatching {
-            HealthRepository().getGrowthRecords(child.id).getOrNull()
-                ?.maxByOrNull { it.recordedAt ?: "" }
-        }.getOrNull()
+        val growthRecords = runCatching { HealthRepository().getGrowthRecords(child.id).getOrNull() }.getOrNull().orEmpty()
+        val latestGrowth = growthRecords.maxByOrNull { it.recordedAt ?: "" }
         val weightKg = latestGrowth?.weightKg ?: child.weightKg
         val heightCm = latestGrowth?.heightCm ?: child.heightCm
+        // WHO verdicts computed in the app (age at measurement + sex), so the AI repeats them instead
+        // of judging raw kg/cm by eye — that is how misleading "normal"/"underweight" answers happened.
+        val who = runCatching {
+            val (w, h) = com.lullabyai.app.util.GrowthReference.current(child.copy(weightKg = weightKg, heightCm = heightCm), growthRecords)
+            val pair = growthRecords.filter { it.weightKg != null && it.heightCm != null }.maxByOrNull { it.recordedAt ?: "" }
+            val bmi = com.lullabyai.app.util.GrowthReference.weightForHeightStatus(
+                pair?.weightKg, pair?.heightCm, com.lullabyai.app.util.GrowthReference.ageDaysAt(child.birthdate, pair?.recordedAt), child.gender
+            )
+            Triple(w, h, bmi)
+        }.getOrNull()
+        val whoTh = listOfNotNull(
+            who?.first?.let { "น้ำหนักตามอายุ: ${it.labelTh}" },
+            who?.second?.let { "ส่วนสูงตามอายุ: ${it.labelTh}" },
+            who?.third?.let { "สมส่วน (BMI ตามอายุ): ${it.labelTh}" }
+        ).joinToString(", ")
+        val whoEn = listOfNotNull(
+            who?.first?.let { "weight-for-age: ${it.labelEn}" },
+            who?.second?.let { "height-for-age: ${it.labelEn}" },
+            who?.third?.let { "BMI-for-age: ${it.labelEn}" }
+        ).joinToString(", ")
         val allergyNames = runCatching {
             HealthRepository().getAllergies(child.id).getOrNull()
                 ?.map { it.name }?.filter { it.isNotBlank() }?.distinct()
@@ -388,6 +487,9 @@ class ChatRepository {
                 append("- เพศ: ${if (child.gender == "male") "ชาย" else if (child.gender == "female") "หญิง" else "ไม่ระบุ"}\n")
                 weightKg?.let { append("- น้ำหนัก: $it กก.\n") }
                 heightCm?.let { append("- ส่วนสูง: $it ซม.\n") }
+                if (whoTh.isNotBlank()) {
+                    append("- ผลประเมินการเจริญเติบโตตามมาตรฐาน WHO ตามอายุและเพศ (คำนวณในแอปแล้ว ให้ใช้ผลนี้ ห้ามประเมินเองจากตัวเลข): $whoTh\n")
+                }
                 child.sleepHours?.let { append("- นอนหลับเฉลี่ย: ${it.toInt()} ชม./วัน\n") }
                 append("- ระดับกิจกรรม: $activity\n")
                 if (!allergyText.isNullOrBlank()) append("- ประวัติแพ้: $allergyText\n")
@@ -411,6 +513,9 @@ class ChatRepository {
                 append("- Gender: ${if (child.gender == "male") "Male" else if (child.gender == "female") "Female" else "Unspecified"}\n")
                 weightKg?.let { append("- Weight: $it kg\n") }
                 heightCm?.let { append("- Height: $it cm\n") }
+                if (whoEn.isNotBlank()) {
+                    append("- WHO growth assessment for age and sex (computed in the app; use it, do not judge the raw numbers yourself): $whoEn\n")
+                }
                 child.sleepHours?.let { append("- Average sleep: ${it.toInt()} hrs/day\n") }
                 append("- Activity Level: $activity\n")
                 if (!allergyText.isNullOrBlank()) append("- Allergies: $allergyText\n")
@@ -577,7 +682,8 @@ class ChatRepository {
             "\n\nวิเคราะห์การเจริญเติบโตของเด็กคนนี้จากข้อมูลข้างต้น " +
             "ให้คำแนะนำเรื่องโภชนาการและการเจริญเติบโตอย่างละเอียด ตอบครบถ้วนไม่ตัดทอน " +
             "ตอบเนื้อหาโดยตรงทันที ห้ามขึ้นต้นด้วยคำทักทายหรือคำนำใดๆ เช่น \"สวัสดี\" หรือชื่อเด็ก"
-        val cacheKey = "growth_${child.id}_${langTag(isThai)}"
+        // "who" in the key: insights written before WHO grounding must not be served again.
+        val cacheKey = "growth_who_${child.id}_${langTag(isThai)}"
         val cached = if (!forceRefresh) searchCache.get(cacheKey) else null
         cached ?: ClaudeClient.generateContent(prompt, useSearch = true, maxTokens = 4096, system = analysisSystemPrompt(isThai), jsonMode = false)
             .also { searchCache.save(cacheKey, it, "growth_insight") }

@@ -100,6 +100,8 @@ sealed class Screen(val route: String) {
     object MedicalDataVault : Screen("medical_data_vault")
     /** AI retention / transparency (former MedicalDataVault contents). Append-only 2026-07-25. */
     object AiDataRetention : Screen("ai_data_retention")
+    object ActiveSessions : Screen("active_sessions")
+    object AiPreferences : Screen("ai_preferences")
     /** Pair this account with the NongRak LINE OA for notifications. Added 2026-08-21. */
     object LineLink : Screen("line_link")
     object TrustedDevices : Screen("trusted_devices")
@@ -234,6 +236,18 @@ sealed class Screen(val route: String) {
     object CareCircle : Screen("care_circle")
     object CareHandoff : Screen("care_handoff/{childId}") {
         fun route(childId: String) = "care_handoff/${android.net.Uri.encode(childId)}"
+    }
+    /** Developer setting: address and key of a self-hosted model (e.g. over WireGuard). */
+    object AiEndpoint : Screen("ai_endpoint_settings")
+    /** What NongRak AI has learnt about how to talk to this parent: view, switch off, reset. */
+    object AiParentStyle : Screen("ai_parent_style")
+    /** กิจวัตรการดูแล: the child's repeating day and today's ticks. */
+    object CareRoutine : Screen("care_routine/{childId}") {
+        fun route(childId: String) = "care_routine/${android.net.Uri.encode(childId)}"
+    }
+    /** The caregiver's side of a handover: their own shift checklist for this child. */
+    object CareHandoverChecklist : Screen("care_handover_checklist/{childId}") {
+        fun route(childId: String) = "care_handover_checklist/${android.net.Uri.encode(childId)}"
     }
     /**
      * `quote` is optional context carried in from an activity entry, so a reply arrives saying

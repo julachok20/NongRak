@@ -87,3 +87,35 @@ fun parseAgentAction(raw: String): Triple<String, AgentAction?, NeedInfoRequest?
     val turn = parseAgentTurn(raw)
     return Triple(turn.displayText, turn.actions.firstOrNull(), turn.needInfo)
 }
+
+/**
+ * What the chat bubble shows for a finished reply.
+ *
+ * Blocks are stripped as in [parseAgentTurn]. Missing info is asked in plain chat now; a model that
+ * still answers with the old <NEED_INFO> block gets its question shown as text, rather than lost
+ * along with the popup that used to display it.
+ */
+fun chatVisibleText(raw: String): String {
+    val turn = parseAgentTurn(raw)
+    val question = turn.needInfo?.question?.trim().orEmpty()
+    return listOf(turn.displayText, question).filter { it.isNotBlank() }.joinToString("\n\n")
+}
+
+private val BLOCK_OPENERS = listOf("<AGENT_ACTION>", "<NEED_INFO>", "<AI_QUERY>")
+
+/**
+ * The part of a reply that can be shown while it is still arriving.
+ *
+ * A block streams in over several pieces, so the bubble would flash `<AGENT_` and half-written
+ * JSON. Everything from the first block opener — or from a trailing "<" that could still become
+ * one — is held back; [parseAgentTurn] handles the finished reply.
+ */
+fun visibleWhileStreaming(partial: String): String {
+    var i = partial.indexOf('<')
+    while (i >= 0) {
+        val rest = partial.substring(i)
+        if (BLOCK_OPENERS.any { rest.startsWith(it) || it.startsWith(rest) }) return partial.substring(0, i).trimEnd()
+        i = partial.indexOf('<', i + 1)
+    }
+    return partial
+}
