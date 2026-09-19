@@ -13,6 +13,10 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.auth.mfa.AuthenticatorAssuranceLevel
+import io.github.jan.supabase.auth.mfa.FactorType
+import io.github.jan.supabase.auth.providers.builtin.OTP
+import io.github.jan.supabase.auth.user.UserMfaFactor
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
@@ -23,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -42,12 +47,42 @@ object ThaiPhone {
     }
 }
 
+/** What the parent needs to add NongRak to their authenticator app: the QR's URI, or the typed secret. */
+data class TotpEnrollment(val factorId: String, val secret: String, val uri: String)
+
+/** Ticks (epoch ms) when an email-link return proved the mailbox, so an open verify dialog can close. */
+object EmailVerificationSignal {
+    val verifiedAt = kotlinx.coroutines.flow.MutableStateFlow(0L)
+}
+
 class AuthRepository {
+
+    private companion object {
+        /** user_metadata key stamped on every password write; see [passwordSetAt]. */
+        const val PASSWORD_CHANGED_AT = "password_changed_at"
+        /**
+         * Website page the verification link lands on; works in any browser, on any device.
+         * nongrak-web, NOT nongrak-ai: the site source deploys to the nongrak-web Vercel project,
+         * while nongrak-ai.vercel.app is a separate, older project with no such page (2026-09-18).
+         */
+        const val EMAIL_VERIFY_PAGE = "https://nongrak-web.vercel.app/verify-email"
+        /** Sign-up choices kept in user_metadata until the first sign-in can write the profile. */
+        const val META_PHONE = "phone"
+        const val META_ACCOUNT_TYPE = "account_type"
+    }
 
     val currentUser get() = supabase.auth.currentUserOrNull()
 
-    /** [phone] is expected pre-normalized by the caller, but is re-normalized here — this is the
-     *  trust boundary, and an un-validated number must never reach the database. */
+    /**
+     * [phone] is expected pre-normalized by the caller, but is re-normalized here — this is the
+     * trust boundary, and an un-validated number must never reach the database.
+     *
+     * Result is `true` when the account is signed in now, `false` when Supabase "Confirm email" is on
+     * and the parent must open the link first. Phone and account type also go into user_metadata,
+     * because with confirmation on there is no session to write the profile with; [ensureProfile]
+     * applies them at the first sign-in (the on_auth_user_created trigger only copies full_name).
+     * The confirm link returns to lullabyai://auth (supabase-kt's default), handled in MainActivity.
+     */
     suspend fun signUp(
         email: String,
         password: String,
@@ -55,26 +90,47 @@ class AuthRepository {
         captchaToken: String? = null,
         accountType: String = "parent", // "parent" | "doctor"
         phone: String? = null
-    ): Result<Unit> = runCatching {
+    ): Result<Boolean> = runCatching {
+        val normalizedPhone = phone?.let { ThaiPhone.normalize(it) }
         supabase.auth.signUpWith(Email) {
             this.email = email
             this.password = password
             this.captchaToken = captchaToken
             data = buildJsonObject {
                 put("full_name", JsonPrimitive(fullName))
+                put(META_ACCOUNT_TYPE, JsonPrimitive(accountType))
+                if (normalizedPhone != null) put(META_PHONE, JsonPrimitive(normalizedPhone))
             }
         }
-        // Auto sign-in after sign up to guarantee a session exists
-        // (needed when Supabase email confirmation is enabled). Not passing captchaToken here —
-        // the token is single-use and already spent on signUpWith above.
+        // Confirmation off: sign in now so a session exists. Not passing captchaToken here — the
+        // token is single-use and already spent on signUpWith above.
         if (supabase.auth.currentUserOrNull() == null) {
-            supabase.auth.signInWith(Email) {
-                this.email = email
-                this.password = password
+            try {
+                supabase.auth.signInWith(Email) {
+                    this.email = email
+                    this.password = password
+                }
+            } catch (e: Exception) {
+                if (isEmailNotConfirmed(e)) return@runCatching false
+                throw e
             }
         }
-        ensureProfile(fullName = fullName, accountType = accountType, phone = phone?.let { ThaiPhone.normalize(it) })
+        ensureProfile(fullName = fullName, accountType = accountType, phone = normalizedPhone)
+        true
     }
+
+    /** Sends the sign-up confirmation link again. Supabase rate-limits this per address. */
+    suspend fun resendSignUpConfirmation(email: String): Result<Unit> = runCatching {
+        supabase.auth.resendEmail(OtpType.Email.SIGNUP, email)
+    }
+
+    /** After the confirm link signed this phone in (MainActivity deep link): create/patch the profile. */
+    suspend fun finishConfirmedSignUp(): Result<Unit> = runCatching {
+        ensureProfile(fullName = null, accountType = null)
+    }
+
+    fun isEmailNotConfirmed(err: Throwable): Boolean =
+        err.message.orEmpty().lowercase().let { it.contains("email_not_confirmed") || it.contains("not confirmed") }
 
     /**
      * Doctor registration when the email may already belong to a parent account (same person,
@@ -90,15 +146,16 @@ class AuthRepository {
          *  the screen — `profiles.phone` exists and the parent flow writes it, so not forwarding it
          *  here silently discarded what the doctor typed. */
         phone: String? = null
-    ): Result<Unit> = runCatching {
-        val created = runCatching {
-            signUp(email, password, fullName, captchaToken, accountType = ProfileRole.DOCTOR, phone = phone)
-        }
-        if (created.isSuccess) return@runCatching
+    ): Result<Boolean> = runCatching {
+        // signUp returns a Result, so unwrap it here: wrapping that Result in runCatching always
+        // "succeeded", which silently skipped the existing-parent path below.
+        val created = signUp(email, password, fullName, captchaToken, accountType = ProfileRole.DOCTOR, phone = phone)
+        if (created.isSuccess) return@runCatching created.getOrThrow()
         val err = created.exceptionOrNull() ?: error("Doctor sign-up failed")
         if (!isEmailAlreadyRegistered(err)) throw err
         signIn(email, password, captchaToken).getOrThrow()
         grantDoctorRole().getOrThrow()
+        true
     }
 
     suspend fun signIn(email: String, password: String, captchaToken: String? = null): Result<Unit> = runCatching {
@@ -134,13 +191,16 @@ class AuthRepository {
     /** Creates or patches profile metadata. [accountType] null = sign-in only (do not change roles). */
     private suspend fun ensureProfile(fullName: String?, accountType: String?, phone: String? = null) {
         val user = supabase.auth.currentUserOrNull() ?: return
+        // Sign-up metadata only fills gaps (never overwrites a phone edited later in Settings).
+        val metaPhone = user.userMetadata?.get(META_PHONE)?.jsonPrimitive?.contentOrNull?.let { ThaiPhone.normalize(it) }
+        val type = accountType ?: user.userMetadata?.get(META_ACCOUNT_TYPE)?.jsonPrimitive?.contentOrNull
         runCatching {
             val existing = supabase.from("profiles").select {
                 filter { eq("id", user.id) }
                 limit(1)
             }.decodeList<Profile>()
             if (existing.isEmpty()) {
-                val role = when (accountType?.lowercase()) {
+                val role = when (type?.lowercase()) {
                     ProfileRole.DOCTOR -> ProfileRole.DOCTOR
                     else -> ProfileRole.PARENT
                 }
@@ -151,18 +211,19 @@ class AuthRepository {
                         if (!fullName.isNullOrBlank()) put("full_name", JsonPrimitive(fullName))
                         put("account_type", JsonPrimitive(legacyType))
                         put("roles", JsonArray(listOf(JsonPrimitive(role))))
-                        if (phone != null) put("phone", JsonPrimitive(phone))
+                        (phone ?: metaPhone)?.let { put("phone", JsonPrimitive(it)) }
                         put("consent_given_at", JsonPrimitive(java.time.Instant.now().toString()))
                     }
                 )
             } else {
                 val patch = buildJsonObject {
-                    if (phone != null) put("phone", JsonPrimitive(phone))
+                    val fill = phone ?: metaPhone?.takeIf { existing.first().phone.isNullOrBlank() }
+                    if (fill != null) put("phone", JsonPrimitive(fill))
                 }
                 if (patch.isNotEmpty()) {
                     supabase.from("profiles").update(patch) { filter { eq("id", user.id) } }
                 }
-                if (accountType?.lowercase() == ProfileRole.DOCTOR && !existing.first().hasDoctorRole()) {
+                if (type?.lowercase() == ProfileRole.DOCTOR && !existing.first().hasDoctorRole()) {
                     grantDoctorRole()
                 }
             }
@@ -215,6 +276,9 @@ class AuthRepository {
         com.lullabyai.app.util.LineAuthHelper.clearNonce()
         supabase.auth.importAuthToken(access, refresh)
         ensureProfile(fullName = null, accountType = accountType)
+        // LINE shares only an email it verified, so a LINE sign-in with a real email earns the badge.
+        // Best effort: a failure here must not fail the sign-in.
+        confirmEmailOwnership().onFailure { android.util.Log.w("AuthRepository", "LINE email badge not recorded: ${it.message}") }
     }
 
     /**
@@ -352,7 +416,25 @@ class AuthRepository {
     }
 
     suspend fun changePassword(newPassword: String): Result<Unit> = runCatching {
-        supabase.auth.updateUser { password = newPassword }
+        supabase.auth.updateUser {
+            password = newPassword
+            data = buildJsonObject { put(PASSWORD_CHANGED_AT, JsonPrimitive(java.time.Instant.now().toString())) }
+        }
+    }
+
+    /**
+     * When this account's password was last set, for Settings' "เปลี่ยนล่าสุดเมื่อ N วันที่แล้ว".
+     * Supabase keeps no such date, so every password write here stamps [PASSWORD_CHANGED_AT] into
+     * user_metadata (a display value only; the user can edit their own metadata). Accounts that
+     * never changed it fall back to their sign-up time when they have an email password at all.
+     * Null = no password (Google / LINE only) or unknown.
+     */
+    fun passwordSetAt(): java.time.Instant? {
+        val user = supabase.auth.currentUserOrNull() ?: return null
+        user.userMetadata?.get(PASSWORD_CHANGED_AT)?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+            ?.let { return it }
+        return if ("email" in linkedProviders()) user.createdAt?.let { java.time.Instant.ofEpochMilli(it.toEpochMilliseconds()) } else null
     }
 
     // ---------------- FORGOT PASSWORD (OTP flow) ----------------
@@ -373,6 +455,83 @@ class AuthRepository {
         supabase.auth.resetPasswordForEmail(email.trim(), captchaToken = captchaToken)
     }
 
+    /**
+     * Optional email verification (Settings badge). Sends Supabase's "Magic Link" email to the signed-in
+     * account's own address; tapping the link verifies it on Supabase and returns to lullabyai://auth,
+     * where MainActivity calls [confirmEmailOwnership]. `createUser = false`: it can never make an account.
+     */
+    suspend fun sendEmailVerification(): Result<String> = runCatching {
+        val email = supabase.auth.currentUserOrNull()?.email ?: error("no_account_email")
+        // The link lands on the verify-email page, not on lullabyai://auth: the parent may open the
+        // mail on a laptop or a second phone, where an app link cannot work. That page records the
+        // proof and says "ยืนยันอีเมลสำเร็จ"; on this phone its button still opens the app.
+        supabase.auth.signInWith(OTP, redirectUrl = EMAIL_VERIFY_PAGE) {
+            this.email = email
+            createUser = false
+        }
+        email
+    }
+
+    // ---------------- Two-factor authentication (authenticator app / TOTP) ----------------
+
+    /** The account's verified authenticator, or null when 2FA is off. Asks the server, not the cached session. */
+    suspend fun totpFactor(): Result<UserMfaFactor?> = runCatching {
+        supabase.auth.mfa.retrieveFactorsForCurrentUser()
+            .firstOrNull { it.factorType == FactorType.TOTP.value && it.isVerified }
+    }
+
+    /**
+     * Step 1 of turning 2FA on: registers an unverified authenticator and returns what the parent
+     * scans. Nothing protects the account until [confirmTotp] accepts a code from that app.
+     * A half-finished attempt leaves an unverified factor behind, so the next attempt clears it.
+     */
+    suspend fun startTotpEnrollment(): Result<TotpEnrollment> = runCatching {
+        supabase.auth.mfa.retrieveFactorsForCurrentUser()
+            .filter { it.factorType == FactorType.TOTP.value && !it.isVerified }
+            .forEach { runCatching { supabase.auth.mfa.unenroll(it.id) } }
+        val factor = supabase.auth.mfa.enroll(FactorType.TOTP, friendlyName = "NongRak AI")
+        TotpEnrollment(factorId = factor.id, secret = factor.data.secret, uri = factor.data.uri)
+    }
+
+    /** Step 2: the 6-digit code from the authenticator app. On success the factor is verified and 2FA is on. */
+    suspend fun confirmTotp(factorId: String, code: String): Result<Unit> = runCatching {
+        supabase.auth.mfa.createChallengeAndVerify(factorId, code.trim())
+    }
+
+    /**
+     * Turns 2FA off. A current code is required: without it, anyone holding an unlocked phone with a
+     * signed-in session could strip the second factor off the account.
+     */
+    suspend fun disableTotp(factorId: String, code: String): Result<Unit> = runCatching {
+        supabase.auth.mfa.createChallengeAndVerify(factorId, code.trim())
+        supabase.auth.mfa.unenroll(factorId)
+    }
+
+    /** True when this sign-in still owes an authenticator code (session is aal1 but the account needs aal2). */
+    fun totpChallengePending(): Boolean = runCatching {
+        val level = supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+        level.current == AuthenticatorAssuranceLevel.AAL1 && level.next == AuthenticatorAssuranceLevel.AAL2
+    }.getOrDefault(false)
+
+    /** Finishes a sign-in that owes a code; the session becomes aal2. */
+    suspend fun verifyTotpChallenge(code: String): Result<Unit> = runCatching {
+        val factor = totpFactor().getOrThrow() ?: error("no_totp_factor")
+        supabase.auth.mfa.createChallengeAndVerify(factor.id, code.trim())
+    }
+
+    /** Has this account's email been proven? Polled while waiting, for a confirmation done elsewhere. */
+    suspend fun isEmailVerified(): Result<Boolean> = runCatching {
+        getProfile().getOrThrow().emailVerifiedAt != null
+    }
+
+    /**
+     * Server check (confirm_email_ownership): true only when the current session came from a code/link
+     * sent to the account's email. Harmless to call after any sign-in; a password session returns false.
+     */
+    suspend fun confirmEmailOwnership(): Result<Boolean> = runCatching {
+        supabase.postgrest.rpc("confirm_email_ownership").decodeAs<Boolean>()
+    }
+
     /** Step 2: verify the 6-digit code — on success this creates an authenticated recovery session. */
     suspend fun verifyRecoveryOtp(email: String, token: String): Result<Unit> = runCatching {
         supabase.auth.verifyEmailOtp(
@@ -388,7 +547,10 @@ class AuthRepository {
         val temp = generateTempPassword()
         supabase.auth.updateUser {
             password = temp
-            data = buildJsonObject { put("must_change_password", JsonPrimitive(true)) }
+            data = buildJsonObject {
+                put("must_change_password", JsonPrimitive(true))
+                put(PASSWORD_CHANGED_AT, JsonPrimitive(java.time.Instant.now().toString()))
+            }
         }
         runCatching { supabase.auth.signOut() }
         temp
@@ -405,7 +567,10 @@ class AuthRepository {
     suspend fun completeForcedChange(newPassword: String): Result<Unit> = runCatching {
         supabase.auth.updateUser {
             password = newPassword
-            data = buildJsonObject { put("must_change_password", JsonPrimitive(false)) }
+            data = buildJsonObject {
+                put("must_change_password", JsonPrimitive(false))
+                put(PASSWORD_CHANGED_AT, JsonPrimitive(java.time.Instant.now().toString()))
+            }
         }
     }
 
@@ -420,7 +585,10 @@ class AuthRepository {
         // Set the new password and clear the must-change flag
         supabase.auth.updateUser {
             password = newPassword
-            data = buildJsonObject { put("must_change_password", JsonPrimitive(false)) }
+            data = buildJsonObject {
+                put("must_change_password", JsonPrimitive(false))
+                put(PASSWORD_CHANGED_AT, JsonPrimitive(java.time.Instant.now().toString()))
+            }
         }
     }
 
@@ -480,11 +648,6 @@ class AuthRepository {
         val now = when (column) { "username" -> saved.username; "full_name" -> saved.fullName; else -> saved.phone }
         check(now == value) { "profile_field_not_saved: $column wanted '$value', got '$now'" }
         saved
-    }
-
-    /** Asks Supabase to move sign-in to [newEmail]. Nothing changes until the link sent to the new address is opened. */
-    suspend fun requestEmailChange(newEmail: String): Result<Unit> = runCatching {
-        supabase.auth.updateUser { email = newEmail }
     }
 
     /** Separate opt-in consent for using (de-identified) data to improve/train AI models — a

@@ -46,7 +46,7 @@ private val WarnOrange = Color(0xFFB45309)
  *
  * Every row here does something real; design rows are added as each is built, not drawn first.
  * The design's weekly email summary row is dropped on purpose (owner decision 2026-09-16: no email
- * sending service). 2FA stays visibly unavailable until authenticator-app MFA ships.
+ * sending service). The registered email is read-only: the sign-up address cannot be changed.
  */
 @Composable
 fun SettingsScreen(
@@ -66,7 +66,6 @@ fun SettingsScreen(
     var lineLink by remember { mutableStateOf<com.lullabyai.app.data.repository.LineLink?>(null) }
     var googleLinked by remember { mutableStateOf(false) }
     var accountEmail by remember { mutableStateOf<String?>(null) }
-    var emailConfirmed by remember { mutableStateOf(false) }
     var biometricLoginOn by remember {
         mutableStateOf(runCatching {
             val me = authViewModel.getCurrentUserId()
@@ -79,11 +78,17 @@ fun SettingsScreen(
         googleLinked = com.lullabyai.app.data.repository.AuthRepository().linkedProviders().contains("google")
         val user = runCatching { com.lullabyai.app.data.remote.supabase.auth.currentUserOrNull() }.getOrNull()
         accountEmail = user?.email
-        emailConfirmed = user?.emailConfirmedAt != null
         if (com.lullabyai.app.data.repository.LineRepository.isConfigured) {
             lineLink = com.lullabyai.app.data.repository.LineRepository.status().getOrNull()
         }
     }
+    // Our own proof, not auth.users.email_confirmed_at: with "Confirm email" off Supabase marks every
+    // account confirmed. Google verified the address itself, so it counts. LINE counts only as a
+    // sign-in (synthetic @line.invalid, or a real LINE email recorded by signInWithLineIdToken) — a
+    // LINE OA link for notifications (lineLink) proves nothing about the email.
+    val emailConfirmed = authState.profile?.emailVerifiedAt != null || googleLinked ||
+        accountEmail?.endsWith("@line.invalid") == true
+    var showVerifyEmail by remember { mutableStateOf(false) }
     val appVersion = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "-"
     }
@@ -159,7 +164,8 @@ fun SettingsScreen(
                         email = accountEmail,
                         phone = profile?.phone,
                         emailConfirmed = emailConfirmed,
-                        onEdit = { showAvatarPicker = true }
+                        onEdit = { showAvatarPicker = true },
+                        onVerify = { showVerifyEmail = true }
                     )
                 }
 
@@ -191,8 +197,9 @@ fun SettingsScreen(
                                     color = if (emailConfirmed) OkGreen else WarnOrange
                                 )
                             },
-                            trailingAction = if (isThai) "แก้ไข" else "Edit",
-                            onClick = { editingField = AccountField.EMAIL }
+                            // Read-only on purpose: the sign-up address is the account's identity
+                            // and cannot be changed in the app. Tapping offers verification instead.
+                            onClick = if (emailConfirmed) null else ({ showVerifyEmail = true })
                         )
                         RowDivider()
                         InfoRow(
@@ -312,7 +319,9 @@ fun SettingsScreen(
                         IconNavRow(
                             icon = Icons.Outlined.Key,
                             title = if (isThai) "เปลี่ยนรหัสผ่าน (Change Password)" else "Change password",
-                            subtitle = if (isThai) "ตั้งรหัสผ่านใหม่สำหรับเข้าสู่ระบบ" else "Set a new sign-in password",
+                            subtitle = remember(authState.profile) { com.lullabyai.app.data.repository.AuthRepository().passwordSetAt() }
+                                ?.let { passwordAgeLabel(it, java.time.Instant.now(), isThai) }
+                                ?: (if (isThai) "ตั้งรหัสผ่านใหม่สำหรับเข้าสู่ระบบ" else "Set a new sign-in password"),
                             onClick = { navController.navigate(Screen.ChangePassword.route) }
                         )
                         RowDivider(start = 68.dp)
@@ -362,15 +371,12 @@ fun SettingsScreen(
                             }
                             RowDivider(start = 68.dp)
                         }
-                        // Visibly unavailable until authenticator-app MFA is built: an ON switch that
-                        // protects nothing is worse than an honest OFF (see DeviceTrustGate history).
-                        IconSwitchRow(
+                        IconNavRow(
                             icon = Icons.Outlined.PhonelinkLock,
                             title = if (isThai) "ยืนยันตัวตน 2 ขั้นตอน (2FA)" else "Two-factor authentication (2FA)",
-                            subtitle = if (isThai) "ยืนยันด้วยแอป Authenticator • กำลังพัฒนา เปิดใช้ได้เร็วๆ นี้" else "Authenticator app • coming soon",
-                            checked = false,
-                            enabled = false
-                        ) {}
+                            subtitle = if (isThai) "ยืนยันด้วยแอป Authenticator ทุกครั้งที่เข้าสู่ระบบ" else "Authenticator app code at every sign-in",
+                            onClick = { navController.navigate(Screen.TwoFactor.route) }
+                        )
                         if (com.lullabyai.app.util.AppLock.isSupported()) {
                             RowDivider(start = 68.dp)
                             IconSwitchRow(
@@ -603,7 +609,6 @@ fun SettingsScreen(
             current = when (field) {
                 AccountField.USERNAME -> authState.profile?.username
                 AccountField.FULL_NAME -> authState.profile?.fullName
-                AccountField.EMAIL -> accountEmail
                 AccountField.PHONE -> authState.profile?.phone
             },
             isThai = isThai,
@@ -612,6 +617,18 @@ fun SettingsScreen(
                 editingField = null
                 authViewModel.loadProfile()
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    if (showVerifyEmail) {
+        VerifyEmailDialog(
+            isThai = isThai,
+            onDismiss = { showVerifyEmail = false },
+            onVerified = {
+                showVerifyEmail = false
+                authViewModel.loadProfile()
+                Toast.makeText(context, if (isThai) "ยืนยันอีเมลแล้ว ขอบคุณค่ะ 💙" else "Email verified, thank you", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -744,6 +761,17 @@ fun SettingsScreen(
 
 // ============================ building blocks ============================
 
+/** "เปลี่ยนล่าสุดเมื่อ 45 วันที่แล้ว" under Change Password; days are whole 24 h periods. */
+internal fun passwordAgeLabel(setAt: java.time.Instant, now: java.time.Instant, isThai: Boolean): String {
+    val days = java.time.Duration.between(setAt, now).toDays().coerceAtLeast(0)
+    return when {
+        days == 0L -> if (isThai) "เปลี่ยนล่าสุดเมื่อวันนี้" else "Last changed today"
+        isThai -> "เปลี่ยนล่าสุดเมื่อ $days วันที่แล้ว"
+        days == 1L -> "Last changed 1 day ago"
+        else -> "Last changed $days days ago"
+    }
+}
+
 @Composable
 private fun GuestCard(isThai: Boolean, navController: NavController) {
     Surface(
@@ -787,7 +815,8 @@ private fun ProfileCard(
     email: String?,
     phone: String?,
     emailConfirmed: Boolean,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onVerify: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(24.dp),
@@ -844,8 +873,8 @@ private fun ProfileCard(
                     if (!phone.isNullOrBlank()) ContactLine(Icons.Outlined.Phone, phone)
                 }
             }
-            // Account status: only says "verified" when the email really is confirmed.
-            Surface(shape = RoundedCornerShape(16.dp), color = Primary.copy(alpha = 0.05f), modifier = Modifier.fillMaxWidth()) {
+            // Account status: only says "verified" when the email really is proven. Tap to verify (optional).
+            Surface(onClick = onVerify, enabled = !emailConfirmed, shape = RoundedCornerShape(16.dp), color = Primary.copy(alpha = 0.05f), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                         Icon(
@@ -858,7 +887,7 @@ private fun ProfileCard(
                     Text(if (isThai) "สถานะบัญชี:" else "Account status:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         if (emailConfirmed) (if (isThai) "ยืนยันตัวตนแล้ว • ปลอดภัย" else "Verified • secure")
-                        else (if (isThai) "ยังไม่ยืนยันอีเมล" else "Email not verified"),
+                        else (if (isThai) "ยังไม่ยืนยันอีเมล • แตะเพื่อยืนยัน" else "Email not verified • tap to verify"),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = if (emailConfirmed) OkGreen else WarnOrange,
@@ -918,9 +947,11 @@ private fun InfoRow(
     value: String,
     badge: (@Composable () -> Unit)? = null,
     trailingAction: String? = null,
-    onClick: () -> Unit
+    /** Null makes the row read-only: no chevron, no ripple. */
+    onClick: (() -> Unit)? = null
 ) {
-    Surface(onClick = onClick, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+    val rowModifier = if (onClick != null) Modifier.fillMaxWidth().clickable(onClick = onClick) else Modifier.fillMaxWidth()
+    Surface(color = Color.Transparent, modifier = rowModifier) {
         Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -933,7 +964,7 @@ private fun InfoRow(
                 Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(alpha = 0.10f)) {
                     Text(trailingAction, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelLarge, color = Primary, fontWeight = FontWeight.SemiBold)
                 }
-            } else {
+            } else if (onClick != null) {
                 Icon(Icons.Filled.ChevronRight, null, tint = Outline)
             }
         }

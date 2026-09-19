@@ -59,6 +59,16 @@ fun SignUpScreen(
     var phone by remember { mutableStateOf("") }
     var phoneError by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
+    var awaitingConfirmation by remember { mutableStateOf(false) }
+    if (awaitingConfirmation) {
+        EmailConfirmationDialog(
+            email = email.trim(),
+            password = password,
+            isThai = isThai,
+            onConfirmed = { awaitingConfirmation = false; onSignUpSuccess() },
+            onCancel = { awaitingConfirmation = false }
+        )
+    }
     var confirmPassword by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var showConfirmPassword by remember { mutableStateOf(false) }
@@ -246,6 +256,7 @@ fun SignUpScreen(
                                     authViewModel.signUp(
                                         email, password, fullName, captchaToken,
                                         phone = normalizedPhone,
+                                        onNeedsConfirmation = { awaitingConfirmation = true },
                                         onSuccess = onSignUpSuccess
                                     )
                             }

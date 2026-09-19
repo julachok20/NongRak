@@ -111,6 +111,12 @@ data class ChildUiState(
 
     val dailyQuestion: String? = null,
     val infoAsks: List<com.lullabyai.app.data.infoask.InfoAskPrompt> = emptyList(),
+    /**
+     * The child [infoAsks] was built for. Questions are per child, and the answers are written to
+     * whichever child is selected now — so a leftover list from the previous child would file one
+     * child's answer under another. Anything that uses [infoAsks] must check this first.
+     */
+    val infoAskChildId: String? = null,
     val infoAskSaving: Boolean = false,
     /**
      * Open questions per child id, for the red badge in the child switcher. Counted from each
@@ -575,7 +581,13 @@ class ChildViewModel : ViewModel() {
 
     fun loadInfoAsk(context: android.content.Context, isThai: Boolean) {
         if (isGuest()) return
-        if (_uiState.value.infoAsks.isNotEmpty()) return
+        val state = _uiState.value
+        if (!com.lullabyai.app.data.infoask.InfoAskCatalog.needsReload(
+                selectedChildId = state.child?.id,
+                loadedForChildId = state.infoAskChildId,
+                loaded = state.infoAsks.size
+            )
+        ) return
         viewModelScope.launch { loadInfoAskInternal(context, isThai) }
     }
 
@@ -620,7 +632,7 @@ class ChildViewModel : ViewModel() {
         val catalog = com.lullabyai.app.data.infoask.InfoAskCatalog
         var prompts = catalog.openAll(snapshot)
         if (prompts.isEmpty()) {
-            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null)
+            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), infoAskChildId = child.id, dailyQuestion = null)
             return
         }
         if (prompts.size == 1 && prompts.first().fieldId == "open_notes") {
@@ -628,7 +640,7 @@ class ChildViewModel : ViewModel() {
                 prompts = listOf(prompts.first().copy(questionTh = q, questionEn = q))
             }
         }
-        _uiState.value = _uiState.value.copy(infoAsks = prompts, dailyQuestion = null)
+        _uiState.value = _uiState.value.copy(infoAsks = prompts, infoAskChildId = child.id, dailyQuestion = null)
     }
 
     /**
@@ -644,6 +656,14 @@ class ChildViewModel : ViewModel() {
     ) {
         val prompts = _uiState.value.infoAsks
         if (prompts.isEmpty()) return
+        // The questions on screen must belong to the child they will be saved against. If the child
+        // was switched underneath them, drop the answers and re-ask rather than file them wrongly.
+        val selectedChildId = _uiState.value.child?.id
+        if (selectedChildId == null || _uiState.value.infoAskChildId != selectedChildId) {
+            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), infoAskChildId = null, dailyQuestion = null)
+            viewModelScope.launch { loadInfoAskInternal(context, isThai) }
+            return
+        }
         val catalog = com.lullabyai.app.data.infoask.InfoAskCatalog
         val byId = prompts.associateBy { it.fieldId }
         val filled = answers.filter { a -> byId[a.fieldId]?.let { catalog.isFilled(it, a) } == true }
@@ -666,7 +686,7 @@ class ChildViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(infoAskSaving = false, error = firstError)
                 return@launch
             }
-            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null, infoAskSaving = false)
+            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), infoAskChildId = null, dailyQuestion = null, infoAskSaving = false)
             loadChild()
             loadInfoAskInternal(context, isThai)
             // The switcher badge counts answers, so it has to drop the moment one is written.
@@ -1069,6 +1089,7 @@ class ChildViewModel : ViewModel() {
             medicationHistoryInsight = null, doctorVisitHistoryInsight = null,
             allergies = emptyList(), milestones = emptyList(),
             aiTasks = emptyList(), childAvatarSignedUrl = null,
+            infoAsks = emptyList(), infoAskChildId = null, dailyQuestion = null,
             isChildOwner = childId in _uiState.value.ownedChildIds
         )
         loadChild()

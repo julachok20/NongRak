@@ -107,6 +107,16 @@ object InfoAskCatalog {
 
     fun next(snapshot: InfoAskSnapshot): InfoAskPrompt? = openAll(snapshot).firstOrNull()
 
+    /**
+     * Whether the open questions have to be built again.
+     *
+     * Questions belong to one child, but the answers are written to whichever child is selected
+     * when the parent taps save. Keeping a list that was built for another child is how one child's
+     * birth weight ends up on their sibling, so a change of child always reloads.
+     */
+    fun needsReload(selectedChildId: String?, loadedForChildId: String?, loaded: Int): Boolean =
+        selectedChildId != null && (loaded == 0 || loadedForChildId != selectedChildId)
+
     fun isFilled(prompt: InfoAskPrompt, answer: InfoAskAnswer): Boolean = when (prompt.kind) {
         InfoAskKind.CHIPS -> !answer.chipId.isNullOrBlank()
         InfoAskKind.DATE, InfoAskKind.TEXT, InfoAskKind.NUMBER -> answer.text.isNotBlank()

@@ -1,5 +1,6 @@
 package com.lullabyai.app.ui.screens.auth
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -76,6 +77,10 @@ fun LoginScreen(
     // Opens by itself when this phone has a saved sign-in: "ต้องการเข้าสู่ระบบบัญชีนี้หรือไม่?"
     var showSavedAccountPrompt by remember { mutableStateOf(savedBiometricSignIn) }
 
+    // Set while the 2FA code question is open; running it continues into the app.
+    val authScope = rememberCoroutineScope()
+    var afterTotp by remember { mutableStateOf<(() -> Unit)?>(null) }
+
     fun biometricSignIn() {
         formError = null
         com.lullabyai.app.util.AppLock.authenticate(
@@ -86,7 +91,14 @@ fun LoginScreen(
             if (ok) {
                 com.lullabyai.app.util.AppLock.unlocked = true
                 authViewModel.signInWithBiometric { mustChange ->
-                    if (mustChange) onNeedChangePassword() else onLoginSuccess()
+                    // Same gate as the password path: a key saved before 2FA was switched on
+                    // restores an aal1 session, which still owes a code.
+                    val proceed = { if (mustChange) onNeedChangePassword() else onLoginSuccess() }
+                    if (com.lullabyai.app.data.repository.AuthRepository().totpChallengePending()) {
+                        afterTotp = proceed
+                    } else {
+                        proceed()
+                    }
                 }
                 // The key is single-use; hide the button until the next logout saves a new one.
                 savedBiometricSignIn = false
@@ -94,6 +106,19 @@ fun LoginScreen(
                 formError = message
             }
         }
+    }
+
+    afterTotp?.let { proceed ->
+        com.lullabyai.app.ui.screens.auth.TotpChallengeDialog(
+            isThai = isThai,
+            onVerified = { afterTotp = null; proceed() },
+            onCancel = {
+                afterTotp = null
+                // Half-authenticated is not signed in: drop the aal1 session rather than keep it.
+                authScope.launch { com.lullabyai.app.data.repository.AuthRepository().signOut() }
+                formError = if (isThai) "ยกเลิกการเข้าสู่ระบบแล้ว" else "Sign-in cancelled"
+            }
+        )
     }
 
     // Set while the "use biometrics next time?" question is open; running it continues into the app.
@@ -340,6 +365,23 @@ fun LoginScreen(
                     (formError ?: uiState.error)?.let {
                         Text(it, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
+                    // friendlyAuthError's "not confirmed" text: the parent closed the confirm dialog
+                    // earlier, so offer the link again right where the error is.
+                    if (formError == null && uiState.error?.contains("ยังไม่ได้รับการยืนยัน") == true && email.isNotBlank()) {
+                        val resendScope = rememberCoroutineScope()
+                        var resendNote by remember { mutableStateOf<String?>(null) }
+                        TextButton(onClick = {
+                            resendScope.launch {
+                                resendNote = com.lullabyai.app.data.repository.AuthRepository()
+                                    .resendSignUpConfirmation(email.trim())
+                                    .fold(
+                                        onSuccess = { if (isThai) "ส่งลิงก์ยืนยันไปที่ ${email.trim()} แล้ว" else "Confirmation link sent to ${email.trim()}" },
+                                        onFailure = { (if (isThai) "ส่งไม่สำเร็จ: " else "Could not send: ") + (it.message ?: it::class.simpleName) }
+                                    )
+                            }
+                        }) { Text(if (isThai) "ส่งลิงก์ยืนยันอีกครั้ง" else "Resend confirmation link") }
+                        resendNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    }
 
                     PrimaryButton(
                         text = s.login,
@@ -354,7 +396,14 @@ fun LoginScreen(
                                 formError = if (isThai) "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนเข้าสู่ระบบ" else "Unusual activity detected — please verify you're not a robot before signing in"
                             } else {
                                 authViewModel.signIn(email, password, captchaToken) { mustChange ->
-                                    finishLogin { if (mustChange) onNeedChangePassword() else onLoginSuccess() }
+                                    val proceed = { finishLogin { if (mustChange) onNeedChangePassword() else onLoginSuccess() } }
+                                    // The password alone only buys an aal1 session; accounts with an
+                                    // authenticator owe a code before they reach any of their data.
+                                    if (com.lullabyai.app.data.repository.AuthRepository().totpChallengePending()) {
+                                        afterTotp = proceed
+                                    } else {
+                                        proceed()
+                                    }
                                 }
                             }
                         },

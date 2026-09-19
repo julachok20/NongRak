@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun UploadBirthCertificateScreen(
-    onExtracted: (name: String, birthdate: String, gender: String) -> Unit,
+    onExtracted: (fullName: String, nickname: String, birthdate: String, gender: String) -> Unit,
     onBack: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -63,7 +63,7 @@ fun UploadBirthCertificateScreen(
                 errorMessage = if (isThai) "อ่านข้อมูลจากสูติบัตรไม่ได้ ลองถ่ายรูปให้ชัดขึ้นหรือกรอกข้อมูลเอง"
                 else "Couldn't read the certificate. Try a clearer photo, or enter the details manually."
             } else {
-                onExtracted(result.name, result.birthdateIso ?: "", result.gender)
+                onExtracted(result.fullName, result.nickname, result.birthdateIso ?: "", result.gender)
             }
         }
     }

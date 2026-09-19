@@ -37,8 +37,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
-/** The four Personal Info rows; each one is edited alone in [EditAccountFieldDialog]. */
-enum class AccountField { USERNAME, FULL_NAME, EMAIL, PHONE }
+/**
+ * The Personal Info rows that can be edited, each one alone in [EditAccountFieldDialog].
+ *
+ * The registered email is deliberately NOT here (owner, 2026-09-18): the address someone signed up
+ * with is fixed, so it is shown read-only and can only be verified, never changed.
+ */
+enum class AccountField { USERNAME, FULL_NAME, PHONE }
 
 private const val MAX_NAME = 50
 private const val AVATAR_PX = 512
@@ -46,8 +51,7 @@ private const val SAMPLE_DIR = "avatars/user"
 
 /**
  * Edits one Personal Info value in place (no separate screen). Validates, saves, and keeps the
- * dialog open with the reason when saving fails. Email only starts a change: Supabase sends a
- * link to the new address and the account switches after it is opened.
+ * dialog open with the reason when saving fails.
  */
 @Composable
 fun EditAccountFieldDialog(
@@ -66,7 +70,6 @@ fun EditAccountFieldDialog(
     val title = when (field) {
         AccountField.USERNAME -> if (isThai) "แก้ไขชื่อผู้ใช้" else "Edit username"
         AccountField.FULL_NAME -> if (isThai) "แก้ไขชื่อ-นามสกุล" else "Edit full name"
-        AccountField.EMAIL -> if (isThai) "เปลี่ยนอีเมลที่ลงทะเบียน" else "Change registered email"
         AccountField.PHONE -> if (isThai) "แก้ไขเบอร์โทรศัพท์" else "Edit phone number"
     }
 
@@ -85,11 +88,6 @@ fun EditAccountFieldDialog(
                 value.length > MAX_NAME -> if (isThai) "ยาวได้ไม่เกิน $MAX_NAME ตัวอักษร" else "At most $MAX_NAME characters"
                 else -> null
             }
-            AccountField.EMAIL -> when {
-                !android.util.Patterns.EMAIL_ADDRESS.matcher(value).matches() -> if (isThai) "รูปแบบอีเมลไม่ถูกต้อง" else "Not a valid email"
-                value.equals(current, ignoreCase = true) -> if (isThai) "เป็นอีเมลเดิมอยู่แล้ว" else "That is already your email"
-                else -> null
-            }
             AccountField.PHONE -> if (value.isNotEmpty() && ThaiPhone.normalize(value) == null) {
                 if (isThai) "เบอร์ไม่ถูกต้อง เช่น 0812345678" else "Not a valid Thai number, e.g. 0812345678"
             } else null
@@ -98,7 +96,7 @@ fun EditAccountFieldDialog(
             error = problem
             return
         }
-        if (field != AccountField.EMAIL && value == current.orEmpty()) {
+        if (value == current.orEmpty()) {
             onDismiss()
             return
         }
@@ -109,23 +107,14 @@ fun EditAccountFieldDialog(
                 AccountField.USERNAME -> repo.updateProfileField("username", value).map { }
                 AccountField.FULL_NAME -> repo.updateProfileField("full_name", value).map { }
                 AccountField.PHONE -> repo.updateProfileField("phone", value.ifEmpty { null }?.let { ThaiPhone.normalize(it) }).map { }
-                AccountField.EMAIL -> repo.requestEmailChange(value)
             }
             saving = false
             result.onSuccess {
-                onSaved(
-                    if (field == AccountField.EMAIL) {
-                        if (isThai) "ส่งลิงก์ยืนยันไปที่ $value แล้ว อีเมลจะเปลี่ยนหลังกดลิงก์" else "Confirmation link sent to $value. The email changes after you open it."
-                    } else {
-                        if (isThai) "บันทึกแล้ว" else "Saved"
-                    }
-                )
+                onSaved(if (isThai) "บันทึกแล้ว" else "Saved")
             }.onFailure {
                 val raw = it.message ?: it::class.simpleName.orEmpty()
                 error = when {
                     raw == "username_taken" -> if (isThai) "ชื่อผู้ใช้นี้มีคนใช้แล้ว ลองชื่ออื่น" else "That username is taken"
-                    raw.contains("already been registered", ignoreCase = true) ->
-                        if (isThai) "อีเมลนี้ใช้กับบัญชีอื่นอยู่แล้ว" else "That email belongs to another account"
                     else -> (if (isThai) "บันทึกไม่สำเร็จ: " else "Could not save: ") + raw
                 }
             }
@@ -146,7 +135,6 @@ fun EditAccountFieldDialog(
                     shape = RoundedCornerShape(14.dp),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = when (field) {
-                            AccountField.EMAIL -> KeyboardType.Email
                             AccountField.PHONE -> KeyboardType.Phone
                             else -> KeyboardType.Text
                         }
@@ -154,12 +142,6 @@ fun EditAccountFieldDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 when (field) {
-                    AccountField.EMAIL -> Text(
-                        if (isThai) "ระบบจะส่งลิงก์ยืนยันไปที่อีเมลใหม่ ใช้อีเมลเดิมเข้าสู่ระบบได้จนกว่าจะกดยืนยัน"
-                        else "A confirmation link goes to the new address. Keep signing in with the old one until you open it.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     AccountField.PHONE -> Text(
                         if (isThai) "เว้นว่างเพื่อลบเบอร์" else "Leave empty to remove it",
                         style = MaterialTheme.typography.bodySmall,
@@ -173,10 +155,88 @@ fun EditAccountFieldDialog(
         },
         confirmButton = {
             TextButton(onClick = { save() }, enabled = !saving) {
-                Text(if (field == AccountField.EMAIL) (if (isThai) "ส่งลิงก์ยืนยัน" else "Send link") else (if (isThai) "บันทึก" else "Save"), fontWeight = FontWeight.Bold)
+                Text(if (isThai) "บันทึก" else "Save", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(if (isThai) "ยกเลิก" else "Cancel") } }
+    )
+}
+
+/**
+ * Optional email verification, link only: sends Supabase's "Magic Link" email to the account's own
+ * address. Tapping the button in it verifies on Supabase and returns to the app (lullabyai://auth),
+ * where MainActivity records the proof and ticks [EmailVerificationSignal]; this dialog then closes.
+ * Never blocks anything — it only earns the verified badge.
+ */
+@Composable
+fun VerifyEmailDialog(isThai: Boolean, onDismiss: () -> Unit, onVerified: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val repo = remember { AuthRepository() }
+    val openedAt = remember { System.currentTimeMillis() }
+    var sentTo by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        com.lullabyai.app.data.repository.EmailVerificationSignal.verifiedAt.collect { if (it > openedAt) onVerified() }
+    }
+    // The link may be opened on another phone or a laptop, where nothing comes back to this app,
+    // so ask the server every few seconds while the parent is waiting.
+    LaunchedEffect(sentTo) {
+        if (sentTo == null) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(4_000)
+            if (repo.isEmailVerified().getOrDefault(false)) {
+                onVerified()
+                return@LaunchedEffect
+            }
+        }
+    }
+
+    fun send() {
+        busy = true
+        error = null
+        scope.launch {
+            repo.sendEmailVerification()
+                .onSuccess { sentTo = it }
+                .onFailure { error = (if (isThai) "ส่งไม่สำเร็จ: " else "Could not send: ") + (it.message ?: it::class.simpleName) }
+            busy = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (isThai) "ยืนยันอีเมลของคุณ" else "Verify your email", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    if (sentTo == null) {
+                        if (isThai) "ไม่บังคับ แต่ช่วยให้เรามั่นใจว่าบัญชีนี้เป็นของคุณจริง เราจะส่งลิงก์ยืนยันไปที่อีเมลที่ใช้สมัคร"
+                        else "Optional, but it shows this account is really yours. We'll send a confirmation link to your sign-up email."
+                    } else {
+                        if (isThai) "ส่งลิงก์ไปที่ $sentTo แล้ว\n\nเปิดอีเมลเครื่องไหนก็ได้ แล้วกดปุ่ม \"ยืนยันอีเมล\" หน้าเว็บจะขึ้นว่ายืนยันสำเร็จ และแอปนี้จะอัปเดตให้เองภายในไม่กี่วินาที\n\nไม่เห็นอีเมล? ลองดูในโฟลเดอร์สแปม"
+                        else "Link sent to $sentTo.\n\nOpen the email on any device and tap \"Confirm email\". The web page says it worked, and this app updates itself within seconds.\n\nNo email? Check your spam folder."
+                    }
+                )
+                if (sentTo != null && !busy) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text(if (isThai) "รอการยืนยันจากอีเมล…" else "Waiting for the link…", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { send() }, enabled = !busy) {
+                Text(
+                    if (sentTo == null) (if (isThai) "ส่งลิงก์ยืนยัน" else "Send link") else (if (isThai) "ส่งลิงก์อีกครั้ง" else "Resend link"),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(if (isThai) "ไว้ทีหลัง" else "Later") } }
     )
 }
 

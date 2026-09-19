@@ -92,6 +92,27 @@ fun DoctorSignUpScreen(
             popUpTo(Screen.DoctorWelcome.route) { inclusive = true }
         }
     }
+    /** Runs once a session exists: straight after sign-up, or after the email link is confirmed. */
+    fun finishDoctorSignUp() {
+        val doctorId = authViewModel.getCurrentUserId()
+        if (doctorId != null) {
+            doctorViewModel.saveProfile(doctorId, clinicName.ifBlank { null }, specialty, licenseNumber.ifBlank { null }, clinicAddress.ifBlank { null }, null, null) {
+                goDoctorHome()
+            }
+        } else {
+            goDoctorHome()
+        }
+    }
+    var awaitingConfirmation by remember { mutableStateOf(false) }
+    if (awaitingConfirmation) {
+        com.lullabyai.app.ui.screens.auth.EmailConfirmationDialog(
+            email = email.trim(),
+            password = password,
+            isThai = isThai,
+            onConfirmed = { awaitingConfirmation = false; finishDoctorSignUp() },
+            onCancel = { awaitingConfirmation = false }
+        )
+    }
 
     val googleSignUp = rememberGoogleSignInAction(
         authViewModel = authViewModel,
@@ -374,17 +395,10 @@ fun DoctorSignUpScreen(
                         else -> authViewModel.signUpDoctor(
                             email, password, fullName, captchaToken,
                             // Raw: AuthRepository.signUp already runs ThaiPhone.normalize on it.
-                            phone = phone.ifBlank { null }
-                        ) {
-                            val doctorId = authViewModel.getCurrentUserId()
-                            if (doctorId != null) {
-                                doctorViewModel.saveProfile(doctorId, clinicName.ifBlank { null }, specialty, licenseNumber.ifBlank { null }, clinicAddress.ifBlank { null }, null, null) {
-                                    goDoctorHome()
-                                }
-                            } else {
-                                goDoctorHome()
-                            }
-                        }
+                            phone = phone.ifBlank { null },
+                            onNeedsConfirmation = { awaitingConfirmation = true },
+                            onSuccess = { finishDoctorSignUp() }
+                        )
                     }
                 }
             )

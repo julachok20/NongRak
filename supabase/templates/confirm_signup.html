@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light only">
+  <title>ยืนยันอีเมล NongRak AI</title>
+</head>
+<body style="margin:0;padding:0;background:#EEF2FB;font-family:'Noto Sans Thai','Leelawadee UI',Tahoma,Arial,sans-serif;">
+  <!-- Preheader: the grey preview line next to the subject in the inbox -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    อีกหนึ่งขั้นตอนเท่านั้น กดยืนยันอีเมลแล้วเริ่มดูแลลูกน้อยไปพร้อมกับน้องรักได้เลย
+  </div>
+
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#EEF2FB;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#FFFFFF;border-radius:28px;overflow:hidden;box-shadow:0 12px 40px rgba(55,87,174,0.14);">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="background:#3757AE;background-image:linear-gradient(135deg,#3757AE 0%,#6C8CFF 60%,#F7A8C4 100%);padding:40px 24px 36px;">
+              <div style="width:76px;height:76px;line-height:76px;border-radius:38px;background:rgba(255,255,255,0.22);font-size:40px;margin:0 auto 14px;">💙</div>
+              <div style="color:#FFFFFF;font-size:13px;letter-spacing:3px;font-weight:700;opacity:0.9;">NONGRAK AI</div>
+              <div style="color:#FFFFFF;font-size:28px;font-weight:800;line-height:1.35;margin-top:6px;">ยืนยันอีเมลของคุณ</div>
+              <div style="color:#FFFFFF;font-size:15px;font-weight:600;opacity:0.9;margin-top:2px;">Confirm your email</div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 32px 8px;color:#1E2026;">
+              <p style="margin:0 0 12px;font-size:17px;font-weight:700;">
+                สวัสดีค่ะ {{ if .Data.full_name }}คุณ{{ .Data.full_name }}{{ else }}คุณพ่อคุณแม่{{ end }} 👋
+              </p>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.75;color:#4A4F5C;">
+                ยินดีต้อนรับสู่ครอบครัวน้องรัก เหลืออีกขั้นตอนเดียว กดปุ่มด้านล่างเพื่อยืนยันว่า
+                <b style="color:#3757AE;">{{ .Email }}</b> เป็นอีเมลของคุณ
+              </p>
+            </td>
+          </tr>
+
+          <!-- Button -->
+          <tr>
+            <td align="center" style="padding:0 32px 8px;">
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center" style="border-radius:999px;background:#3757AE;box-shadow:0 8px 20px rgba(55,87,174,0.35);">
+                    <a href="{{ .ConfirmationURL }}" target="_blank"
+                       style="display:inline-block;padding:16px 44px;font-size:17px;font-weight:800;color:#FFFFFF;text-decoration:none;border-radius:999px;">
+                      ✓ ยืนยันอีเมล (Confirm email)
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:14px 0 0;font-size:12px;color:#8A90A0;">
+                เปิดบนโทรศัพท์ที่ติดตั้งแอป แล้วน้องรักจะพาเข้าสู่ระบบให้เอง • ลิงก์ใช้ได้ภายใน 24 ชั่วโมง
+              </p>
+            </td>
+          </tr>
+
+          <!-- What's waiting -->
+          <tr>
+            <td style="padding:28px 32px 8px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F5F7FF;border-radius:20px;">
+                <tr><td style="padding:20px 20px 6px;font-size:14px;font-weight:800;color:#3757AE;">สิ่งที่รอคุณอยู่</td></tr>
+                <tr><td style="padding:6px 20px;font-size:14px;color:#4A4F5C;line-height:1.6;">🍼&nbsp; บันทึกนม นอน ขับถ่าย ได้ในไม่กี่วินาที</td></tr>
+                <tr><td style="padding:6px 20px;font-size:14px;color:#4A4F5C;line-height:1.6;">💉&nbsp; เตือนวัคซีนและนัดหมอ ไม่พลาดสักเข็ม</td></tr>
+                <tr><td style="padding:6px 20px;font-size:14px;color:#4A4F5C;line-height:1.6;">📈&nbsp; กราฟการเติบโตเทียบเกณฑ์ WHO ตามอายุ</td></tr>
+                <tr><td style="padding:6px 20px 20px;font-size:14px;color:#4A4F5C;line-height:1.6;">🤖&nbsp; ถามน้องรักได้ทุกเรื่องการเลี้ยงลูก ตลอด 24 ชั่วโมง</td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Fallback link + safety -->
+          <tr>
+            <td style="padding:20px 32px 32px;">
+              <p style="margin:0 0 6px;font-size:12px;color:#8A90A0;">ปุ่มกดไม่ได้? คัดลอกลิงก์นี้ไปเปิดในเบราว์เซอร์</p>
+              <p style="margin:0 0 20px;font-size:12px;word-break:break-all;">
+                <a href="{{ .ConfirmationURL }}" style="color:#3757AE;">{{ .ConfirmationURL }}</a>
+              </p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #E6E9F2;">
+                <tr>
+                  <td style="padding-top:16px;font-size:12px;line-height:1.6;color:#8A90A0;">
+                    🔒 ถ้าคุณไม่ได้สมัคร NongRak AI ไม่ต้องทำอะไร บัญชีจะไม่ถูกเปิดใช้งาน
+                    และทีมงานจะไม่ขอรหัสผ่านหรือรหัส OTP จากคุณทางอีเมลเด็ดขาด
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <p style="margin:20px 0 0;font-size:12px;color:#8A90A0;line-height:1.6;">
+          ส่งด้วยความรักจากทีม NongRak AI 💙<br>ผู้ช่วยดูแลลูกน้อยวัย 0–3 ปี
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

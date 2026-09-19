@@ -37,7 +37,8 @@ class AuthViewModel : ViewModel() {
     /** [phone] must already be normalized by the caller (see `ThaiPhone.normalize`); the repository
      *  re-validates it anyway. New params go BEFORE `onSuccess` and AFTER `accountType` so existing
      *  positional call sites keep binding to the same slots. */
-    fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null, accountType: String = "parent", phone: String? = null, onSuccess: () -> Unit) {
+    /** [onNeedsConfirmation] runs instead of [onSuccess] when Supabase waits for the email link. */
+    fun signUp(email: String, password: String, fullName: String, captchaToken: String? = null, accountType: String = "parent", phone: String? = null, onNeedsConfirmation: () -> Unit = {}, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
             repo.signUp(
@@ -48,7 +49,10 @@ class AuthViewModel : ViewModel() {
                 accountType = accountType,
                 phone = phone
             )
-                .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
+                .onSuccess { signedIn ->
+                    if (signedIn) { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
+                    else { _uiState.value = AuthUiState(); onNeedsConfirmation() }
+                }
                 .onFailure { _uiState.value = AuthUiState(error = friendlyAuthError(it.message)) }
         }
     }
@@ -311,12 +315,16 @@ class AuthViewModel : ViewModel() {
         captchaToken: String? = null,
         /** Normalized by the caller via ThaiPhone.normalize, same contract as [signUp]. */
         phone: String? = null,
+        onNeedsConfirmation: () -> Unit = {},
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
             repo.signUpDoctor(email, password, fullName, captchaToken, phone)
-                .onSuccess { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
+                .onSuccess { signedIn ->
+                    if (signedIn) { _uiState.value = AuthUiState(isSuccess = true); onSuccess() }
+                    else { _uiState.value = AuthUiState(); onNeedsConfirmation() }
+                }
                 .onFailure { _uiState.value = AuthUiState(error = friendlyAuthError(it.message)) }
         }
     }

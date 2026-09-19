@@ -411,14 +411,14 @@ fun AppNavigation(
             ) {
                 NongRakTheme(darkTheme = false) {
                     UploadBirthCertificateScreen(
-                        onExtracted = { name, birthdate, gender ->
+                        onExtracted = { fullName, nickname, birthdate, gender ->
                             if (authState.profile?.relationship.isNullOrBlank()) {
                                 onboardingViewModel.reset()
-                                onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
+                                onboardingViewModel.updateStep1(nickname, fullName, birthdate, gender, "", "")
                                 navController.navigate(Screen.MedicalDisclaimer.route)
                             } else {
                                 onboardingViewModel.startAddChild()
-                                onboardingViewModel.updateStep1(name, birthdate, gender, "", "")
+                                onboardingViewModel.updateStep1(nickname, fullName, birthdate, gender, "", "")
                                 navController.navigate(Screen.OnboardingStep1.route)
                             }
                         },
@@ -847,6 +847,9 @@ fun AppNavigation(
         }
         composable(Screen.AiPreferences.route) {
             com.lullabyai.app.ui.screens.settings.AiPreferencesScreen(navController = navController)
+        }
+        composable(Screen.TwoFactor.route) {
+            com.lullabyai.app.ui.screens.settings.TwoFactorScreen(navController) { navController.popBackStack() }
         }
         composable(Screen.ActiveSessions.route) {
             com.lullabyai.app.ui.screens.settings.ActiveSessionsScreen(navController) { navController.popBackStack() }

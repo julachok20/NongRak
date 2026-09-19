@@ -972,6 +972,73 @@ const row = (label: string, value: string) => ({
  * wall of text is what the parent already gets everywhere else. Each bubble carries its own
  * buttons so the card is a way in, not just a readout.
  */
+/**
+ * "ID Card": every child's digital ID at once (owner, 2026-09-19), so a parent with three children
+ * does not pick one, look, go back, pick the next.
+ *
+ * The bubble carries what an adult standing with the child needs to read out — age, blood group,
+ * allergies — and the buttons open the full card and the emergency page the QR points at. The
+ * `card_token` link is the same one printed on the card, so nothing new is exposed here.
+ */
+async function idCardCards(userId: string, lang: Lang) {
+  const { data: kids } = await db
+    .from("children")
+    .select("id, name, birthdate, gender, blood_group, card_token")
+    .eq("user_id", userId)
+    .order("birthdate", { ascending: true });
+  if (!kids || kids.length === 0) return null;
+  const th = lang !== "en";
+
+  const bubbles = [];
+  for (const kid of kids.slice(0, 12)) {
+    const { data: allergyRows } = await db.from("allergies").select("name").eq("child_id", kid.id).limit(4);
+    const allergies = (allergyRows ?? []).map((a: { name: string }) => a.name).filter(Boolean).join(", ");
+    const line = (label: string, value: string) => ({
+      type: "box", layout: "baseline", spacing: "sm",
+      contents: [
+        { type: "text", text: label, size: "xs", color: "#8A93AE", flex: 4 },
+        { type: "text", text: value || "-", size: "sm", color: "#12204A", weight: "bold", flex: 6, wrap: true },
+      ],
+    });
+
+    bubbles.push({
+      type: "bubble", size: "kilo",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#1D3FA8", paddingAll: "16px",
+        contents: [
+          { type: "text", text: th ? "บัตรประจำตัวดิจิทัลเด็ก" : "Child Digital ID Card",
+            size: "xxs", color: "#BBD3FF" },
+          { type: "text", text: String(kid.name), weight: "bold", size: "xl", color: "#FFFFFF", wrap: true },
+          { type: "text", text: ageText(kid.birthdate, lang) || (th ? "ไม่ระบุอายุ" : "age unknown"),
+            size: "sm", color: "#DCE9FF", margin: "xs" },
+        ],
+      },
+      body: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+        contents: [
+          line(th ? "กรุ๊ปเลือด" : "Blood", kid.blood_group ?? (th ? "ไม่ระบุ" : "not set")),
+          line(th ? "เพศ" : "Gender",
+               kid.gender === "male" ? (th ? "ชาย" : "Male") : kid.gender === "female" ? (th ? "หญิง" : "Female") : "-"),
+          line(th ? "การแพ้" : "Allergies", allergies || (th ? "ไม่มีข้อมูล" : "none recorded")),
+        ],
+      },
+      footer: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
+        contents: [
+          { type: "button", style: "primary", color: "#1D3FA8", height: "sm",
+            action: { type: "uri", label: th ? "เปิดบัตร + สมุดสุขภาพ" : "Card + health book",
+                      uri: `${WEB_BASE}/children/${kid.id}/book` } },
+          { type: "button", style: "secondary", height: "sm",
+            action: { type: "uri", label: th ? "หน้าข้อมูลฉุกเฉิน (QR)" : "Emergency page (QR)",
+                      uri: `${WEB_BASE}/card/${kid.card_token}` } },
+        ],
+      },
+    });
+  }
+  return { type: "flex", altText: th ? "บัตรประจำตัวเด็ก" : "Child ID cards",
+           contents: { type: "carousel", contents: bubbles } };
+}
+
 async function childrenCards(userId: string, lang: Lang) {
   const kids = await childrenFor(userId);
   if (kids.length === 0) return null;
@@ -1770,6 +1837,12 @@ async function route(lineUserId: string, raw: string, replyToken: string) {
   if (lower === "/vaccine" || /^(วัคซีน|วัคซีนต่อไป|vaccine)$/i.test(text)) {
     return reply(replyToken, userId ? await nextVaccineText(userId, lang) : t("link", lang));
   }
+  if (lower === "/idcard" || lower === "/id" ||
+      /^(id\s*card|บัตร|บัตรประจำตัว|บัตรประจำตัวเด็ก|บัตรเด็ก)$/i.test(text)) {
+    if (!userId) return reply(replyToken, t("link", lang));
+    const cards = await idCardCards(userId, lang);
+    return cards ? send(replyToken, [cards]) : reply(replyToken, t("noChildren", lang));
+  }
   if (lower === "/children" || lower === "/kids" || /^(ลูกของฉัน|ลูก|children)$/i.test(text)) {
     if (!userId) return reply(replyToken, t("link", lang));
     const cards = await childrenCards(userId, lang);
@@ -1795,22 +1868,22 @@ async function route(lineUserId: string, raw: string, replyToken: string) {
     return send(replyToken, [await inboxCard(lang)]);
   }
   if (lower === "/web" || lower === "/health" ||
-      /^(เว็บ|บันทึกสุขภาพ|health)$/i.test(text)) {
+      /^(เว็บ|บันทึกสุขภาพ|สมุดสุขภาพ|สมุดสุขภาพเด็ก|บัตรเด็ก|health)$/i.test(text)) {
     const th = lang !== "en";
     return send(replyToken, [{
       type: "flex",
-      altText: th ? "บันทึกสุขภาพบนเว็บ" : "Health log on the web",
+      altText: th ? "สมุดสุขภาพและบัตรประจำตัวเด็ก" : "Health book and child ID card",
       contents: {
         type: "bubble",
         body: {
           type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
           contents: [
-            { type: "text", text: th ? "ดูข้อมูลลูกบนเว็บ" : "Your child's records on the web",
+            { type: "text", text: th ? "สมุดสุขภาพเด็ก" : "Child health book",
               weight: "bold", size: "lg", color: "#2743C4", wrap: true },
             { type: "text",
               text: th
-                ? "สมุดวัคซีน โภชนาการ การนอน และบันทึกการเจ็บป่วย เข้าสู่ระบบด้วย LINE บัญชีเดียวกัน"
-                : "Vaccine book, nutrition, sleep and sickness records. Sign in with the same LINE account.",
+                ? "เลือกลูก แล้วดูบัตรประจำตัวดิจิทัลพร้อมสมุดสุขภาพ วัคซีน โภชนาการ การนอน และบันทึกการเจ็บป่วย เข้าสู่ระบบด้วย LINE บัญชีเดียวกัน"
+                : "Pick a child to see their digital ID card, health book, vaccines, nutrition, sleep and sickness records. Sign in with the same LINE account.",
               size: "sm", color: "#7A7168", wrap: true },
           ],
         },
@@ -1818,7 +1891,7 @@ async function route(lineUserId: string, raw: string, replyToken: string) {
           type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
           contents: [
             { type: "button", style: "primary", color: "#2743C4", height: "sm",
-              action: { type: "uri", label: th ? "บันทึกสุขภาพ" : "Health log",
+              action: { type: "uri", label: th ? "สมุดสุขภาพ" : "Health book",
                         uri: `${WEB_BASE}/health` } },
             { type: "button", style: "secondary", height: "sm",
               action: { type: "uri", label: th ? "ลูกทั้งหมด" : "All children",
@@ -1870,7 +1943,26 @@ async function onPostback(lineUserId: string, data: string, replyToken: string) 
 
   if (action === "unlink_yes") {
     await db.from("line_links").delete().eq("line_user_id", lineUserId);
-    return reply(replyToken, t("unlinkDone", lang));
+    // Unlinking here does not touch the browser inside LINE: it still holds a website session and
+    // a LIFF login, so a rich-menu tap would reopen the account just disconnected. The page behind
+    // this button ends both. The bot cannot do it for them — only that browser can.
+    const th = lang !== "en";
+    return send(replyToken, [
+      { type: "text", text: t("unlinkDone", lang) },
+      {
+        type: "template",
+        altText: th ? "ออกจากระบบบนเว็บด้วย" : "Sign out on the web too",
+        template: {
+          type: "buttons",
+          text: th
+            ? "ออกจากระบบหน้าเว็บใน LINE ด้วยไหม? ถ้าไม่ออก การเปิดเมนูครั้งต่อไปจะยังเห็นบัญชีเดิม"
+            : "Also sign out of the web view in LINE? Otherwise the next menu tap still opens the old account.",
+          actions: [
+            { type: "uri", label: th ? "ออกจากระบบ" : "Sign out", uri: `${WEB_BASE}/logout` },
+          ],
+        },
+      },
+    ]);
   }
   if (action === "unlink_no") return reply(replyToken, t("unlinkCancelled", lang));
   if (action === "rec_no") return reply(replyToken, t("recCancelled", lang));

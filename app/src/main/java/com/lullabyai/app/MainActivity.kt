@@ -1,5 +1,8 @@
 package com.lullabyai.app
 
+import io.github.jan.supabase.auth.handleDeeplinks
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -56,13 +59,37 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        importAuthLink(intent)
         pendingDeepLink = targetRoute(intent)
+    }
+
+    /**
+     * lullabyai://auth#access_token=… from a Supabase email link (confirm sign-up, change email).
+     * supabase-kt ignores any other scheme/host, so this is safe to call on every intent.
+     */
+    private fun importAuthLink(intent: Intent?) {
+        intent ?: return
+        runCatching {
+            com.lullabyai.app.data.remote.supabase.handleDeeplinks(intent, onSessionSuccess = {
+                // A link from the verification email proves the mailbox. The server decides from the
+                // session itself, so for any other kind of link this returns false and changes nothing.
+                lifecycleScope.launch {
+                    com.lullabyai.app.data.repository.AuthRepository().confirmEmailOwnership()
+                        .onSuccess { proven ->
+                            if (proven) com.lullabyai.app.data.repository.EmailVerificationSignal.verifiedAt.value = System.currentTimeMillis()
+                        }
+                        .onFailure { android.util.Log.w("MainActivity", "email ownership not recorded: ${it.message}") }
+                }
+            })
+        }
+            .onFailure { android.util.Log.w("MainActivity", "auth link not imported: ${it.message}") }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        importAuthLink(intent)
         pendingDeepLink = targetRoute(intent)
 
         // Load persisted state into process-wide holders (multi-child selection + recent services).

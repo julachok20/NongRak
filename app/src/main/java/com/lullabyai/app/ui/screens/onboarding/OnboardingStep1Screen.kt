@@ -40,6 +40,7 @@ fun OnboardingStep1Screen(
     val state by onboardingViewModel.uiState.collectAsState()
     val context = LocalContext.current
     var childName by remember { mutableStateOf(state.childName) }
+    var childFullName by remember { mutableStateOf(state.childFullName) }
     var birthdate by remember { mutableStateOf(state.birthdate) }
     var gender by remember { mutableStateOf(state.gender) }
     var relationship by remember { mutableStateOf(state.relationship.ifBlank { "mother" }) }
@@ -148,11 +149,25 @@ fun OnboardingStep1Screen(
                     }
                 }
 
-                LabelField("ชื่อเด็ก") {
+                // Two names, because they are used in two different places: the nickname is what
+                // the app calls the child everywhere, the legal name only appears on documents.
+                LabelField("ชื่อเล่น") {
                     OutlinedTextField(
                         value = childName, onValueChange = { childName = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("กรอกชื่อเด็ก", color = Outline) },
+                        placeholder = { Text("ชื่อที่ใช้เรียกลูก เช่น น้องกีกี้", color = Outline) },
+                        supportingText = { Text("ใช้แสดงในโปรไฟล์ของลูกทั้งแอป", fontSize = 11.sp) },
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors()
+                    )
+                }
+
+                LabelField("ชื่อ-นามสกุล") {
+                    OutlinedTextField(
+                        value = childFullName, onValueChange = { childFullName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("ชื่อจริงตามสูติบัตร", color = Outline) },
+                        supportingText = { Text("ใช้บนบัตรประจำตัวและเอกสาร (ไม่บังคับ)", fontSize = 11.sp) },
                         singleLine = true, shape = RoundedCornerShape(12.dp),
                         colors = fieldColors()
                     )
@@ -257,6 +272,7 @@ fun OnboardingStep1Screen(
                     onClick = {
                         onboardingViewModel.updateStep1(
                             name = childName,
+                            fullName = childFullName,
                             birthdate = birthdate,
                             gender = gender,
                             nationality = nationality,

@@ -17,7 +17,10 @@ data class OnboardingUiState(
     val error: String? = null,
     val isComplete: Boolean = false,
     // Step 1
+    /** The nickname (ชื่อเล่น) shown across the app. */
     val childName: String = "",
+    /** The legal name, used only on documents such as the ID card. */
+    val childFullName: String = "",
     val birthdate: String = "",
     val gender: String = "male",
     val nationality: String = "",
@@ -66,6 +69,7 @@ class OnboardingViewModel : ViewModel() {
     fun initFromChild(child: Child) {
         _uiState.value = _uiState.value.copy(
             childName = child.name,
+            childFullName = child.fullName ?: "",
             birthdate = child.birthdate,
             gender = child.gender,
             nationality = child.nationality ?: "",
@@ -85,12 +89,14 @@ class OnboardingViewModel : ViewModel() {
     }
 
     fun updateStep1(
-        name: String, birthdate: String, gender: String, allergies: String = "", notes: String = "",
+        name: String, fullName: String = "", birthdate: String, gender: String,
+        allergies: String = "", notes: String = "",
         nationality: String = "", ethnicity: String = "", religion: String = "",
         relationship: String = "mother", avatarUri: String? = null, avatarBytes: ByteArray? = null
     ) {
         _uiState.value = _uiState.value.copy(
-            childName = name, birthdate = birthdate, gender = gender,
+            childName = name, childFullName = fullName.ifBlank { _uiState.value.childFullName },
+            birthdate = birthdate, gender = gender,
             allergies = allergies, notes = notes,
             nationality = nationality, ethnicity = ethnicity, religion = religion,
             relationship = relationship,
@@ -161,6 +167,7 @@ class OnboardingViewModel : ViewModel() {
                     val childId = state.existingChildId
                     val updates = buildMap<String, Any?> {
                         if (state.childName.isNotBlank()) put("name", state.childName)
+                        if (state.childFullName.isNotBlank()) put("full_name", state.childFullName)
                         if (state.birthdate.isNotBlank()) put("birthdate", state.birthdate)
                         if (state.gender.isNotBlank()) put("gender", state.gender)
                         if (allergySummary.isNotBlank()) put("allergies", allergySummary)
@@ -181,6 +188,7 @@ class OnboardingViewModel : ViewModel() {
                     val child = Child(
                         userId = userId,
                         name = state.childName,
+                        fullName = state.childFullName.ifBlank { null },
                         birthdate = state.birthdate,
                         gender = state.gender,
                         allergies = allergySummary.ifBlank { null },

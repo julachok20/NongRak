@@ -111,6 +111,8 @@ data class Profile(
     // accounts created before this field existed have no phone, and a non-nullable field makes
     // kotlinx throw on the explicit null and blanks the WHOLE profile.
     @SerialName("phone") val phone: String? = null,
+    /** Set by confirm_email_ownership() once the parent proves the mailbox (optional). Null = not verified. */
+    @SerialName("email_verified_at") val emailVerifiedAt: String? = null,
     /** Home address for the Health Book guardian block. Optional; collected via Info Ask. */
     val address: String? = null,
     /** Two-factor authentication toggle: when enabled, signing into a new device requires verification from an active device. */
@@ -200,6 +202,13 @@ data class Child(
     @SerialName("birth_length_cm") val birthLengthCm: Double? = null,
     @SerialName("birth_head_cm") val birthHeadCm: Double? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    /**
+     * Secret in the digital ID card's QR. It addresses the public emergency page, so it is a token
+     * and not the child id: a lost card is answered by rotating this, and it exposes nothing else.
+     */
+    @SerialName("card_token") val cardToken: String? = null,
+    /** Legal name for documents. [name] stays the nickname shown across the app. */
+    @SerialName("full_name") val fullName: String? = null,
     // Explicit "confirmed no allergies" — distinct from simply having zero rows in the allergies
     // table, so the missing-info nudge can tell "not yet answered" apart from "answered: none".
     @SerialName("no_known_allergies") val noKnownAllergies: Boolean = false,

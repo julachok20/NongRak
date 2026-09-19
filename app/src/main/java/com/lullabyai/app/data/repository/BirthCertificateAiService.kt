@@ -16,7 +16,29 @@ object BirthCertificateAiService {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    data class ExtractedInfo(val name: String, val birthdateIso: String?, val gender: String)
+    /**
+     * [fullName] is what the certificate prints. [nickname] is only a suggestion — a birth
+     * certificate has no ชื่อเล่น on it, so this is the given name with any title stripped, offered
+     * as a starting point for the parent to replace.
+     */
+    data class ExtractedInfo(
+        val fullName: String,
+        val nickname: String,
+        val birthdateIso: String?,
+        val gender: String,
+    )
+
+    private val TITLES = listOf(
+        "เด็กชาย", "เด็กหญิง", "ด.ช.", "ด.ญ.", "ดช.", "ดญ.", "นาย", "นางสาว", "นาง",
+        "master", "miss", "mr.", "ms.", "mrs.", "baby",
+    )
+
+    /** The given name: the title dropped, then the first word — "เด็กชาย สมชาย ใจดี" gives "สมชาย". */
+    internal fun givenName(fullName: String): String {
+        var s = fullName.trim()
+        TITLES.firstOrNull { s.startsWith(it, ignoreCase = true) }?.let { s = s.removeRange(0, it.length) }
+        return s.trim().split(' ', ' ').firstOrNull { it.isNotBlank() }?.trim() ?: fullName.trim()
+    }
 
     private fun extractJson(raw: String): String {
         val s = raw.trim()
@@ -49,6 +71,6 @@ object BirthCertificateAiService {
             ?.takeIf { Regex("""\d{4}-\d{2}-\d{2}""").matches(it) }
         val gender = (obj["gender"] as? JsonPrimitive)?.contentOrNull?.lowercase()
             ?.takeIf { it in setOf("male", "female", "unspecified") } ?: "unspecified"
-        return ExtractedInfo(name, birthdate, gender)
+        return ExtractedInfo(fullName = name, nickname = givenName(name), birthdateIso = birthdate, gender = gender)
     }
 }
