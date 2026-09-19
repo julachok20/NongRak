@@ -69,6 +69,7 @@ fun HealthBookScreen(
     val scope = rememberCoroutineScope()
 
     var book by remember { mutableStateOf<HealthBook?>(null) }
+    var idCard by remember { mutableStateOf<com.lullabyai.app.util.ChildIdCardData?>(null) }
     var loading by remember { mutableStateOf(true) }
     var message by remember { mutableStateOf<String?>(null) }
     var zoomed by remember { mutableStateOf(false) }
@@ -79,6 +80,8 @@ fun HealthBookScreen(
         val child = (if (childId != null) children.firstOrNull { it.id == childId } else null) ?: children.firstOrNull()
         if (child != null) {
             book = runCatching { HealthBookBuilder.build(child, isThai) }.getOrNull()
+            // Best effort: a card that cannot be built must never cost the parent their health book.
+            idCard = runCatching { com.lullabyai.app.util.ChildIdCardBuilder.build(child, isThai) }.getOrNull()
         }
         loading = false
     }
@@ -126,53 +129,67 @@ fun HealthBookScreen(
             else -> {
                 val pagerState = rememberPagerState(initialPage = 0, pageCount = { current.pages.size })
 
-                Column(Modifier.fillMaxSize().padding(padding)) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFFE8EEF9), Color(0xFFD7E1F2))
-                                )
-                            )
-                    ) {
-                        if (zoomed) {
-                            ZoomedSheet(current, pagerState.currentPage) { zoomed = false }
-                        } else {
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = Modifier.fillMaxSize(),
-                                pageSpacing = 16.dp,
-                                beyondViewportPageCount = 1
-                            ) { pageIndex ->
-                                Sheet(
-                                    book = current,
-                                    index = pageIndex,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = { zoomed = true }
-                                        )
-                                )
-                            }
+                if (zoomed) {
+                    ZoomedSheet(current, pagerState.currentPage) { zoomed = false }
+                    return@Scaffold
+                }
 
-                            if (pagerState.currentPage > 0) {
-                                PageArrow(Alignment.CenterStart, isThai) {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+                    // The book takes most of the screen and the page scrolls, rather than the book
+                    // living on whatever height the card leaves over: on a phone that leftover was
+                    // too small to read a page in.
+                    val bookHeight = (maxHeight * 0.82f).coerceAtLeast(320.dp)
+
+                    Column(Modifier.fillMaxSize()) {
+                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                            // The ID card sits above the book, the same order as the website and
+                            // LINE: the card is what gets shown to someone, the book is what gets read.
+                            idCard?.let { card ->
+                                ChildIdCard(card, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+                            }
+                            Box(
+                                Modifier
+                                    .height(bookHeight)
+                                    .fillMaxWidth()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFFE8EEF9), Color(0xFFD7E1F2))
+                                        )
+                                    )
+                            ) {
+                                HorizontalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    pageSpacing = 16.dp,
+                                    beyondViewportPageCount = 1
+                                ) { pageIndex ->
+                                    Sheet(
+                                        book = current,
+                                        index = pageIndex,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                                onClick = { zoomed = true }
+                                            )
+                                    )
+                                }
+
+                                if (pagerState.currentPage > 0) {
+                                    PageArrow(Alignment.CenterStart, isThai) {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                        }
                                     }
                                 }
-                            }
-                            if (pagerState.currentPage < current.pages.lastIndex) {
-                                PageArrow(Alignment.CenterEnd, isThai) {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                if (pagerState.currentPage < current.pages.lastIndex) {
+                                    PageArrow(Alignment.CenterEnd, isThai) {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                        }
                                     }
                                 }
-                            }
                         }
                     }
 
@@ -261,6 +278,7 @@ fun HealthBookScreen(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
