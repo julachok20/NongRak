@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -42,6 +44,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.lullabyai.app.data.ChildRecordFeed
 import com.lullabyai.app.data.handoff.ParentHandoffBrief
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChildAvatarPreset
@@ -136,6 +139,7 @@ fun EditChildScreen(
 
     fun save() { edited()?.let { childViewModel.saveChildProfile(it, onBack) } }
 
+    var recordFeedOpen by remember { mutableStateOf(false) }
     var presetPickerOpen by remember { mutableStateOf(false) }
     if (presetPickerOpen) {
         PresetPickerDialog(
@@ -336,18 +340,46 @@ fun EditChildScreen(
                 onRemove = { childViewModel.removeFavorite(it) }
             )
 
+            // Everything the app has logged for this child, newest first. One timeline, because a
+            // parent remembers "I wrote that down" long before they remember which screen they
+            // wrote it on.
+            val feed = remember(state.growthRecords, state.healthRecords, state.sleepLogs,
+                state.wasteRecords, state.doctorVisits, state.vaccines, thai) {
+                ChildRecordFeed.build(
+                    growth = state.growthRecords,
+                    health = state.healthRecords,
+                    sleep = state.sleepLogs,
+                    waste = state.wasteRecords,
+                    visits = state.doctorVisits,
+                    vaccines = state.vaccines,
+                    isThai = thai
+                )
+            }
             SectionCard(
-                title = if (thai) "บันทึกเพิ่มเติม" else "Additional notes",
-                subtitle = null,
+                title = if (thai) "บันทึกเพิ่มเติม" else "Recent records",
+                subtitle = if (thai) "รายการล่าสุดที่บันทึกไว้ในแอป" else "The latest entries logged in the app",
                 icon = Icons.Filled.EditNote
             ) {
-                OutlinedTextField(
-                    value = notes, onValueChange = { notes = it },
-                    modifier = Modifier.fillMaxWidth().height(110.dp),
-                    placeholder = { Text(if (thai) "ระบุรายละเอียดเพิ่มเติมเกี่ยวกับลูกของคุณ..." else "Add more details about your child...", color = Outline) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = editFieldColors()
-                )
+                if (feed.isEmpty()) {
+                    Text(
+                        if (thai) "ยังไม่มีการบันทึกในแอป" else "Nothing logged yet",
+                        style = MaterialTheme.typography.labelSmall, color = Outline
+                    )
+                } else {
+                    ChildRecordFeed.recent(feed).forEach { e -> RecordRow(e) }
+                    if (feed.size > 5) {
+                        TextButton(onClick = { recordFeedOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                if (thai) "ดูทั้งหมด (${feed.size})" else "See all (${feed.size})",
+                                fontSize = 12.sp, color = Primary, fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (recordFeedOpen) {
+                RecordFeedDialog(thai = thai, entries = feed) { recordFeedOpen = false }
             }
 
             NavRow(
@@ -878,6 +910,82 @@ private fun PresetPickerDialog(
                     items(ChildAvatarPreset.ids, key = { it }) { id ->
                         PresetFace(id = id, selected = id == current, size = 60.dp, thai = thai) { onPick(id) }
                     }
+                }
+            }
+        }
+    }
+}
+
+/** One line of the child's history: what it was, the detail worth seeing, and when. */
+@Composable
+private fun RecordRow(e: ChildRecordFeed.Entry) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(26.dp).clip(RoundedCornerShape(9.dp)).background(recordTint(e.kind).copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) { Icon(recordIcon(e.kind), null, tint = recordTint(e.kind), modifier = Modifier.size(14.dp)) }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(e.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (e.detail.isNotBlank()) {
+                Text(
+                    e.detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
+        Text(e.date, fontSize = 10.sp, color = Outline)
+    }
+}
+
+private fun recordIcon(kind: ChildRecordFeed.Kind): ImageVector = when (kind) {
+    ChildRecordFeed.Kind.GROWTH -> Icons.Filled.TrendingUp
+    ChildRecordFeed.Kind.HEALTH -> Icons.Filled.MonitorHeart
+    ChildRecordFeed.Kind.SLEEP -> Icons.Filled.Bedtime
+    ChildRecordFeed.Kind.WASTE -> Icons.Filled.BabyChangingStation
+    ChildRecordFeed.Kind.VISIT -> Icons.Filled.LocalHospital
+    ChildRecordFeed.Kind.VACCINE -> Icons.Filled.Vaccines
+}
+
+@Composable
+private fun recordTint(kind: ChildRecordFeed.Kind): Color = when (kind) {
+    ChildRecordFeed.Kind.HEALTH, ChildRecordFeed.Kind.VISIT -> Error
+    ChildRecordFeed.Kind.SLEEP -> Color(0xFF6366F1)
+    ChildRecordFeed.Kind.WASTE -> Color(0xFFD97706)
+    else -> Primary
+}
+
+/** The whole history. A dialog keeps the parent on the page they were editing. */
+@Composable
+private fun RecordFeedDialog(
+    thai: Boolean,
+    entries: List<ChildRecordFeed.Entry>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.82f),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.fillMaxSize().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (thai) "บันทึกทั้งหมด (${entries.size})" else "All records (${entries.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, if (thai) "ปิด" else "Close")
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(entries) { e -> RecordRow(e) }
                 }
             }
         }
