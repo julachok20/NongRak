@@ -2,6 +2,9 @@ package com.lullabyai.app.data.repository
 
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChildAccessActivity
+import com.lullabyai.app.data.model.ChildAvatarPreset
+import com.lullabyai.app.data.model.ChildFavorite
+import com.lullabyai.app.data.model.FavoriteSource
 import com.lullabyai.app.data.model.ChildActivityEntry
 import com.lullabyai.app.data.model.CareLog
 import com.lullabyai.app.data.model.CareConversation
@@ -50,6 +53,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlin.time.Duration.Companion.seconds
 
 private val medicalDocUrlTtl = 3600.seconds
+
+/** Adding a favourite that is already recorded is a no-op worth reporting, not a failure. */
+sealed interface AddFavoriteResult {
+    data class Added(val favorite: ChildFavorite) : AddFavoriteResult
+    data class Duplicate(val existing: ChildFavorite) : AddFavoriteResult
+}
 
 class ChildRepository {
 
@@ -1289,6 +1298,75 @@ class ChildRepository {
         supabase.from("children").update(buildJsonObject { put("no_known_allergies", JsonPrimitive(value)) }) {
             filter { eq("id", childId) }
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // สิ่งที่น้องชอบ — favourites
+    //
+    // RLS does the access control: a nanny may read these while the parent leaves sharing on, and
+    // may never write one. Nothing below re-checks that, because a check here would only hide the
+    // buttons, and hiding a button is not a permission.
+    // ---------------------------------------------------------------------------------------
+
+    suspend fun childFavorites(childId: String): Result<List<ChildFavorite>> = runCatching {
+        supabase.from("child_favorites").select {
+            filter { eq("child_id", childId) }
+            order("created_at", Order.ASCENDING)
+        }.decodeList<ChildFavorite>()
+    }
+
+    /**
+     * Adds one favourite. The table has a unique (child_id, category, label), so the AI re-reading
+     * the same activity cannot stack a second copy — that collision is expected, not an error, and
+     * is reported as [AddFavoriteResult.Duplicate] rather than thrown.
+     */
+    suspend fun addChildFavorite(
+        childId: String,
+        category: String,
+        label: String,
+        source: String = FavoriteSource.PARENT
+    ): Result<AddFavoriteResult> = runCatching {
+        val clean = label.trim()
+        require(clean.isNotEmpty()) { "favourite label is empty" }
+        require(clean.length <= 120) { "favourite label is too long" }
+        val existing = supabase.from("child_favorites").select {
+            filter {
+                eq("child_id", childId)
+                eq("category", category)
+                eq("label", clean)
+            }
+        }.decodeList<ChildFavorite>()
+        if (existing.isNotEmpty()) return@runCatching AddFavoriteResult.Duplicate(existing.first())
+        val row = supabase.from("child_favorites").insert(
+            buildJsonObject {
+                put("child_id", JsonPrimitive(childId))
+                put("category", JsonPrimitive(category))
+                put("label", JsonPrimitive(clean))
+                put("source", JsonPrimitive(source))
+            }
+        ) { select() }.decodeSingle<ChildFavorite>()
+        AddFavoriteResult.Added(row)
+    }
+
+    suspend fun deleteChildFavorite(favoriteId: String): Result<Unit> = runCatching {
+        supabase.from("child_favorites").delete { filter { eq("id", favoriteId) } }
+    }
+
+    /**
+     * Picks one of the four bundled photos. Stores the sentinel rather than a file, so the choice
+     * also shows in LINE and on the public card, neither of which can sign a private URL.
+     */
+    suspend fun setChildAvatarPreset(childId: String, presetId: String): Result<Unit> = runCatching {
+        require(presetId in ChildAvatarPreset.ids) { "unknown preset $presetId" }
+        supabase.from("children").update(
+            buildJsonObject { put("avatar_url", JsonPrimitive(ChildAvatarPreset.storedValue(presetId))) }
+        ) { filter { eq("id", childId) } }
+    }
+
+    suspend fun setFavoritesShared(childId: String, shared: Boolean): Result<Unit> = runCatching {
+        supabase.from("children").update(
+            buildJsonObject { put("favorites_shared", JsonPrimitive(shared)) }
+        ) { filter { eq("id", childId) } }
     }
 
     /** Delete a child (cascade removes its vaccines, milestones, health/growth/allergy/doc rows). */

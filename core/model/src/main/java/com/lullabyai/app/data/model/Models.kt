@@ -217,6 +217,17 @@ data class Child(
     val nationality: String? = null,
     val ethnicity: String? = null,
     val religion: String? = null,
+    /** เวลาเกิด — printed beside the birthdate on the Health Book and the ID card. */
+    @SerialName("birth_time") val birthTime: String? = null,
+    /** เลขประจำตัวประชาชน / รหัสเด็ก. */
+    @SerialName("national_id") val nationalId: String? = null,
+    /** ข้อสังเกตและวิธีปลอบใจ — free text that travels with the favourites to the caretaker. */
+    @SerialName("soothing_note") val soothingNote: String? = null,
+    /**
+     * แชร์ให้ผู้ดูแลเห็น. Off hides favourites and [soothingNote] from nanny/doctor/other; enforced
+     * in the database, not here, so turning it off is not merely a hidden row in the UI.
+     */
+    @SerialName("favorites_shared") val favoritesShared: Boolean = true,
     @SerialName("previous_owner_email") val previousOwnerEmail: String? = null,
     @SerialName("previous_owner_id") val previousOwnerId: String? = null,
     @SerialName("transferred_from_role") val transferredFromRole: String? = null,
@@ -224,6 +235,66 @@ data class Child(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
 )
+
+/**
+ * สิ่งที่น้องชอบ — one thing this child likes, or one trick that calms him.
+ *
+ * Parents write them, the AI adds what it notices in activity, and the daily question banner can
+ * ask for one. [source] keeps those apart so a parent can see which are their own words.
+ */
+@Serializable
+data class ChildFavorite(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    val category: String = FavoriteCategory.TOY,
+    val label: String = "",
+    val source: String = FavoriteSource.PARENT,
+    @SerialName("created_by") val createdBy: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+/** Must match the category check constraint on public.child_favorites. */
+object FavoriteCategory {
+    const val TOY = "toy"
+    const val FOOD = "food"
+    const val SOUND = "sound"
+    const val ACTIVITY = "activity"
+    const val SOOTHING = "soothing"
+    const val INTERACTION = "interaction"
+
+    /** The order the edit page and the handover page both list them in. */
+    val ordered = listOf(TOY, FOOD, SOUND, ACTIVITY, SOOTHING, INTERACTION)
+
+    fun labelTh(category: String): String = when (category) {
+        TOY -> "ของเล่นและของชิ้นโปรด"
+        FOOD -> "อาหารและรสชาติที่ชอบ"
+        SOUND -> "เพลงและเสียงที่ช่วยผ่อนคลาย"
+        ACTIVITY -> "กิจกรรมโปรด"
+        SOOTHING -> "ทริคกล่อมนอน & ปลอบโยน"
+        INTERACTION -> "คำพูด & ปฏิสัมพันธ์ที่คุ้นเคย"
+        else -> "อื่นๆ"
+    }
+
+    fun labelEn(category: String): String = when (category) {
+        TOY -> "Toys & comfort objects"
+        FOOD -> "Favourite food & flavours"
+        SOUND -> "Calming songs & sounds"
+        ACTIVITY -> "Favourite activities"
+        SOOTHING -> "Soothing hacks"
+        INTERACTION -> "Familiar words & interaction"
+        else -> "Other"
+    }
+
+    fun label(category: String, isThai: Boolean): String =
+        if (isThai) labelTh(category) else labelEn(category)
+}
+
+/** Must match the source check constraint on public.child_favorites. */
+object FavoriteSource {
+    const val PARENT = "parent"
+    const val AI = "ai"
+    const val INFO_ASK = "info_ask"
+}
 
 /** A candidate match returned by the search_child_for_sync RPC (name + birthdate, no other data). */
 @Serializable

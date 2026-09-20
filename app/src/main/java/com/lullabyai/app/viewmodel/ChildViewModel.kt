@@ -3,6 +3,8 @@ package com.lullabyai.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lullabyai.app.data.model.Allergy
+import com.lullabyai.app.data.model.ChildFavorite
+import com.lullabyai.app.data.model.FavoriteSource
 import com.lullabyai.app.data.model.ChronicCondition
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.DevelopmentMilestone
@@ -12,6 +14,7 @@ import com.lullabyai.app.data.model.HealthRecord
 import com.lullabyai.app.data.model.AiTask
 import com.lullabyai.app.data.model.VaccineRecord
 import com.lullabyai.app.data.repository.AiRepository
+import com.lullabyai.app.data.repository.AddFavoriteResult
 import com.lullabyai.app.data.repository.ChildRepository
 import com.lullabyai.app.data.repository.HealthRepository
 import com.lullabyai.app.data.remote.supabase
@@ -69,6 +72,12 @@ data class ChildUiState(
     val sleepSaving: Boolean = false,
     /** Short-lived signed URL for the child photo (private bucket). Use this to display the avatar. */
     val childAvatarSignedUrl: String? = null,
+    /**
+     * สิ่งที่น้องชอบ. Empty for a caretaker whose parent turned sharing off — the database returns
+     * no rows, so there is nothing here to hide.
+     */
+    val favorites: List<ChildFavorite> = emptyList(),
+    val favoritesSaving: Boolean = false,
     // --- Health-record detail screen (#7) ---
     val openHealthRecordId: String? = null,         // record currently shown on the detail screen
     val healthDetailAdvice: String? = null,         // one-shot AI advice for the open record
@@ -294,10 +303,12 @@ class ChildViewModel : ViewModel() {
                         return@launch
                     }
                     val signed = com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(child.avatarUrl)
+                    val favorites = childRepo.childFavorites(child.id).getOrDefault(emptyList())
                     _uiState.value = _uiState.value.copy(
                         children = children,
                         child = child,
                         childAvatarSignedUrl = signed,
+                        favorites = favorites,
                         isLoading = false,
                         error = null,
                         ownedChildIds = ownerFlags,
@@ -1349,29 +1360,27 @@ class ChildViewModel : ViewModel() {
         }
     }
 
-    fun updateChildInfo(
-        name: String, birthdate: String, weightKg: Double?, heightCm: Double?, notes: String?,
-        onDone: () -> Unit
-    ) {
+    /**
+     * Saves the whole แก้ไขข้อมูลลูก page in one write.
+     *
+     * Takes a [Child] rather than a parameter per field: the edit page owns two dozen of them now,
+     * and a positional list that long is a bug waiting for the day two String? arguments get
+     * swapped. Growth history still gets its own row when the vitals actually moved, because the
+     * columns on `children` are only a cache of the latest reading.
+     */
+    fun saveChildProfile(updated: Child, onDone: () -> Unit) {
         if (isGuest()) { promptRegistration(); onDone(); return }
         viewModelScope.launch {
             val current = _uiState.value.child ?: return@launch
-            val vitalsChanged = weightKg != current.weightKg || heightCm != current.heightCm
-            val updated = current.copy(
-                name = name,
-                birthdate = birthdate,
-                weightKg = weightKg,
-                heightCm = heightCm,
-                notes = notes
-            )
+            val vitalsChanged = updated.weightKg != current.weightKg || updated.heightCm != current.heightCm
             childRepo.updateChild(updated)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(child = updated)
-                    if (vitalsChanged && (weightKg != null || heightCm != null)) {
+                    if (vitalsChanged && (updated.weightKg != null || updated.heightCm != null)) {
                         addGrowthRecord(
                             GrowthRecord(
-                                weightKg = weightKg,
-                                heightCm = heightCm,
+                                weightKg = updated.weightKg,
+                                heightCm = updated.heightCm,
                                 recordedAt = java.time.LocalDate.now().toString(),
                                 recordType = "profile_edit"
                             )
@@ -1384,6 +1393,80 @@ class ChildViewModel : ViewModel() {
                     )
                     onDone()
                 }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
+    /** Picks one of the four bundled photos instead of uploading one. */
+    fun pickAvatarPreset(presetId: String) {
+        if (isGuest()) { promptRegistration(); return }
+        viewModelScope.launch {
+            val current = _uiState.value.child ?: return@launch
+            _uiState.value = _uiState.value.copy(avatarUploading = true, error = null)
+            childRepo.setChildAvatarPreset(current.id, presetId)
+                .onSuccess {
+                    val stored = com.lullabyai.app.data.model.ChildAvatarPreset.storedValue(presetId)
+                    _uiState.value = _uiState.value.copy(
+                        child = current.copy(avatarUrl = stored),
+                        childAvatarSignedUrl =
+                            com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(stored),
+                        avatarUploading = false
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        avatarUploading = false,
+                        error = "เปลี่ยนรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"
+                    )
+                }
+        }
+    }
+
+    /**
+     * Records one favourite. [source] says who noticed it — the parent, the AI reading activity,
+     * or the daily question banner — and a repeat of something already recorded is quietly kept
+     * as the one row that is already there.
+     */
+    fun addFavorite(category: String, label: String, source: String = FavoriteSource.PARENT) {
+        if (isGuest()) { promptRegistration(); return }
+        if (label.isBlank()) return
+        viewModelScope.launch {
+            val current = _uiState.value.child ?: return@launch
+            _uiState.value = _uiState.value.copy(favoritesSaving = true, error = null)
+            childRepo.addChildFavorite(current.id, category, label, source)
+                .onSuccess { result ->
+                    val added = (result as? AddFavoriteResult.Added)?.favorite
+                    _uiState.value = _uiState.value.copy(
+                        favorites = if (added != null) _uiState.value.favorites + added else _uiState.value.favorites,
+                        favoritesSaving = false
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(favoritesSaving = false, error = it.message)
+                }
+        }
+    }
+
+    fun removeFavorite(favoriteId: String) {
+        if (isGuest()) { promptRegistration(); return }
+        viewModelScope.launch {
+            childRepo.deleteChildFavorite(favoriteId)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        favorites = _uiState.value.favorites.filterNot { it.id == favoriteId }
+                    )
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
+    /** แชร์ให้ผู้ดูแลเห็น. The database is what actually hides them; this only records the choice. */
+    fun setFavoritesShared(shared: Boolean) {
+        if (isGuest()) { promptRegistration(); return }
+        viewModelScope.launch {
+            val current = _uiState.value.child ?: return@launch
+            childRepo.setFavoritesShared(current.id, shared)
+                .onSuccess { _uiState.value = _uiState.value.copy(child = current.copy(favoritesShared = shared)) }
                 .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
         }
     }

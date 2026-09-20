@@ -1,5 +1,6 @@
 package com.lullabyai.app.data.remote
 
+import com.lullabyai.app.data.model.ChildAvatarPreset
 import io.github.jan.supabase.storage.storage
 import kotlin.time.Duration.Companion.seconds
 
@@ -24,6 +25,7 @@ object StorageHelper {
      */
     fun toPath(stored: String?): String? {
         if (stored.isNullOrBlank()) return null
+        if (ChildAvatarPreset.isPreset(stored)) return null   // a bundled image, not a bucket file
         val publicMarker = "/object/public/$AVATAR_BUCKET/"
         val signMarker = "/object/sign/$AVATAR_BUCKET/"
         return when {
@@ -39,6 +41,10 @@ object StorageHelper {
      * Returns null on failure (caller falls back to a placeholder).
      */
     suspend fun signedAvatarUrl(stored: String?): String? {
+        // A preset is bundled in the app, so there is nothing to sign — hand back a resource URI
+        // Coil loads the same way. Done here, at the one place every child photo passes through,
+        // so the hub, the summary, the handover screens and the ID card all get it for free.
+        ChildAvatarPreset.resourceUriFor(stored)?.let { return it }
         val path = toPath(stored) ?: return null
         return runCatching {
             supabase.storage.from(AVATAR_BUCKET).createSignedUrl(path, SIGNED_URL_TTL_SECONDS.seconds)
