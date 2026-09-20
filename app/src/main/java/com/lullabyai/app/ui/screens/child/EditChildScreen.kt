@@ -14,6 +14,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.data.handoff.ParentHandoffBrief
@@ -131,11 +136,22 @@ fun EditChildScreen(
 
     fun save() { edited()?.let { childViewModel.saveChildProfile(it, onBack) } }
 
+    var presetPickerOpen by remember { mutableStateOf(false) }
+    if (presetPickerOpen) {
+        PresetPickerDialog(
+            thai = thai,
+            current = ChildAvatarPreset.idOf(child?.avatarUrl),
+            onPick = { childViewModel.pickAvatarPreset(it); presetPickerOpen = false },
+            onDismiss = { presetPickerOpen = false }
+        )
+    }
+
     Scaffold(
         topBar = {
             com.lullabyai.app.ui.components.LullabyTopBar(
                 title = if (thai) "แก้ไขข้อมูลน้อง ${child?.name.orEmpty()}" else "Edit ${child?.name.orEmpty()}",
                 onBack = onBack,
+                navController = navController,
                 actions = {
                     Button(
                         onClick = { save() },
@@ -181,7 +197,8 @@ fun EditChildScreen(
                 avatarUrl = state.childAvatarSignedUrl,
                 uploading = state.avatarUploading,
                 onUpload = { pickImage() },
-                onPreset = { childViewModel.pickAvatarPreset(it) }
+                onPreset = { childViewModel.pickAvatarPreset(it) },
+                showAll = { presetPickerOpen = true }
             )
 
             SectionCard(
@@ -408,7 +425,8 @@ private fun AvatarCard(
     avatarUrl: String?,
     uploading: Boolean,
     onUpload: () -> Unit,
-    onPreset: (String) -> Unit
+    onPreset: (String) -> Unit,
+    showAll: () -> Unit
 ) {
     Column(
         Modifier.fillMaxWidth()
@@ -457,20 +475,20 @@ private fun AvatarCard(
             if (thai) "หรือเลือกรูปสำเร็จรูป" else "Or pick a ready-made photo",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ChildAvatarPreset.ids.forEach { id ->
-                val res = ChildAvatarPreset.drawableRes(id)
-                if (res != null) {
-                    Image(
-                        painter = painterResource(res),
-                        contentDescription = if (thai) "รูปสำเร็จรูป $id" else "Preset $id",
-                        modifier = Modifier.size(54.dp).clip(CircleShape)
-                            .border(2.dp, Primary.copy(alpha = 0.25f), CircleShape)
-                            .clickable { onPreset(id) },
-                        contentScale = ContentScale.Crop
-                    )
-                }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChildAvatarPreset.ids.take(6).forEach { id ->
+                PresetFace(id = id, selected = false, size = 46.dp, thai = thai) { onPreset(id) }
             }
+            Box(
+                Modifier.size(46.dp).clip(CircleShape).background(Primary.copy(alpha = 0.12f))
+                    .clickable { showAll() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+${ChildAvatarPreset.ids.size - 6}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Primary)
+            }
+        }
+        TextButton(onClick = { showAll() }) {
+            Text(if (thai) "ดูรูปทั้งหมด" else "See all photos", fontSize = 12.sp, color = Primary)
         }
     }
 }
@@ -785,3 +803,83 @@ private fun editFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = MaterialTheme.colorScheme.surface,
     unfocusedContainerColor = MaterialTheme.colorScheme.surface
 )
+
+/** One ready-made face. The art is already circular with a transparent corner, so no clip fights it. */
+@Composable
+private fun PresetFace(
+    id: String,
+    selected: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    thai: Boolean,
+    onClick: () -> Unit
+) {
+    val res = ChildAvatarPreset.drawableRes(id) ?: return
+    Image(
+        painter = painterResource(res),
+        contentDescription = if (thai) "รูปสำเร็จรูป" else "Ready-made photo",
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .border(
+                width = if (selected) 3.dp else 1.dp,
+                color = if (selected) Primary else Primary.copy(alpha = 0.18f),
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick),
+        contentScale = ContentScale.Crop
+    )
+}
+
+/**
+ * All the ready-made faces.
+ *
+ * A dialog rather than another inline row: there are over a hundred of them, and a grid cannot
+ * live inside the edit page's own vertical scroll — two nested scrolls in the same direction is
+ * a fight the user loses. In here the grid owns the scrolling.
+ */
+@Composable
+private fun PresetPickerDialog(
+    thai: Boolean,
+    current: String?,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.86f),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.fillMaxSize().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (thai) "เลือกรูปสำเร็จรูป" else "Pick a ready-made photo",
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (thai) "รูปนี้จะแสดงทุกที่ รวมถึงใน LINE และบัตรประจำตัว"
+                            else "Shows everywhere, including LINE and the ID card",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, if (thai) "ปิด" else "Close")
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 64.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(ChildAvatarPreset.ids, key = { it }) { id ->
+                        PresetFace(id = id, selected = id == current, size = 60.dp, thai = thai) { onPick(id) }
+                    }
+                }
+            }
+        }
+    }
+}

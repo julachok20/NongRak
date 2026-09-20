@@ -108,6 +108,15 @@ fun ChildHubScreen(
     val context = LocalContext.current
 
     var showSwitcher by remember { mutableStateOf(false) }
+    var growthHistoryOpen by remember { mutableStateOf(false) }
+    if (growthHistoryOpen) {
+        GrowthHistoryDialog(
+            isThai = th,
+            records = childState.growthRecords,
+            onSeeAll = { growthHistoryOpen = false; navController.navigate(Screen.GrowthHistory.route) },
+            onDismiss = { growthHistoryOpen = false }
+        )
+    }
     var childToDelete by remember { mutableStateOf<Child?>(null) }
 
     LaunchedEffect(child?.id, tourPreview) {
@@ -223,7 +232,7 @@ fun ChildHubScreen(
                     heightCm = child?.heightCm,
                     weightStatus = hubWeightStatus,
                     heightStatus = hubHeightStatus,
-                    onHistory = { navController.navigate(Screen.ProfileHistory.route) },
+                    onHistory = { growthHistoryOpen = true },
                     onCard = { navController.navigate(Screen.GrowthHistory.route) }
                 )
 
@@ -1374,4 +1383,72 @@ private fun hubSuggestionRoute(kind: ChildHubSuggestions.Kind): String = when (k
     ChildHubSuggestions.Kind.GROWTH_NEVER, ChildHubSuggestions.Kind.GROWTH_STALE -> Screen.AddGrowthRecord.route
     ChildHubSuggestions.Kind.MILESTONE -> Screen.ChildDevelopment.route
     ChildHubSuggestions.Kind.SLEEP_TODAY -> Screen.SleepTracker.route
+}
+
+/**
+ * ประวัติการบันทึก, as a dialog.
+ *
+ * It used to open the full profile screen, which threw the parent off the hub to read four
+ * numbers. The readings are already loaded, so the glance costs nothing; the full screen is still
+ * one tap away for anyone who wants the charts.
+ */
+@Composable
+private fun GrowthHistoryDialog(
+    isThai: Boolean,
+    records: List<com.lullabyai.app.data.model.GrowthRecord>,
+    onSeeAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val recent = remember(records) {
+        records.sortedByDescending { it.recordedAt.orEmpty() }.take(5)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onSeeAll) {
+                Text(if (isThai) "ดูทั้งหมด" else "See all", color = HubPalette.blue)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(if (isThai) "ปิด" else "Close", color = inkSoft())
+            }
+        },
+        title = {
+            Text(
+                if (isThai) "ประวัติการบันทึก" else "Record history",
+                fontWeight = FontWeight.Bold, fontSize = 16.sp
+            )
+        },
+        text = {
+            if (recent.isEmpty()) {
+                Text(
+                    if (isThai) "ยังไม่มีการบันทึกการเติบโต" else "No growth readings recorded yet",
+                    fontSize = 13.sp, color = inkSoft()
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    recent.forEach { rec ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(6.dp).clip(CircleShape).background(HubPalette.blue))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    listOfNotNull(
+                                        rec.weightKg?.let { "%.1f".format(it) + (if (isThai) " กก." else " kg") },
+                                        rec.heightCm?.let { "%.1f".format(it) + (if (isThai) " ซม." else " cm") }
+                                    ).joinToString(" • ").ifBlank { if (isThai) "ไม่มีค่า" else "No values" },
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ink()
+                                )
+                                Text(
+                                    rec.recordedAt?.take(10).orEmpty(),
+                                    fontSize = 11.sp, color = inkSoft()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
