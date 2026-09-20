@@ -115,7 +115,9 @@ class InfoAskCatalogTest {
         val prompts = InfoAskCatalog.openAll(
             snap(
                 shownToday = setOf("sleep_last_night", "typical_bedtime", "nap_today", "play_today", "feeding_type", "recent_facility", "mood_after_sleep"),
-                answeredEver = setOf("activity_level")
+                // Every ask-once field, from the set itself — spelling them out here meant the
+                // test broke the day one was added, which says nothing about the behaviour.
+                answeredEver = InfoAskCatalog.PERSIST_ANSWERED
             ),
             seed = 1L
         )

@@ -187,6 +187,8 @@ fun ChildHubScreen(
                     ageLabel = if (tourPreview) TourSampleData.ageLabel(th) else hubAgeLabel(child?.birthdate, th),
                     avatarUrl = childState.childAvatarSignedUrl,
                     onAvatar = { navController.navigate(Screen.EditChild.route) },
+                    onEdit = { navController.navigate(Screen.EditChild.route) },
+                    favorites = childState.favorites,
                     onGreeting = { navController.navigate(Screen.QuickLogHub.route) },
                     onHealthBook = { navController.navigate(Screen.HealthBook.route) }
                 )
@@ -513,6 +515,8 @@ private fun HubHeroSection(
     ageLabel: String,
     avatarUrl: String?,
     onAvatar: () -> Unit,
+    onEdit: () -> Unit,
+    favorites: List<com.lullabyai.app.data.model.ChildFavorite>,
     onGreeting: () -> Unit,
     onHealthBook: () -> Unit
 ) {
@@ -540,7 +544,23 @@ private fun HubHeroSection(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         HubChildAvatar(avatarUrl = avatarUrl, size = 56.dp, ring = true, onClick = onAvatar)
                         Column(Modifier.weight(1f)) {
-                            Text(name, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = if (isDark()) MaterialTheme.colorScheme.onSurface else Color(0xFF0F172A), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(name, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = if (isDark()) MaterialTheme.colorScheme.onSurface else Color(0xFF0F172A), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                // Tapping the avatar already opened the editor; nothing on screen said so.
+                                Box(
+                                    Modifier.size(24.dp).clip(CircleShape)
+                                        .background(Color.White.copy(alpha = if (isDark()) 0.10f else 0.75f))
+                                        .clickable(onClick = onEdit),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Edit,
+                                        if (isThai) "แก้ไขข้อมูลลูก" else "Edit child",
+                                        tint = HubPalette.blue,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
                             if (ageLabel.isNotBlank()) {
                                 Text((if (isThai) "อายุ " else "Age ") + ageLabel, fontSize = 12.sp, color = inkSoft(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -567,7 +587,53 @@ private fun HubHeroSection(
             }
             Spacer(Modifier.height(14.dp))
             HubHealthBookLink(isThai, onHealthBook)
+            HubFavoriteHint(isThai, favorites, onEdit)
         }
+    }
+}
+
+/**
+ * สิ่งที่น้องชอบ, one item at a time, on the child's own page.
+ *
+ * Rotates by the day rather than at random, so it does not change to something else while the
+ * parent is reading it — a card that moves under you is worse than no card.
+ */
+@Composable
+private fun HubFavoriteHint(
+    isThai: Boolean,
+    favorites: List<com.lullabyai.app.data.model.ChildFavorite>,
+    onOpen: () -> Unit
+) {
+    if (favorites.isEmpty()) return
+    val pick = remember(favorites) {
+        favorites[(java.time.LocalDate.now().toEpochDay() % favorites.size).toInt()]
+    }
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(cardColor().copy(alpha = 0.95f))
+            .border(1.dp, if (isDark()) hairline() else HubPalette.blue100, shape)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Icon(Icons.Filled.Favorite, null, tint = HubPalette.rose400, modifier = Modifier.size(15.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                com.lullabyai.app.data.model.FavoriteCategory.label(pick.category, isThai),
+                fontSize = 9.sp, color = inkSoft(), maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                pick.label,
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ink(),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(Icons.Filled.ChevronRight, null, tint = HubPalette.blue, modifier = Modifier.size(16.dp))
     }
 }
 

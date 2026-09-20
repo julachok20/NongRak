@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lullabyai.app.data.model.Allergy
 import com.lullabyai.app.data.model.ChildFavorite
+import com.lullabyai.app.data.model.FavoriteCategory
 import com.lullabyai.app.data.model.FavoriteSource
 import com.lullabyai.app.data.model.ChronicCondition
 import com.lullabyai.app.data.model.Child
@@ -752,6 +753,13 @@ class ChildViewModel : ViewModel() {
                     }
                 }
             }
+            // Favourites are rows in their own table, like allergies above — the answer becomes one
+            // item tagged info_ask, so the parent can see later which ones the banner collected.
+            "favorite_toy" -> addFavoriteFromAsk(child.id, FavoriteCategory.TOY, value)
+            "favorite_food" -> addFavoriteFromAsk(child.id, FavoriteCategory.FOOD, value)
+            "favorite_sound" -> addFavoriteFromAsk(child.id, FavoriteCategory.SOUND, value)
+            "favorite_activity" -> addFavoriteFromAsk(child.id, FavoriteCategory.ACTIVITY, value)
+            "favorite_soothing" -> addFavoriteFromAsk(child.id, FavoriteCategory.SOOTHING, value)
             "guardian_name" -> authRepo.updateProfile(null, value, null).getOrThrow()
             "guardian_relation" -> authRepo.updateProfile(null, null, null, relationship = chip).getOrThrow()
             "guardian_phone" -> {
@@ -1394,6 +1402,30 @@ class ChildViewModel : ViewModel() {
                     onDone()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
+    private suspend fun addFavoriteFromAsk(childId: String, category: String, value: String) {
+        if (value.isBlank()) return
+        childRepo.addChildFavorite(childId, category, value, FavoriteSource.INFO_ASK).getOrThrow()
+    }
+
+    /**
+     * Records something the AI noticed in the child's activity.
+     *
+     * Fire-and-forget on purpose: this runs off the back of an analysis the parent did not ask
+     * for, and a failed write is not worth interrupting them over. The unique constraint means
+     * re-reading the same activity re-adds nothing.
+     */
+    fun noteFavoriteFromAi(category: String, label: String) {
+        if (isGuest() || label.isBlank()) return
+        viewModelScope.launch {
+            val current = _uiState.value.child ?: return@launch
+            childRepo.addChildFavorite(current.id, category, label, FavoriteSource.AI)
+                .onSuccess { result ->
+                    val added = (result as? AddFavoriteResult.Added)?.favorite ?: return@onSuccess
+                    _uiState.value = _uiState.value.copy(favorites = _uiState.value.favorites + added)
+                }
         }
     }
 

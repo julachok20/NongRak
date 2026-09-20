@@ -67,7 +67,10 @@ data class InfoAskAnswer(
  */
 object InfoAskCatalog {
 
-    val PERSIST_ANSWERED = setOf("activity_level")
+    val PERSIST_ANSWERED = setOf(
+        "activity_level",
+        "favorite_toy", "favorite_food", "favorite_sound", "favorite_activity", "favorite_soothing"
+    )
 
     /** Topic buckets — round-robin so sleep / feeding / Health Book appear together, not in blocks. */
     private val GROUPS = listOf(
@@ -75,7 +78,8 @@ object InfoAskCatalog {
         listOf("guardian_name", "guardian_relation", "guardian_phone", "guardian_address"),
         listOf("sleep_last_night", "typical_bedtime", "nap_today", "mood_after_sleep"),
         listOf("activity_level", "play_today"),
-        listOf("feeding_type", "recent_facility")
+        listOf("feeding_type", "recent_facility"),
+        listOf("favorite_toy", "favorite_food", "favorite_sound", "favorite_activity", "favorite_soothing")
     )
 
     /**
@@ -190,6 +194,9 @@ object InfoAskCatalog {
             "typical_bedtime" -> snapshot.sleepSchedules.isEmpty()
             "nap_today" -> !hasSleepOn(snapshot, today, type = "nap")
             "activity_level" -> true
+            // Never "complete" — there is always another thing a child likes. The
+            // PERSIST_ANSWERED guard above is what stops it being asked twice.
+            "favorite_toy", "favorite_food", "favorite_sound", "favorite_activity", "favorite_soothing" -> true
             "play_today" -> !hasActivityOn(snapshot, today)
             "feeding_type" -> !hasMilkSince(snapshot, days = 2)
             "recent_facility" -> !hasVisitSince(snapshot, days = 7)
@@ -249,6 +256,41 @@ object InfoAskCatalog {
     }
 
     internal val ALL: List<InfoAskPrompt> = listOf(
+        InfoAskPrompt(
+            "favorite_toy", InfoAskSubject.CHILD, InfoAskKind.TEXT,
+            "ของเล่นหรือของชิ้นไหนที่ {name} ชอบที่สุดคะ?",
+            "Which toy or object does {name} love most?",
+            hintTh = "เช่น ตุ๊กตากระต่าย 'มีมี่'",
+            hintEn = "e.g. a rabbit doll called Mimi"
+        ),
+        InfoAskPrompt(
+            "favorite_food", InfoAskSubject.CHILD, InfoAskKind.TEXT,
+            "อาหารหรือรสชาติไหนที่ {name} ชอบเป็นพิเศษคะ?",
+            "Which food or flavour does {name} like best?",
+            hintTh = "เช่น กล้วยน้ำว้าบด",
+            hintEn = "e.g. mashed banana"
+        ),
+        InfoAskPrompt(
+            "favorite_sound", InfoAskSubject.CHILD, InfoAskKind.TEXT,
+            "เพลงหรือเสียงไหนที่ช่วยให้ {name} ผ่อนคลายคะ?",
+            "Which song or sound calms {name} down?",
+            hintTh = "เช่น White Noise เสียงฝน",
+            hintEn = "e.g. rain white noise"
+        ),
+        InfoAskPrompt(
+            "favorite_activity", InfoAskSubject.CHILD, InfoAskKind.TEXT,
+            "กิจกรรมไหนที่ {name} ชอบทำที่สุดคะ?",
+            "Which activity does {name} enjoy most?",
+            hintTh = "เช่น ออกไปรับลมที่ระเบียง",
+            hintEn = "e.g. sitting out on the balcony"
+        ),
+        InfoAskPrompt(
+            "favorite_soothing", InfoAskSubject.CHILD, InfoAskKind.TEXT,
+            "เวลา {name} งอแง ทำแบบไหนแล้วสงบลงคะ?",
+            "What settles {name} when they are upset?",
+            hintTh = "เช่น ลูบหลังเบาๆ จังหวะสม่ำเสมอ",
+            hintEn = "e.g. slow, steady pats on the back"
+        ),
         InfoAskPrompt(
             "birthdate", InfoAskSubject.CHILD, InfoAskKind.DATE,
             "วันเกิดของ {name} คือวันไหนคะ?",

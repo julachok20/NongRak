@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class
+)
 package com.lullabyai.app.ui.screens.access
 
 import androidx.compose.foundation.background
@@ -7,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,7 +28,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import com.lullabyai.app.data.model.ChildFavorite
+import com.lullabyai.app.data.model.FavoriteCategory
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -171,6 +178,14 @@ fun CaregiverHandoverChecklistScreen(
                 age = age,
                 caution = caution,
                 avatarUrl = me?.avatarUrl
+            )
+
+            FavoritesCard(
+                c = c,
+                thai = thai,
+                childName = name,
+                favorites = s.favorites,
+                soothingNote = child?.soothingNote
             )
 
             ProgressCard(
@@ -329,6 +344,94 @@ private fun ChecklistTopBar(thai: Boolean, c: ChecklistColors, onBack: () -> Uni
                         color = Color(0xFF047857)
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * สิ่งที่น้องชอบ และวิธีปลอบโยน — read-only here, on purpose.
+ *
+ * A caregiver follows these, they do not rewrite them, and the database enforces that rather
+ * than this screen: there is no add control because there is no permission behind one. When the
+ * parent turns sharing off the rows simply do not arrive, and the whole card disappears.
+ */
+@Composable
+private fun FavoritesCard(
+    c: ChecklistColors,
+    thai: Boolean,
+    childName: String,
+    favorites: List<ChildFavorite>,
+    soothingNote: String?
+) {
+    if (favorites.isEmpty() && soothingNote.isNullOrBlank()) return
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(c.card)
+            .border(1.dp, c.line, shape)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Favorite, null, tint = Color(0xFFF43F5E), modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (thai) "สิ่งที่น้องชอบและวิธีปลอบโยน" else "What they like, and what settles them",
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = c.ink
+                )
+                Text(
+                    if (thai) "คู่มือพิเศษสำหรับพี่เลี้ยงเพื่อดูแลน้อง $childName"
+                    else "A short guide for whoever is looking after $childName",
+                    fontSize = 11.sp, color = c.muted, maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        FavoriteCategory.ordered.forEach { category ->
+            val items = favorites.filter { it.category == category }
+            if (items.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        FavoriteCategory.label(category, thai),
+                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.blue
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items.forEach { fav ->
+                            Text(
+                                fav.label,
+                                fontSize = 11.sp, color = c.ink,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(c.soft)
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!soothingNote.isNullOrBlank()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(c.soft)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    if (thai) "ข้อสังเกตจากคุณพ่อคุณแม่" else "A note from the parents",
+                    fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = c.muted
+                )
+                Text(soothingNote, fontSize = 12.sp, color = c.ink)
             }
         }
     }

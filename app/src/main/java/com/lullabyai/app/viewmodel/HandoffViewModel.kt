@@ -44,6 +44,11 @@ data class HandoffState(
     val lastBroadcast: HandoffBroadcastResult? = null,
     val child: Child? = null,
     val allergies: List<Allergy> = emptyList(),
+    /**
+     * สิ่งที่น้องชอบ, for the caregiver reading this screen. Comes back empty when the parent
+     * turned sharing off — RLS drops the rows, so there is nothing here to filter out.
+     */
+    val favorites: List<com.lullabyai.app.data.model.ChildFavorite> = emptyList(),
     val chronic: List<ChronicCondition> = emptyList(),
     val healthRecords: List<com.lullabyai.app.data.model.HealthRecord> = emptyList(),
     val latestTempC: Double? = null,
@@ -110,6 +115,7 @@ class HandoffViewModel : ViewModel() {
             val logs = routines.listLogs(before.childId, date).getOrDefault(emptyList())
             val sleepLogs = sleep.getLogs(before.childId).getOrDefault(emptyList())
             val allergyRows = health.getAllergies(before.childId).getOrDefault(emptyList())
+            val favoriteRows = children.childFavorites(before.childId).getOrDefault(emptyList())
             val chronic = health.getChronicConditions(before.childId).getOrDefault(emptyList())
             val records = health.getHealthRecords(before.childId).getOrDefault(emptyList())
             val visit = visits.getVisits(before.childId).getOrDefault(emptyList())
@@ -167,6 +173,7 @@ class HandoffViewModel : ViewModel() {
                     contexts = expanded,
                     error = null,
                     allergies = allergyRows,
+                    favorites = favoriteRows,
                     chronic = chronic,
                     healthRecords = records,
                     latestTempC = records.mapNotNull { rec -> rec.temperature }.firstOrNull(),
