@@ -1943,24 +1943,19 @@ async function onPostback(lineUserId: string, data: string, replyToken: string) 
 
   if (action === "unlink_yes") {
     await db.from("line_links").delete().eq("line_user_id", lineUserId);
-    // Unlinking here does not touch the browser inside LINE: it still holds a website session and
-    // a LIFF login, so a rich-menu tap would reopen the account just disconnected. The page behind
-    // this button ends both. The bot cannot do it for them — only that browser can.
+    // Deleting the link is all this side has to do. The browser inside LINE still holds a website
+    // session, and the bot cannot reach it — but the website now checks, on every page it
+    // protects, whether the session it was given by LINE still has a link. This one is gone, so
+    // the next rich-menu tap signs itself out instead of reopening the account just disconnected.
+    // Asking the parent to tap a second "sign out" button was the old way and they often did not.
     const th = lang !== "en";
     return send(replyToken, [
       { type: "text", text: t("unlinkDone", lang) },
       {
-        type: "template",
-        altText: th ? "ออกจากระบบบนเว็บด้วย" : "Sign out on the web too",
-        template: {
-          type: "buttons",
-          text: th
-            ? "ออกจากระบบหน้าเว็บใน LINE ด้วยไหม? ถ้าไม่ออก การเปิดเมนูครั้งต่อไปจะยังเห็นบัญชีเดิม"
-            : "Also sign out of the web view in LINE? Otherwise the next menu tap still opens the old account.",
-          actions: [
-            { type: "uri", label: th ? "ออกจากระบบ" : "Sign out", uri: `${WEB_BASE}/logout` },
-          ],
-        },
+        type: "text",
+        text: th
+          ? "ออกจากระบบหน้าเว็บใน LINE ให้อัตโนมัติแล้วค่ะ หากต้องการใช้งานอีกครั้ง พิมพ์ /link เพื่อเชื่อมบัญชีใหม่"
+          : "The web view inside LINE has been signed out automatically. Type /link to connect again.",
       },
     ]);
   }
