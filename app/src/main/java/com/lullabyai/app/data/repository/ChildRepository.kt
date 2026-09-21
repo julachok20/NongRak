@@ -1348,6 +1348,18 @@ class ChildRepository {
         AddFavoriteResult.Added(row)
     }
 
+    /**
+     * owner / co_owner / member — the roles allowed to write favourites. Asks is_child_parent(),
+     * the function the RLS policies themselves call, so this can never disagree with what the
+     * database will actually accept.
+     */
+    suspend fun isChildParent(childId: String): Result<Boolean> = runCatching {
+        supabase.postgrest.rpc(
+            "is_child_parent",
+            buildJsonObject { put("cid", JsonPrimitive(childId)) }
+        ).decodeAs<Boolean>()
+    }
+
     suspend fun deleteChildFavorite(favoriteId: String): Result<Unit> = runCatching {
         supabase.from("child_favorites").delete { filter { eq("id", favoriteId) } }
     }

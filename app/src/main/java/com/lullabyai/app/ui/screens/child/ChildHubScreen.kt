@@ -107,6 +107,12 @@ fun ChildHubScreen(
     val displayName = if (tourPreview) TourSampleData.displayName(th) else child?.name ?: (if (th) "ลูกของคุณ" else "Your child")
     val context = LocalContext.current
 
+    // Looks for favourites in what the family wrote. Once a day per child, parents only, and
+    // silent either way — the tour child is sample data and is never scanned.
+    LaunchedEffect(childState.child?.id, tourPreview) {
+        if (!tourPreview && childState.child != null) childViewModel.scanFavoritesFromActivity(context)
+    }
+
     var showSwitcher by remember { mutableStateOf(false) }
     var growthHistoryOpen by remember { mutableStateOf(false) }
     if (growthHistoryOpen) {

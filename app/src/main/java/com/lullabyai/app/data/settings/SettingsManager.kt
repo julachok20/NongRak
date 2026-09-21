@@ -159,6 +159,26 @@ class SettingsManager(private val context: Context) {
     private val INFO_ASK_SHOWN_DATE = stringPreferencesKey("info_ask_shown_date")
     private val INFO_ASK_SHOWN_IDS = stringPreferencesKey("info_ask_shown_ids")
     private val INFO_ASK_ANSWERED_IDS = stringPreferencesKey("info_ask_answered_ids")
+    private val FAVORITE_SCAN_DONE = stringPreferencesKey("favorite_scan_done")
+
+    /**
+     * Whether the AI already looked for favourites for this child today. The scan runs on its own
+     * when the child page opens; once a day is enough for notes that change a few times a day, and
+     * it keeps an unasked-for AI call from repeating every time the page is revisited.
+     */
+    suspend fun favoriteScanDoneToday(childId: String): Boolean {
+        val today = java.time.LocalDate.now().toString()
+        return "$childId|$today" in (context.dataStore.data.first()[FAVORITE_SCAN_DONE] ?: "").split(',')
+    }
+
+    suspend fun markFavoriteScanDone(childId: String) {
+        val today = java.time.LocalDate.now().toString()
+        context.dataStore.edit { prefs ->
+            // Only today's marks are worth keeping; yesterday's can never match again.
+            val kept = (prefs[FAVORITE_SCAN_DONE] ?: "").split(',').filter { it.endsWith("|$today") }
+            prefs[FAVORITE_SCAN_DONE] = (kept + "$childId|$today").distinct().joinToString(",")
+        }
+    }
 
     /** Field ids already shown today for [childId] — so the banner does not repeat the same gap. */
     suspend fun infoAskShownFieldIdsToday(childId: String): Set<String> {

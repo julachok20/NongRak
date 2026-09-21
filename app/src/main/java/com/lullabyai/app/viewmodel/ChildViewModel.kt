@@ -1429,6 +1429,59 @@ class ChildViewModel : ViewModel() {
         }
     }
 
+    private var favoriteScanRunning = false
+
+    /**
+     * Reads what the family wrote this past while and adds the favourites it states outright.
+     *
+     * Runs on its own when the child page opens, at most once a day per child, and only for a
+     * parent — a caregiver's app would spend an AI call on rows the database refuses to save. Every
+     * failure is swallowed on purpose: nobody asked for this scan, so it must never put an error on
+     * their screen. FavoriteExtractor is what makes it safe to add without asking: nothing reaches
+     * the profile unless its words are in the note it came from, and each item is tagged AI with a
+     * one-tap remove.
+     */
+    fun scanFavoritesFromActivity(context: android.content.Context) {
+        if (isGuest() || favoriteScanRunning) return
+        val child = _uiState.value.child ?: return
+        favoriteScanRunning = true
+        viewModelScope.launch {
+            try {
+                val settings = com.lullabyai.app.data.settings.SettingsManager(context)
+                if (settings.favoriteScanDoneToday(child.id)) return@launch
+                if (childRepo.isChildParent(child.id).getOrDefault(false) != true) return@launch
+                // Marked before the call: a failure today should wait for tomorrow, not retry on
+                // every visit to the page.
+                settings.markFavoriteScanDone(child.id)
+
+                val today = java.time.LocalDate.now()
+                val feed = childRepo.listActivityFeed(child.id, limit = 80).getOrDefault(emptyList())
+                val activities = childRepo.listActivities(
+                    child.id, today.minusDays(60).toString(), today.plusDays(1).toString()
+                ).getOrDefault(emptyList())
+                val lines = com.lullabyai.app.data.FavoriteExtractor.sourceLines(feed, activities)
+                if (lines.isEmpty()) return@launch          // nothing written in words; no call
+
+                val existing = _uiState.value.favorites
+                val reply = com.lullabyai.app.data.remote.AiProxyClient.generate(
+                    prompt = com.lullabyai.app.data.FavoriteExtractor.prompt(child.name, lines, existing),
+                    useSearch = false,
+                    maxTokens = 600,
+                    system = com.lullabyai.app.data.FavoriteExtractor.SYSTEM,
+                    jsonMode = true
+                )
+                com.lullabyai.app.data.FavoriteExtractor.parse(reply.text, lines, existing)
+                    .forEach { noteFavoriteFromAi(it.category, it.label) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // Unasked-for background work: a failed scan is a day with nothing new, not an error.
+            } finally {
+                favoriteScanRunning = false
+            }
+        }
+    }
+
     /** Picks one of the four bundled photos instead of uploading one. */
     fun pickAvatarPreset(presetId: String) {
         if (isGuest()) { promptRegistration(); return }
