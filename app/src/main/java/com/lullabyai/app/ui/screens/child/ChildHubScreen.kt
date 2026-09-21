@@ -284,7 +284,9 @@ fun ChildHubScreen(
 
                 HubServicesSection(
                     isThai = th,
+                    childId = child?.id,
                     routineRoute = child?.id?.let { Screen.CareRoutine.route(it) } ?: "",
+                    vaccineBadge = if (tourPreview) null else hubVaccineBadge(childState.vaccines, th),
                     onNavigate = { route -> if (route.isNotBlank()) navController.navigate(route) }
                 )
 
@@ -1051,7 +1053,7 @@ private fun HubUpdateCta(suggestion: ChildHubSuggestions.Suggestion, isThai: Boo
 }
 
 // ---------------------------------------------------------------------------------------------
-// บริการและฟังก์ชันทั้งหมด — one white container, three groups
+// บริการและฟังก์ชันทั้งหมด — four cards, fourteen services, to the Stitch frame
 // ---------------------------------------------------------------------------------------------
 
 private data class HubService(
@@ -1064,29 +1066,72 @@ private data class HubService(
     val tileBorder: Color,
     val iconGradient: List<Color>? = null,
     val badge: String? = null,
+    val badgeColor: Color = HubPalette.rose500,
     val pdfMark: Boolean = false
 )
 
+/**
+ * The vaccine tile's badge, from the child's real records. The design shows "ครบตามนัด", which is a
+ * claim about this child — so it is shown only when it is true, "ค้าง N เข็ม" when it is not, and
+ * nothing at all when there are no vaccine records to judge by.
+ */
+private data class HubVaccineBadge(val text: String, val overdue: Boolean)
+
+private fun hubVaccineBadge(vaccines: List<com.lullabyai.app.data.model.VaccineRecord>, isThai: Boolean): HubVaccineBadge? {
+    if (vaccines.isEmpty()) return null
+    val today = java.time.LocalDate.now()
+    // Same rule as the hub's suggestion card: completed and skipped doses are done.
+    val overdue = vaccines.count { v ->
+        v.status != "completed" && v.status != "skipped" &&
+            runCatching { java.time.LocalDate.parse(v.scheduledDate?.take(10)) }.getOrNull()?.isBefore(today) == true
+    }
+    return if (overdue > 0) HubVaccineBadge(if (isThai) "ค้าง $overdue เข็ม" else "$overdue overdue", true)
+    else HubVaccineBadge(if (isThai) "ครบตามนัด" else "Up to date", false)
+}
+
 @Composable
-private fun HubServicesSection(isThai: Boolean, routineRoute: String, onNavigate: (String) -> Unit) {
-    val logging = listOf(
-        HubService(if (isThai) "บันทึกด่วน" else "Quick log", if (isThai) "ลงบันทึกทันที" else "Log it now", Screen.QuickLogHub.route,
+private fun HubServicesSection(
+    isThai: Boolean,
+    childId: String?,
+    routineRoute: String,
+    vaccineBadge: HubVaccineBadge?,
+    onNavigate: (String) -> Unit
+) {
+    val popular = listOf(
+        HubService(if (isThai) "โภชนาการ" else "Nutrition", if (isThai) "อาหารตามวัย" else "Food for their age", Screen.Nutrition.route,
+            Icons.Filled.Restaurant, Color.White, Color(0xFFFFFBEB).copy(alpha = 0.8f), Color(0xFFFDE68A).copy(alpha = 0.7f),
+            iconGradient = listOf(Color(0xFFFBBF24), Color(0xFFF59E0B)), badge = if (isThai) "AI แนะนำ" else "AI tips", badgeColor = Color(0xFFD97706)),
+        HubService(if (isThai) "สมุดวัคซีน" else "Vaccine book", if (isThai) "เตือนนัดถัดไป" else "Next dose reminders", Screen.VaccineBook.route,
+            Icons.Filled.Vaccines, Color.White, Color(0xFFFDF2F8).copy(alpha = 0.8f), Color(0xFFFCE7F3),
+            iconGradient = listOf(HubPalette.rose400, HubPalette.pink500),
+            badge = vaccineBadge?.text, badgeColor = if (vaccineBadge?.overdue == true) Color(0xFFDC2626) else HubPalette.rose500),
+        HubService(if (isThai) "ไดอารี่ลูก" else "Diary", if (isThai) "รูปภาพ & ช่วงเวลา" else "Photos & moments", Screen.ChildDiary.route,
+            Icons.Filled.MenuBook, Color.White, HubPalette.blue50.copy(alpha = 0.7f), HubPalette.blue100.copy(alpha = 0.8f),
+            iconGradient = listOf(Color(0xFF3B82F6), HubPalette.blue), badge = if (isThai) "บันทึกสุข" else "Memories", badgeColor = HubPalette.blue)
+    )
+    val routine = listOf(
+        HubService(if (isThai) "บันทึกด่วน" else "Quick log", if (isThai) "นม นอน ขับถ่าย" else "Milk, sleep, nappies", Screen.QuickLogHub.route,
             Icons.Filled.Bolt, Color.White, Color(0xFFFDF2F8).copy(alpha = 0.7f), Color(0xFFFCE7F3),
-            iconGradient = listOf(HubPalette.rose400, HubPalette.pink500), badge = if (isThai) "ด่วน" else "Fast"),
-        HubService(if (isThai) "ไดอารี่ลูก" else "Diary", if (isThai) "เรื่องราวความทรงจำ" else "Memories", Screen.ChildDiary.route,
-            Icons.Filled.Bookmark, HubPalette.blue, HubPalette.blue50.copy(alpha = 0.6f), HubPalette.blue100.copy(alpha = 0.8f)),
-        HubService(if (isThai) "ตารางกิจกรรม" else "Activities", if (isThai) "ตารางและการเล่น" else "Schedule & play", Screen.ActivitySchedule.route,
-            Icons.Filled.CalendarMonth, Color(0xFF06B6D4), Color(0xFFECFEFF).copy(alpha = 0.6f), Color(0xFFCFFAFE).copy(alpha = 0.8f)),
-        HubService(if (isThai) "กิจวัตรการดูแล" else "Care routine", if (isThai) "ตารางและการดูแล" else "Routine & care", routineRoute,
-            Icons.Filled.Schedule, HubPalette.amber, Color(0xFFFFFBEB).copy(alpha = 0.7f), HubPalette.amberBg.copy(alpha = 0.8f))
+            iconGradient = listOf(HubPalette.rose400, HubPalette.pink500)),
+        HubService(if (isThai) "ตารางเวลา" else "Schedule", if (isThai) "กิจวัตรประจำวัน" else "Daily routine", routineRoute,
+            Icons.Filled.Schedule, Color.White, Color(0xFFFFFBEB).copy(alpha = 0.7f), HubPalette.amberBg.copy(alpha = 0.8f),
+            iconGradient = listOf(Color(0xFFF59E0B), Color(0xFFD97706))),
+        HubService(if (isThai) "ส่งต่อพี่เลี้ยง" else "Hand over", if (isThai) "สรุปคำแนะนำ" else "Care briefing",
+            childId?.let { Screen.CareHandoff.route(it) }.orEmpty(),
+            Icons.Filled.Groups, Color.White, HubPalette.blue50.copy(alpha = 0.6f), HubPalette.blue100.copy(alpha = 0.8f),
+            iconGradient = listOf(Color(0xFF1E3A8A), Color(0xFF1E40AF)))
     )
     val medical = listOf(
         HubService(if (isThai) "ศูนย์สุขภาพ" else "Health hub", if (isThai) "วัคซีนและหมอนัด" else "Vaccines & visits", Screen.ChildHealth.route,
-            Icons.Filled.MedicalServices, Color(0xFF34D399), Color(0xFFECFDF5).copy(alpha = 0.7f), Color(0xFFD1FAE5).copy(alpha = 0.8f)),
-        HubService(if (isThai) "ดูสถิติ" else "Stats", if (isThai) "กราฟพัฒนาการ" else "Growth charts", Screen.StatisticsInsights.route,
-            Icons.Filled.BarChart, HubPalette.blue, HubPalette.blue50.copy(alpha = 0.6f), HubPalette.blue100.copy(alpha = 0.8f)),
-        HubService(if (isThai) "บันทึกสุขภาพ" else "Health log", if (isThai) "อาการ & ยาที่ใช้" else "Symptoms & meds", Screen.HealthLog.route,
-            Icons.Filled.Add, Color(0xFF16A34A), Color(0xFFDCFCE7).copy(alpha = 0.7f), Color(0xFFD1FAE5).copy(alpha = 0.8f))
+            Icons.Filled.MedicalServices, Color.White, Color(0xFFECFDF5).copy(alpha = 0.7f), Color(0xFFD1FAE5).copy(alpha = 0.8f),
+            iconGradient = listOf(Color(0xFF34D399), Color(0xFF10B981))),
+        // WHO comparison lives on the growth history screen, not the general stats screen.
+        HubService(if (isThai) "กราฟพัฒนาการ" else "Growth charts", if (isThai) "เทียบเกณฑ์ WHO" else "Against WHO standards", Screen.GrowthHistory.route,
+            Icons.Filled.BarChart, Color.White, HubPalette.blue50.copy(alpha = 0.6f), HubPalette.blue100.copy(alpha = 0.8f),
+            iconGradient = listOf(Color(0xFF3B82F6), HubPalette.blue)),
+        HubService(if (isThai) "บันทึกอาการ" else "Symptoms", if (isThai) "ยา & อาการป่วย" else "Illness & medicine", Screen.HealthLog.route,
+            Icons.Filled.Add, Color.White, Color(0xFFDCFCE7).copy(alpha = 0.7f), Color(0xFFD1FAE5).copy(alpha = 0.8f),
+            iconGradient = listOf(Color(0xFF22C55E), Color(0xFF16A34A)))
     )
     val familyWide = listOf(
         HubService(if (isThai) "แชทผู้ดูแล" else "Care chat", if (isThai) "ติดต่อพี่เลี้ยงทันที" else "Reach the caregiver", Screen.CareCircle.route,
@@ -1099,10 +1144,10 @@ private fun HubServicesSection(isThai: Boolean, routineRoute: String, onNavigate
             Icons.Filled.Folder, Color(0xFF0284C7), Color(0xFFE0F2FE), HubPalette.blue100),
         HubService(if (isThai) "สิทธิ์เข้าถึง" else "Access", null, Screen.PermissionAccess.route,
             Icons.Filled.Lock, Color(0xFF4F46E5), Color(0xFFDDD6FE).copy(alpha = 0.6f), Color(0xFFC7D2FE)),
-        HubService(if (isThai) "ส่งออก PDF" else "Export PDF", null, Screen.PdfExport.route,
+        HubService(if (isThai) "ส่งออกสรุป" else "Export", null, Screen.PdfExport.route,
             null, Color(0xFFEF4444), Color(0xFFFFE4E6), Color(0xFFFECDD3), pdfMark = true)
     )
-    val total = logging.size + medical.size + familyWide.size + familyCompact.size
+    val total = popular.size + routine.size + medical.size + familyWide.size + familyCompact.size
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp).tourAnchor("parent_child_actions"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1118,35 +1163,70 @@ private fun HubServicesSection(isThai: Boolean, routineRoute: String, onNavigate
             Text(if (isThai) "ครบทุกการดูแล" else "Everything in one place", fontSize = 11.sp, color = inkFaint())
         }
 
-        val shape = RoundedCornerShape(16.dp)
-        Column(
-            Modifier.fillMaxWidth().hubSoftShadow(shape).clip(shape).background(cardColor()).border(1.dp, hairline(), shape).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        HubServiceCard(
+            title = if (isThai) "ฟีเจอร์ยอดนิยม" else "Most used",
+            subtitle = if (isThai) "ใช้บ่อยที่สุด" else "Used most",
+            accent = Color(0xFFF59E0B),
+            leadingStar = true,
+            tag = if (isThai) "แนะนำ" else "Picks"
         ) {
-            HubServiceGroup(if (isThai) "บันทึกและกิจวัตร" else "Logs & routine", if (isThai) "อัปเดตล่าสุดวันนี้" else "Updated today", HubPalette.blue) {
-                HubTileRow { logging.take(3).forEach { HubStackTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
-                HubStackTile(logging[3], onNavigate, Modifier.fillMaxWidth())
-            }
-            HorizontalDivider(color = hairline())
-            HubServiceGroup(if (isThai) "การแพทย์และพัฒนาการ" else "Medical & development", if (isThai) "สุขภาพ & ตัวชี้วัด" else "Health & metrics", Color(0xFF34D399)) {
-                HubTileRow { medical.forEach { HubStackTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
-            }
-            HorizontalDivider(color = hairline())
-            HubServiceGroup(if (isThai) "การจัดการและเอกสาร" else "Management & documents", if (isThai) "ครอบครัว & บัญชี" else "Family & account", Color(0xFFA855F7)) {
-                HubTileRow { familyWide.forEach { HubWideTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
-                HubTileRow { familyCompact.forEach { HubCompactTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
-            }
+            HubTileRow { popular.forEach { HubStackTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
+        }
+        HubServiceCard(
+            title = if (isThai) "บันทึกกิจวัตร & ส่งต่อการดูแล" else "Routine & hand-over",
+            subtitle = if (isThai) "อัปเดตล่าสุดวันนี้" else "Updated today",
+            accent = HubPalette.blue
+        ) {
+            HubTileRow { routine.forEach { HubStackTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
+        }
+        HubServiceCard(
+            title = if (isThai) "การแพทย์ & พัฒนาการ AI" else "Medical & AI development",
+            subtitle = if (isThai) "สุขภาพ & กราฟ" else "Health & charts",
+            accent = Color(0xFF34D399)
+        ) {
+            HubTileRow { medical.forEach { HubStackTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
+        }
+        HubServiceCard(
+            title = if (isThai) "จัดการครอบครัว & เอกสาร" else "Family & documents",
+            subtitle = if (isThai) "ข้อมูลปลอดภัย" else "Kept private",
+            accent = Color(0xFFA855F7)
+        ) {
+            HubTileRow { familyWide.forEach { HubWideTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
+            HubTileRow { familyCompact.forEach { HubCompactTile(it, onNavigate, Modifier.weight(1f).fillMaxHeight()) } }
         }
     }
 }
 
+/** One of the four white cards: accent bar (or star), title, optional tag, and a quiet line on the right. */
 @Composable
-private fun HubServiceGroup(title: String, subtitle: String, accent: Color, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun HubServiceCard(
+    title: String,
+    subtitle: String,
+    accent: Color,
+    leadingStar: Boolean = false,
+    tag: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier.fillMaxWidth().hubSoftShadow(shape).clip(shape).background(cardColor()).border(1.dp, hairline(), shape).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.width(6.dp).height(12.dp).clip(CircleShape).background(accent))
-                Text(title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (isDark()) MaterialTheme.colorScheme.onSurface else HubPalette.slate700, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (leadingStar) Icon(Icons.Filled.Star, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                else Box(Modifier.width(5.dp).height(14.dp).clip(CircleShape).background(accent))
+                Text(
+                    title, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    color = if (isDark()) MaterialTheme.colorScheme.onSurface else HubPalette.slate700,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
+                )
+                tag?.let {
+                    Text(
+                        it, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309), maxLines = 1,
+                        modifier = Modifier.clip(CircleShape).background(Color(0xFFFEF3C7)).padding(horizontal = 6.dp, vertical = 1.dp)
+                    )
+                }
             }
             Text(subtitle, fontSize = 10.sp, color = inkFaint(), maxLines = 1)
         }
@@ -1186,7 +1266,7 @@ private fun HubStackTile(item: HubService, onNavigate: (String) -> Unit, modifie
         item.badge?.let {
             Text(
                 it, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1,
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).clip(CircleShape).background(HubPalette.rose500).padding(horizontal = 5.dp, vertical = 1.dp)
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).clip(CircleShape).background(item.badgeColor).padding(horizontal = 5.dp, vertical = 1.dp)
             )
         }
     }
