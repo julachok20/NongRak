@@ -957,15 +957,34 @@ class ChildRepository {
         supabase.storage.from(CARE_MEDIA_BUCKET).createSignedUrl(path, 3600.seconds)
     }.getOrNull()
 
-    /** Who has seen which of [recordIds]. */
+    /**
+     * Who has seen which of [recordIds]. Ids travel in the URL of a GET, so a long history is asked
+     * for in batches — one request with hundreds of uuids would run past the URL length limit and
+     * fail as a whole.
+     */
     suspend fun recordReads(childId: String, recordIds: List<String>): Result<List<RecordRead>> = runCatching {
-        if (recordIds.isEmpty()) return@runCatching emptyList()
-        supabase.postgrest.from("record_reads").select {
-            filter {
-                eq("child_id", childId)
-                isIn("record_id", recordIds)
-            }
-        }.decodeList<RecordRead>()
+        recordIds.distinct().chunked(ID_BATCH).flatMap { batch ->
+            supabase.postgrest.from("record_reads").select {
+                filter {
+                    eq("child_id", childId)
+                    isIn("record_id", batch)
+                }
+            }.decodeList<RecordRead>()
+        }
+    }
+
+    /** Photo and voice note of the given care logs, batched for the same reason as [recordReads]. */
+    suspend fun careLogMedia(childId: String, careLogIds: List<String>): Result<List<CareLog>> = runCatching {
+        careLogIds.distinct().chunked(ID_BATCH).flatMap { batch ->
+            supabase.postgrest.from("care_logs").select(
+                io.github.jan.supabase.postgrest.query.Columns.list("id", "photo_path", "voice_path", "voice_seconds")
+            ) {
+                filter {
+                    eq("child_id", childId)
+                    isIn("id", batch)
+                }
+            }.decodeList<CareLog>()
+        }
     }
 
     /** Marks [recordIds] as seen by the caller. Returns how many were new. */
@@ -1165,6 +1184,8 @@ class ChildRepository {
 
         /** Private bucket for chat pictures; read only through short-lived signed URLs. */
         const val CHAT_IMAGE_BUCKET = "chat-images"
+        /** How many ids go in one `in.(...)` filter. */
+        private const val ID_BATCH = 50
         /** Care-log photos and voice notes: {child}/{uploader}/file, private, members read. */
         const val CARE_MEDIA_BUCKET = "care-media"
         const val RECEIPT_BUCKET = "expense-receipts"
