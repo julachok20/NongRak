@@ -2,6 +2,8 @@ package com.lullabyai.app.data.repository
 
 import com.lullabyai.app.data.model.Child
 import com.lullabyai.app.data.model.ChildAccessActivity
+import com.lullabyai.app.data.model.RecordEdit
+import com.lullabyai.app.data.model.RecordRead
 import com.lullabyai.app.data.model.ChildAvatarPreset
 import com.lullabyai.app.data.model.ChildFavorite
 import com.lullabyai.app.data.model.FavoriteSource
@@ -910,7 +912,10 @@ class ChildRepository {
         kind: String,
         note: String? = null,
         mood: String? = null,
-        abnormal: String? = null
+        abnormal: String? = null,
+        photoPath: String? = null,
+        voicePath: String? = null,
+        voiceSeconds: Int? = null
     ): Result<Unit> = runCatching {
         supabase.postgrest.from("care_logs").insert(
             buildJsonObject {
@@ -919,7 +924,79 @@ class ChildRepository {
                 put("note", note?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("mood", mood?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("abnormal", abnormal?.ifBlank { null }?.let { JsonPrimitive(it) } ?: JsonNull)
+                photoPath?.let { put("photo_path", JsonPrimitive(it)) }
+                voicePath?.let { put("voice_path", JsonPrimitive(it)) }
+                voiceSeconds?.let { put("voice_seconds", JsonPrimitive(it)) }
             }
+        )
+        Unit
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Care media, receipts and edit history — record_edits / record_reads / care-media.
+    // All access is decided by RLS and the security-definer functions; nothing here re-checks.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Uploads a photo or voice note for a care log and returns its object path. The path's first
+     * folder is the child and the second the uploader, which is exactly what the bucket's policies
+     * test — a different layout would simply be refused.
+     */
+    suspend fun uploadCareMedia(childId: String, bytes: ByteArray, ext: String, mime: String): Result<String> =
+        runCatching {
+            val uid = supabase.auth.currentUserOrNull()?.id ?: error("Not signed in")
+            val path = "$childId/$uid/${System.currentTimeMillis()}.$ext"
+            supabase.storage.from(CARE_MEDIA_BUCKET).upload(path, bytes) {
+                upsert = false
+                contentType = io.ktor.http.ContentType.parse(mime)
+            }
+            path
+        }
+
+    suspend fun signedCareMediaUrl(path: String): String? = runCatching {
+        supabase.storage.from(CARE_MEDIA_BUCKET).createSignedUrl(path, 3600.seconds)
+    }.getOrNull()
+
+    /** Who has seen which of [recordIds]. */
+    suspend fun recordReads(childId: String, recordIds: List<String>): Result<List<RecordRead>> = runCatching {
+        if (recordIds.isEmpty()) return@runCatching emptyList()
+        supabase.postgrest.from("record_reads").select {
+            filter {
+                eq("child_id", childId)
+                isIn("record_id", recordIds)
+            }
+        }.decodeList<RecordRead>()
+    }
+
+    /** Marks [recordIds] as seen by the caller. Returns how many were new. */
+    suspend fun markRecordsRead(childId: String, recordIds: List<String>): Result<Int> = runCatching {
+        if (recordIds.isEmpty()) return@runCatching 0
+        supabase.postgrest.rpc(
+            "mark_records_read",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_record_ids", kotlinx.serialization.json.JsonArray(recordIds.map { JsonPrimitive(it) }))
+            }
+        ).decodeAs<Int>()
+    }
+
+    /** Edits to this child's records since [sinceIso], newest first. */
+    suspend fun recordEdits(childId: String, sinceIso: String): Result<List<RecordEdit>> = runCatching {
+        supabase.postgrest.from("record_edits").select {
+            filter {
+                eq("child_id", childId)
+                gte("created_at", sinceIso)
+            }
+            order("created_at", Order.DESCENDING)
+            limit(200)
+        }.decodeList<RecordEdit>()
+    }
+
+    /** Puts a record back as it was before [editId]. The database refuses anyone who is not a parent. */
+    suspend fun revertRecordEdit(editId: Long): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "revert_record_edit",
+            buildJsonObject { put("p_edit_id", JsonPrimitive(editId)) }
         )
         Unit
     }
@@ -1088,6 +1165,8 @@ class ChildRepository {
 
         /** Private bucket for chat pictures; read only through short-lived signed URLs. */
         const val CHAT_IMAGE_BUCKET = "chat-images"
+        /** Care-log photos and voice notes: {child}/{uploader}/file, private, members read. */
+        const val CARE_MEDIA_BUCKET = "care-media"
         const val RECEIPT_BUCKET = "expense-receipts"
 
         /** Accepts raw 6-char codes or nongrak://access?code=XXXXXX / URL payloads from QR. */

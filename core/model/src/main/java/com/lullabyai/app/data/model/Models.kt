@@ -550,7 +550,37 @@ data class CareLog(
     val mood: String? = null,
     val abnormal: String? = null,
     @SerialName("logged_at") val loggedAt: String = "",
-    @SerialName("author_name") val authorName: String? = null
+    @SerialName("author_name") val authorName: String? = null,
+    @SerialName("created_by") val createdBy: String? = null,
+    /** care-media object paths — private; shown through short-lived signed URLs only. */
+    @SerialName("photo_path") val photoPath: String? = null,
+    @SerialName("voice_path") val voicePath: String? = null,
+    @SerialName("voice_seconds") val voiceSeconds: Int? = null
+)
+
+/**
+ * One change to a record, from record_edits. [oldRow] and [newRow] are the whole row as it was and
+ * as it became, so any field's before/after can be read without knowing the table's shape.
+ */
+@Serializable
+data class RecordEdit(
+    val id: Long = 0,
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("table_name") val tableName: String = "",
+    @SerialName("record_id") val recordId: String = "",
+    val action: String = "update",
+    @SerialName("old_row") val oldRow: kotlinx.serialization.json.JsonObject? = null,
+    @SerialName("new_row") val newRow: kotlinx.serialization.json.JsonObject? = null,
+    @SerialName("actor_id") val actorId: String? = null,
+    @SerialName("created_at") val createdAt: String = ""
+)
+
+/** "คุณแม่อ่านแล้ว": one person having seen one record. */
+@Serializable
+data class RecordRead(
+    @SerialName("record_id") val recordId: String = "",
+    @SerialName("reader_id") val readerId: String = "",
+    @SerialName("read_at") val readAt: String = ""
 )
 
 /**
