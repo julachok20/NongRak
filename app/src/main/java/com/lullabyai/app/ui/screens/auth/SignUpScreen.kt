@@ -68,6 +68,9 @@ fun SignUpScreen(
         )
     }
     var showPassword by remember { mutableStateOf(false) }
+    var confirmPassword by remember { mutableStateOf("") }
+    var showConfirmPassword by remember { mutableStateOf(false) }
+    var passwordMismatch by remember { mutableStateOf(false) }
     var agreedToTerms by remember { mutableStateOf(false) }
     var formError by remember { mutableStateOf<String?>(null) }
     var captchaToken by remember { mutableStateOf<String?>(null) }
@@ -155,9 +158,8 @@ fun SignUpScreen(
                         HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
                     }
 
-                    // Three fields. Phone left the form (it is nullable everywhere, social sign-ups
-                    // never had it, and the info-ask banner asks for guardian_phone later). The
-                    // confirm-password field went too: the eye toggle shows what was typed.
+                    // Phone left the form: it is nullable everywhere, social sign-ups never had it,
+                    // and the info-ask banner asks for guardian_phone later.
                     LabeledField(s.fullName) {
                         OutlinedTextField(
                             value = fullName, onValueChange = { fullName = it },
@@ -181,7 +183,7 @@ fun SignUpScreen(
                     }
                     LabeledField(s.password) {
                         OutlinedTextField(
-                            value = password, onValueChange = { password = it },
+                            value = password, onValueChange = { password = it; passwordMismatch = false },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(if (s.isThai) "อย่างน้อย 8 ตัวอักษร" else "At least 8 characters", color = Outline) },
                             leadingIcon = { Icon(Icons.Filled.Lock, null, tint = Outline) },
@@ -198,6 +200,25 @@ fun SignUpScreen(
                         if (password.isNotEmpty()) {
                             PasswordStrengthBar(password, settings.language == AppLanguage.TH)
                         }
+                    }
+                    LabeledField(s.confirmPassword) {
+                        OutlinedTextField(
+                            value = confirmPassword, onValueChange = { confirmPassword = it; passwordMismatch = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(if (s.isThai) "ยืนยันรหัสผ่านอีกครั้ง" else "Re-enter your password", color = Outline) },
+                            leadingIcon = { Icon(Icons.Filled.LockReset, null, tint = Outline) },
+                            trailingIcon = {
+                                IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
+                                    Icon(if (showConfirmPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null, tint = Outline)
+                                }
+                            },
+                            visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                            isError = passwordMismatch,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true, shape = RoundedCornerShape(12.dp),
+                            colors = fieldColors()
+                        )
+                        if (passwordMismatch) Text(s.passwordMismatch, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
 
                     // Invisible by default — only shown once the risk heuristic in the `when` block
@@ -227,16 +248,19 @@ fun SignUpScreen(
                             // Always pressable: validate on tap and tell the user exactly what's missing,
                             // instead of leaving the button silently disabled.
                             formError = null
+                            passwordMismatch = false
                             attemptCount++
                             val elapsed = System.currentTimeMillis() - screenOpenedAtMs
                             if (!bypassed && (elapsed < CAPTCHA_FAST_SUBMIT_THRESHOLD_MS || attemptCount >= CAPTCHA_RETRY_BURST_THRESHOLD)) {
                                 captchaRequired = true
                             }
                             when {
-                                fullName.isBlank() || email.isBlank() || password.isBlank() ->
-                                    formError = if (s.isThai) "กรุณากรอกชื่อ อีเมล และรหัสผ่าน" else "Please fill in name, email and password"
+                                fullName.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
+                                    formError = if (s.isThai) "กรุณากรอกข้อมูลให้ครบทุกช่อง" else "Please fill in every field"
                                 password.length < 8 ->
                                     formError = if (s.isThai) "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" else "Password needs at least 8 characters"
+                                password != confirmPassword ->
+                                    passwordMismatch = true
                                 !agreedToTerms ->
                                     formError = if (s.isThai) "กรุณายอมรับข้อตกลงและเงื่อนไขการใช้งานก่อนสมัคร" else "Please accept the terms first"
                                 captchaRequired && !bypassed && captchaToken == null ->
