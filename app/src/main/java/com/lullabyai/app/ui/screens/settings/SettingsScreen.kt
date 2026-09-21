@@ -154,8 +154,9 @@ fun SettingsScreen(
                 item {
                     val profile = authState.profile
                     val avatarUrl = authState.avatarSignedUrl ?: profile?.avatarUrl
-                    val displayName = profile?.fullName?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: profile?.username?.trim()?.takeIf { it.isNotEmpty() }
+                    // Username first, full name only as a fallback — same rule as the Home greeting.
+                    val displayName = profile?.username?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: profile?.fullName?.trim()?.takeIf { it.isNotEmpty() }
                         ?: (if (isThai) "ผู้ใช้งาน NongRak" else "NongRak User")
                     ProfileCard(
                         isThai = isThai,

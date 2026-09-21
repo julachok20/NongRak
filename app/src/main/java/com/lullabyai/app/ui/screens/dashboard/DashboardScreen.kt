@@ -168,8 +168,10 @@ fun DashboardScreen(
 
     val child = childState.child
     val hasActiveChild = childState.children.isNotEmpty() && child != null
-    val username = authState.profile?.fullName?.trim()?.takeIf { it.isNotBlank() }
-        ?: authState.profile?.username?.trim()?.takeIf { it.isNotBlank() }
+    // Username first, as the owner asked; the full name is only a fallback for accounts that
+    // never set one, so the greeting is never blank.
+    val username = authState.profile?.username?.trim()?.takeIf { it.isNotBlank() }
+        ?: authState.profile?.fullName?.trim()?.takeIf { it.isNotBlank() }
     val relationship = authState.profile?.relationship
 
     LaunchedEffect(Unit) {
