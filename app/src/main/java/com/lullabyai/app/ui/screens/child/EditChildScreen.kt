@@ -44,9 +44,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.lullabyai.app.data.ChildRecordFeed
 import com.lullabyai.app.data.handoff.ParentHandoffBrief
 import com.lullabyai.app.data.model.Child
+import com.lullabyai.app.data.model.ChildActivityEntry
 import com.lullabyai.app.data.model.ChildAvatarPreset
 import com.lullabyai.app.data.model.ChildFavorite
 import com.lullabyai.app.data.model.FavoriteCategory
@@ -340,21 +340,12 @@ fun EditChildScreen(
                 onRemove = { childViewModel.removeFavorite(it) }
             )
 
-            // Everything the app has logged for this child, newest first. One timeline, because a
-            // parent remembers "I wrote that down" long before they remember which screen they
-            // wrote it on.
-            val feed = remember(state.growthRecords, state.healthRecords, state.sleepLogs,
-                state.wasteRecords, state.doctorVisits, state.vaccines, thai) {
-                ChildRecordFeed.build(
-                    growth = state.growthRecords,
-                    health = state.healthRecords,
-                    sleep = state.sleepLogs,
-                    waste = state.wasteRecords,
-                    visits = state.doctorVisits,
-                    vaccines = state.vaccines,
-                    isThai = thai
-                )
-            }
+            // Everything the app has logged for this child, newest first — milk, food, sleep,
+            // nappies, growth, vaccines, symptoms, medicine and caregivers' notes, each with who
+            // wrote it. The server already merges these (list_child_activity_feed); an earlier
+            // client-side merge here missed milk, food and care logs.
+            LaunchedEffect(child?.id) { childViewModel.loadActivityFeed() }
+            val feed = state.activityFeed
             SectionCard(
                 title = if (thai) "บันทึกเพิ่มเติม" else "Recent records",
                 subtitle = if (thai) "รายการล่าสุดที่บันทึกไว้ในแอป" else "The latest entries logged in the app",
@@ -366,7 +357,7 @@ fun EditChildScreen(
                         style = MaterialTheme.typography.labelSmall, color = Outline
                     )
                 } else {
-                    ChildRecordFeed.recent(feed).forEach { e -> RecordRow(e) }
+                    feed.take(5).forEach { e -> RecordRow(e, thai) }
                     if (feed.size > 5) {
                         TextButton(onClick = { recordFeedOpen = true }, modifier = Modifier.fillMaxWidth()) {
                             Text(
@@ -916,9 +907,9 @@ private fun PresetPickerDialog(
     }
 }
 
-/** One line of the child's history: what it was, the detail worth seeing, and when. */
+/** One line of the child's history: what it was, the detail worth seeing, who, and when. */
 @Composable
-private fun RecordRow(e: ChildRecordFeed.Entry) {
+private fun RecordRow(e: ChildActivityEntry, thai: Boolean) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -929,32 +920,55 @@ private fun RecordRow(e: ChildRecordFeed.Entry) {
         ) { Icon(recordIcon(e.kind), null, tint = recordTint(e.kind), modifier = Modifier.size(14.dp)) }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(e.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            if (e.detail.isNotBlank()) {
+            Text(recordLabel(e.kind, thai), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            val detail = listOfNotNull(e.detail, e.note).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" — ")
+            if (detail.isNotBlank()) {
                 Text(
-                    e.detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
             }
         }
-        Text(e.date, fontSize = 10.sp, color = Outline)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(e.occurredAt.take(10), fontSize = 10.sp, color = Outline)
+            e.authorName?.takeIf { it.isNotBlank() }?.let {
+                Text(it, fontSize = 9.sp, color = Outline, maxLines = 1)
+            }
+        }
     }
 }
 
-private fun recordIcon(kind: ChildRecordFeed.Kind): ImageVector = when (kind) {
-    ChildRecordFeed.Kind.GROWTH -> Icons.Filled.TrendingUp
-    ChildRecordFeed.Kind.HEALTH -> Icons.Filled.MonitorHeart
-    ChildRecordFeed.Kind.SLEEP -> Icons.Filled.Bedtime
-    ChildRecordFeed.Kind.WASTE -> Icons.Filled.BabyChangingStation
-    ChildRecordFeed.Kind.VISIT -> Icons.Filled.LocalHospital
-    ChildRecordFeed.Kind.VACCINE -> Icons.Filled.Vaccines
+/** Kinds as list_child_activity_feed names them; care_* covers every caregiver log type. */
+private fun recordLabel(kind: String, thai: Boolean): String = when {
+    kind == "growth" -> if (thai) "การเติบโต" else "Growth"
+    kind == "vaccine" -> if (thai) "วัคซีน" else "Vaccine"
+    kind == "milk" -> if (thai) "นม" else "Milk"
+    kind == "food" -> if (thai) "อาหาร" else "Food"
+    kind == "waste" -> if (thai) "ขับถ่าย" else "Nappy"
+    kind == "sleep" -> if (thai) "การนอน" else "Sleep"
+    kind == "symptom" -> if (thai) "อาการป่วย" else "Symptom"
+    kind == "medicine" -> if (thai) "ยา" else "Medicine"
+    kind.startsWith("care_") -> if (thai) "บันทึกผู้ดูแล" else "Caregiver note"
+    else -> if (thai) "บันทึก" else "Record"
+}
+
+private fun recordIcon(kind: String): ImageVector = when {
+    kind == "growth" -> Icons.Filled.TrendingUp
+    kind == "vaccine" -> Icons.Filled.Vaccines
+    kind == "milk" || kind == "food" -> Icons.Filled.Restaurant
+    kind == "waste" -> Icons.Filled.BabyChangingStation
+    kind == "sleep" -> Icons.Filled.Bedtime
+    kind == "symptom" -> Icons.Filled.MonitorHeart
+    kind == "medicine" -> Icons.Filled.Medication
+    else -> Icons.Filled.EditNote
 }
 
 @Composable
-private fun recordTint(kind: ChildRecordFeed.Kind): Color = when (kind) {
-    ChildRecordFeed.Kind.HEALTH, ChildRecordFeed.Kind.VISIT -> Error
-    ChildRecordFeed.Kind.SLEEP -> Color(0xFF6366F1)
-    ChildRecordFeed.Kind.WASTE -> Color(0xFFD97706)
+private fun recordTint(kind: String): Color = when (kind) {
+    "symptom", "medicine" -> Error
+    "sleep" -> Color(0xFF6366F1)
+    "waste" -> Color(0xFFD97706)
+    "milk", "food" -> Color(0xFF16A34A)
     else -> Primary
 }
 
@@ -962,7 +976,7 @@ private fun recordTint(kind: ChildRecordFeed.Kind): Color = when (kind) {
 @Composable
 private fun RecordFeedDialog(
     thai: Boolean,
-    entries: List<ChildRecordFeed.Entry>,
+    entries: List<ChildActivityEntry>,
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -985,7 +999,7 @@ private fun RecordFeedDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries) { e -> RecordRow(e) }
+                    items(entries) { e -> RecordRow(e, thai) }
                 }
             }
         }

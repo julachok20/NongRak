@@ -78,6 +78,8 @@ data class ChildUiState(
      * no rows, so there is nothing here to hide.
      */
     val favorites: List<ChildFavorite> = emptyList(),
+    /** list_child_activity_feed — every record for this child, newest first, with its author. */
+    val activityFeed: List<com.lullabyai.app.data.model.ChildActivityEntry> = emptyList(),
     val favoritesSaving: Boolean = false,
     // --- Health-record detail screen (#7) ---
     val openHealthRecordId: String? = null,         // record currently shown on the detail screen
@@ -1426,6 +1428,22 @@ class ChildViewModel : ViewModel() {
                     val added = (result as? AddFavoriteResult.Added)?.favorite ?: return@onSuccess
                     _uiState.value = _uiState.value.copy(favorites = _uiState.value.favorites + added)
                 }
+        }
+    }
+
+    /**
+     * Loads the server's merged record feed for the selected child. Cleared first, so a switch of
+     * child never shows the previous child's history while the new one loads.
+     */
+    fun loadActivityFeed() {
+        val child = _uiState.value.child ?: return
+        _uiState.value = _uiState.value.copy(activityFeed = emptyList())
+        viewModelScope.launch {
+            childRepo.listActivityFeed(child.id, limit = 80)
+                .onSuccess { rows ->
+                    if (_uiState.value.child?.id == child.id) _uiState.value = _uiState.value.copy(activityFeed = rows)
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
         }
     }
 
