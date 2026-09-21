@@ -126,7 +126,7 @@ fun GuestLockGuard(
 
                 Spacer(Modifier.height(28.dp))
 
-                Button(
+                if (com.lullabyai.app.util.LineAuthHelper.isConfigured) Button(
                     onClick = lineSignIn,
                     enabled = !authState.isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),

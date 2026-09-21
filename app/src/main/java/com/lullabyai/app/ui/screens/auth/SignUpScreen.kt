@@ -56,8 +56,6 @@ fun SignUpScreen(
     )
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var phoneError by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var awaitingConfirmation by remember { mutableStateOf(false) }
     if (awaitingConfirmation) {
@@ -69,11 +67,8 @@ fun SignUpScreen(
             onCancel = { awaitingConfirmation = false }
         )
     }
-    var confirmPassword by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
-    var showConfirmPassword by remember { mutableStateOf(false) }
     var agreedToTerms by remember { mutableStateOf(false) }
-    var passwordMismatch by remember { mutableStateOf(false) }
     var formError by remember { mutableStateOf<String?>(null) }
     var captchaToken by remember { mutableStateOf<String?>(null) }
     val screenOpenedAtMs = remember { System.currentTimeMillis() }
@@ -122,6 +117,47 @@ fun SignUpScreen(
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    // Fastest path first: most Thai parents already have LINE, and a social sign-up
+                    // needs no password, no confirmation email and no captcha.
+                    if (com.lullabyai.app.util.LineAuthHelper.isConfigured) {
+                        Button(
+                            onClick = lineSignIn,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = RoundedCornerShape(100.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF06C755),   // LINE brand green
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Filled.Chat, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (s.isThai) "สมัครด้วย LINE" else "Sign up with LINE", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+
+                    @Suppress("KotlinConstantConditions")
+                    if (ENABLE_GOOGLE_SIGN_IN) {
+                        OutlinedButton(
+                            onClick = googleSignIn,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = RoundedCornerShape(100.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Icon(Icons.Filled.AccountCircle, null, tint = Color(0xFF4285F4), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (s.isThai) "สมัครด้วย Google" else "Sign up with Google", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+                        Text(if (s.isThai) "  หรือสมัครด้วยอีเมล  " else "  or with email  ", style = MaterialTheme.typography.bodySmall, color = Outline)
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+
+                    // Three fields. Phone left the form (it is nullable everywhere, social sign-ups
+                    // never had it, and the info-ask banner asks for guardian_phone later). The
+                    // confirm-password field went too: the eye toggle shows what was typed.
                     LabeledField(s.fullName) {
                         OutlinedTextField(
                             value = fullName, onValueChange = { fullName = it },
@@ -143,26 +179,9 @@ fun SignUpScreen(
                             colors = fieldColors()
                         )
                     }
-                    LabeledField(if (s.isThai) "เบอร์โทรศัพท์" else "Phone number") {
-                        OutlinedTextField(
-                            value = phone, onValueChange = { phone = it; phoneError = false },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("0812345678", color = Outline) },
-                            leadingIcon = { Icon(Icons.Filled.Phone, null, tint = Outline) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            isError = phoneError,
-                            singleLine = true, shape = RoundedCornerShape(12.dp),
-                            colors = fieldColors()
-                        )
-                        if (phoneError) Text(
-                            if (s.isThai) "เบอร์โทรศัพท์ไม่ถูกต้อง กรุณากรอกเป็นตัวเลข เช่น 0812345678 หรือ +66812345678"
-                            else "That phone number doesn't look right. Use a Thai number, e.g. 0812345678 or +66812345678",
-                            color = Error, style = MaterialTheme.typography.bodySmall
-                        )
-                    }
                     LabeledField(s.password) {
                         OutlinedTextField(
-                            value = password, onValueChange = { password = it; passwordMismatch = false },
+                            value = password, onValueChange = { password = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(if (s.isThai) "อย่างน้อย 8 ตัวอักษร" else "At least 8 characters", color = Outline) },
                             leadingIcon = { Icon(Icons.Filled.Lock, null, tint = Outline) },
@@ -179,26 +198,6 @@ fun SignUpScreen(
                         if (password.isNotEmpty()) {
                             PasswordStrengthBar(password, settings.language == AppLanguage.TH)
                         }
-                    }
-
-                    LabeledField(s.confirmPassword) {
-                        OutlinedTextField(
-                            value = confirmPassword, onValueChange = { confirmPassword = it; passwordMismatch = false },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(if (s.isThai) "ยืนยันรหัสผ่านอีกครั้ง" else "Re-enter your password", color = Outline) },
-                            leadingIcon = { Icon(Icons.Filled.LockReset, null, tint = Outline) },
-                            trailingIcon = {
-                                IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
-                                    Icon(if (showConfirmPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null, tint = Outline)
-                                }
-                            },
-                            visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                            isError = passwordMismatch,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            singleLine = true, shape = RoundedCornerShape(12.dp),
-                            colors = fieldColors()
-                        )
-                        if (passwordMismatch) Text(s.passwordMismatch, color = Error, style = MaterialTheme.typography.bodySmall)
                     }
 
                     // Invisible by default — only shown once the risk heuristic in the `when` block
@@ -228,34 +227,24 @@ fun SignUpScreen(
                             // Always pressable: validate on tap and tell the user exactly what's missing,
                             // instead of leaving the button silently disabled.
                             formError = null
-                            passwordMismatch = false
-                            phoneError = false
                             attemptCount++
                             val elapsed = System.currentTimeMillis() - screenOpenedAtMs
                             if (!bypassed && (elapsed < CAPTCHA_FAST_SUBMIT_THRESHOLD_MS || attemptCount >= CAPTCHA_RETRY_BURST_THRESHOLD)) {
                                 captchaRequired = true
                             }
-                            val normalizedPhone = com.lullabyai.app.data.repository.ThaiPhone.normalize(phone)
                             when {
-                                fullName.isBlank() || email.isBlank() || phone.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
-                                    formError = "กรุณากรอกข้อมูลให้ครบทุกช่อง"
-                                normalizedPhone == null ->
-                                    phoneError = true
+                                fullName.isBlank() || email.isBlank() || password.isBlank() ->
+                                    formError = if (s.isThai) "กรุณากรอกชื่อ อีเมล และรหัสผ่าน" else "Please fill in name, email and password"
                                 password.length < 8 ->
-                                    formError = "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"
-                                password != confirmPassword ->
-                                    passwordMismatch = true
+                                    formError = if (s.isThai) "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" else "Password needs at least 8 characters"
                                 !agreedToTerms ->
-                                    formError = "กรุณายอมรับข้อตกลงและเงื่อนไขการใช้งานก่อนสมัคร"
+                                    formError = if (s.isThai) "กรุณายอมรับข้อตกลงและเงื่อนไขการใช้งานก่อนสมัคร" else "Please accept the terms first"
                                 captchaRequired && !bypassed && captchaToken == null ->
-                                    formError = "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนสมัครสมาชิก"
+                                    formError = if (s.isThai) "ตรวจพบความผิดปกติ กรุณายืนยันว่าคุณไม่ใช่บอทก่อนสมัครสมาชิก" else "Please confirm you're not a bot"
                                 else ->
-                                    // phone passed NAMED and pre-normalized. It defaults to null in
-                                    // signUp(), so omitting it still compiled but silently threw the
-                                    // number away — the field would have looked like it worked.
                                     authViewModel.signUp(
                                         email, password, fullName, captchaToken,
-                                        phone = normalizedPhone,
+                                        phone = null,
                                         onNeedsConfirmation = { awaitingConfirmation = true },
                                         onSuccess = onSignUpSuccess
                                     )
@@ -264,46 +253,6 @@ fun SignUpScreen(
                         isLoading = uiState.isLoading,
                         enabled = !uiState.isLoading
                     )
-
-                    @Suppress("KotlinConstantConditions")
-                    if (ENABLE_GOOGLE_SIGN_IN) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
-                            Text(" หรือ ", style = MaterialTheme.typography.bodySmall, color = Outline)
-                            HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
-                        }
-
-                        OutlinedButton(
-                            onClick = googleSignIn,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(100.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
-                        ) {
-                            Icon(Icons.Filled.AccountCircle, null, tint = Color(0xFF4285F4), modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("สมัครด้วย Google", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-
-                    // Hidden until a Login channel is configured, so a build without one shows no
-                    // button that cannot work. LINE sign-in also links notifications in the same
-                    // step — there is no second pairing screen afterwards.
-                    if (com.lullabyai.app.util.LineAuthHelper.isConfigured) {
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = lineSignIn,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(100.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF06C755),   // LINE brand green
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(Icons.Filled.Chat, null, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("สมัครด้วย LINE", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
                 }
             }
 
