@@ -6,9 +6,7 @@ import com.lullabyai.app.R
 /**
  * รูปสำเร็จรูป — the ready-made faces a parent can pick instead of uploading a photo.
  *
- * The artwork arrives as four contact sheets of many faces each, not as four pictures; they are
- * cut into individual circular WebPs at build-prep time (see the slicer kept with the
- * source sheets) and shipped one file per face. Stored in children.avatar_url as "preset:s1r0c2".
+ * The artwork arrives as sheets of many faces; each is cut to its circle and shipped as one file. Stored in children.avatar_url as "preset:a03".
  *
  * Bundled rather than uploaded: a few dozen small fixed images do not need object storage, and a
  * sentinel is the only form that survives every place the photo shows up — the app, the LIFF
@@ -20,37 +18,39 @@ object ChildAvatarPreset {
     const val PREFIX = "preset:"
 
     /**
-     * The picker order. Curated from the 142 faces on the source sheets down to 44: crops that a
-     * neighbour's ring intruded on, faces nobody picks as their child's photo (crying, angry,
-     * dizzy, the devil), and duplicates across sheets were dropped.
+     * The picker order: everyday faces, accessories, costumes, then themes and seasons.
+     *
+     * Cut from the two expression sheets strictly to each circle — the ring is the border, and a
+     * crown or an ear reaching past it is cut off. 47 of the 85 are kept: faces nobody picks as a
+     * child's photo (crying, angry, dizzy) are out, and where both sheets draw the same thing the
+     * sharper Sheet1 crop is kept.
      */
     val ids: List<String> = listOf(
-        "s1r0c0", "s1r0c1", "s1r0c2", "s1r0c3", "s1r0c4", "s1r1c1",
-        "s1r1c2", "s1r1c3", "s1r1c4", "s1r4c0", "s1r4c4", "s2r0c0",
-        "s2r0c2", "s2r0c3", "s2r0c4", "s2r1c0", "s2r3c2", "s2r3c4",
-        "s2r4c0", "s2r4c1", "s2r4c4", "s3r0c2", "s3r1c0", "s3r5c0",
-        "s3r2c0", "s3r2c1", "s4r3c5", "s4r4c1", "s3r4c0", "s3r4c1",
-        "s3r5c1", "s4r2c4", "s4r3c4", "s4r1c5", "s4r4c3", "s4r5c0",
-        "s4r5c1", "s3r3c1", "s4r5c2", "s4r5c3", "s4r5c4", "s3r6c0",
-        "s3r6c1", "s3r6c2"
+        "a00", "a01", "a02", "a03", "a04", "a05", "a12", "a13",
+        "a14", "b02", "b13", "b24", "a20", "a21", "a22", "a23",
+        "a24", "a25", "b45", "a50", "a52", "a53", "a30", "a31",
+        "a32", "a33", "a34", "a35", "b35", "b36", "a54", "a51",
+        "a40", "a41", "a42", "a43", "a44", "a45", "a55", "b46",
+        "b51", "b53", "b55", "b56", "b62", "b65", "b66"
     )
 
     private val drawables: Map<String, Int> = mapOf(
-        "s1r0c0" to R.drawable.child_avatar_s1r0c0, "s1r0c1" to R.drawable.child_avatar_s1r0c1, "s1r0c2" to R.drawable.child_avatar_s1r0c2,
-        "s1r0c3" to R.drawable.child_avatar_s1r0c3, "s1r0c4" to R.drawable.child_avatar_s1r0c4, "s1r1c1" to R.drawable.child_avatar_s1r1c1,
-        "s1r1c2" to R.drawable.child_avatar_s1r1c2, "s1r1c3" to R.drawable.child_avatar_s1r1c3, "s1r1c4" to R.drawable.child_avatar_s1r1c4,
-        "s1r4c0" to R.drawable.child_avatar_s1r4c0, "s1r4c4" to R.drawable.child_avatar_s1r4c4, "s2r0c0" to R.drawable.child_avatar_s2r0c0,
-        "s2r0c2" to R.drawable.child_avatar_s2r0c2, "s2r0c3" to R.drawable.child_avatar_s2r0c3, "s2r0c4" to R.drawable.child_avatar_s2r0c4,
-        "s2r1c0" to R.drawable.child_avatar_s2r1c0, "s2r3c2" to R.drawable.child_avatar_s2r3c2, "s2r3c4" to R.drawable.child_avatar_s2r3c4,
-        "s2r4c0" to R.drawable.child_avatar_s2r4c0, "s2r4c1" to R.drawable.child_avatar_s2r4c1, "s2r4c4" to R.drawable.child_avatar_s2r4c4,
-        "s3r0c2" to R.drawable.child_avatar_s3r0c2, "s3r1c0" to R.drawable.child_avatar_s3r1c0, "s3r5c0" to R.drawable.child_avatar_s3r5c0,
-        "s3r2c0" to R.drawable.child_avatar_s3r2c0, "s3r2c1" to R.drawable.child_avatar_s3r2c1, "s4r3c5" to R.drawable.child_avatar_s4r3c5,
-        "s4r4c1" to R.drawable.child_avatar_s4r4c1, "s3r4c0" to R.drawable.child_avatar_s3r4c0, "s3r4c1" to R.drawable.child_avatar_s3r4c1,
-        "s3r5c1" to R.drawable.child_avatar_s3r5c1, "s4r2c4" to R.drawable.child_avatar_s4r2c4, "s4r3c4" to R.drawable.child_avatar_s4r3c4,
-        "s4r1c5" to R.drawable.child_avatar_s4r1c5, "s4r4c3" to R.drawable.child_avatar_s4r4c3, "s4r5c0" to R.drawable.child_avatar_s4r5c0,
-        "s4r5c1" to R.drawable.child_avatar_s4r5c1, "s3r3c1" to R.drawable.child_avatar_s3r3c1, "s4r5c2" to R.drawable.child_avatar_s4r5c2,
-        "s4r5c3" to R.drawable.child_avatar_s4r5c3, "s4r5c4" to R.drawable.child_avatar_s4r5c4, "s3r6c0" to R.drawable.child_avatar_s3r6c0,
-        "s3r6c1" to R.drawable.child_avatar_s3r6c1, "s3r6c2" to R.drawable.child_avatar_s3r6c2
+        "a00" to R.drawable.child_avatar_a00, "a01" to R.drawable.child_avatar_a01, "a02" to R.drawable.child_avatar_a02,
+        "a03" to R.drawable.child_avatar_a03, "a04" to R.drawable.child_avatar_a04, "a05" to R.drawable.child_avatar_a05,
+        "a12" to R.drawable.child_avatar_a12, "a13" to R.drawable.child_avatar_a13, "a14" to R.drawable.child_avatar_a14,
+        "b02" to R.drawable.child_avatar_b02, "b13" to R.drawable.child_avatar_b13, "b24" to R.drawable.child_avatar_b24,
+        "a20" to R.drawable.child_avatar_a20, "a21" to R.drawable.child_avatar_a21, "a22" to R.drawable.child_avatar_a22,
+        "a23" to R.drawable.child_avatar_a23, "a24" to R.drawable.child_avatar_a24, "a25" to R.drawable.child_avatar_a25,
+        "b45" to R.drawable.child_avatar_b45, "a50" to R.drawable.child_avatar_a50, "a52" to R.drawable.child_avatar_a52,
+        "a53" to R.drawable.child_avatar_a53, "a30" to R.drawable.child_avatar_a30, "a31" to R.drawable.child_avatar_a31,
+        "a32" to R.drawable.child_avatar_a32, "a33" to R.drawable.child_avatar_a33, "a34" to R.drawable.child_avatar_a34,
+        "a35" to R.drawable.child_avatar_a35, "b35" to R.drawable.child_avatar_b35, "b36" to R.drawable.child_avatar_b36,
+        "a54" to R.drawable.child_avatar_a54, "a51" to R.drawable.child_avatar_a51, "a40" to R.drawable.child_avatar_a40,
+        "a41" to R.drawable.child_avatar_a41, "a42" to R.drawable.child_avatar_a42, "a43" to R.drawable.child_avatar_a43,
+        "a44" to R.drawable.child_avatar_a44, "a45" to R.drawable.child_avatar_a45, "a55" to R.drawable.child_avatar_a55,
+        "b46" to R.drawable.child_avatar_b46, "b51" to R.drawable.child_avatar_b51, "b53" to R.drawable.child_avatar_b53,
+        "b55" to R.drawable.child_avatar_b55, "b56" to R.drawable.child_avatar_b56, "b62" to R.drawable.child_avatar_b62,
+        "b65" to R.drawable.child_avatar_b65, "b66" to R.drawable.child_avatar_b66
     )
 
     /** What goes into children.avatar_url for a picked face. */
