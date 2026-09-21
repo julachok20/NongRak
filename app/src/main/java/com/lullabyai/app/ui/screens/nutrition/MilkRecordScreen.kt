@@ -38,6 +38,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val QUICK_PICKS_ML = listOf(120, 150, 180, 210)
+private val QUICK_PICKS_MIN = listOf(5, 10, 15, 20)
 
 /** Milk feeding log — Stitch milk_record: type, volume, side, time/date override, notes + history. */
 @Composable
@@ -54,6 +55,11 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
     var volumeMl by remember { mutableStateOf(150) }
     var unit by remember { mutableStateOf("ml") }
     var side by remember { mutableStateOf("both") }
+    // A feed at the breast has no measurable volume, so it is logged in minutes instead.
+    var direct by remember { mutableStateOf(true) }
+    var minutes by remember { mutableStateOf(15) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    val byMinutes = milkType == "breast" && direct
     var notes by remember { mutableStateOf("") }
     var feedDate by remember { mutableStateOf(LocalDate.now()) }
     var feedTime by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
@@ -133,6 +139,33 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                             }
                         }
 
+                        if (milkType == "breast") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(true to (if (isThai) "เข้าเต้า" else "At the breast"), false to (if (isThai) "ปั๊มใส่ขวด" else "Pumped, bottle")).forEach { (key, label) ->
+                                    FilterChip(
+                                        selected = direct == key, onClick = { direct = key },
+                                        label = { Text(label, fontWeight = FontWeight.Bold) },
+                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Primary.copy(0.15f), selectedLabelColor = Primary)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (byMinutes) {
+                            Text(if (isThai) "ระยะเวลาที่ดูดนม" else "Feeding time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("$minutes", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = Primary)
+                                Text(if (isThai) "นาที" else "min", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Slider(value = minutes.toFloat(), onValueChange = { minutes = it.toInt() }, valueRange = 1f..60f, colors = SliderDefaults.colors(thumbColor = Primary, activeTrackColor = Primary))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    QUICK_PICKS_MIN.forEach { m ->
+                                        Surface(onClick = { minutes = m }, shape = RoundedCornerShape(10.dp), color = if (minutes == m) Primary.copy(0.15f) else MaterialTheme.colorScheme.surfaceVariant) {
+                                            Text("$m ${if (isThai) "นาที" else "min"}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (minutes == m) Primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(if (isThai) "ปริมาณน้ำนม" else "Volume", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
@@ -177,8 +210,9 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                                 }
                             }
                         }
+                        }
 
-                        if (milkType == "breast") {
+                        if (byMinutes) {
                             Text(if (isThai) "ข้างที่ดื่ม (สำหรับนมแม่)" else "Side (breastfeeding)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(
@@ -247,25 +281,31 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
                             onClick = {
                                 val cid = childId ?: return@Button
                                 saving = true
+                                saveError = null
                                 val loggedAt = LocalDateTime.of(feedDate, feedTime)
                                     .atZone(ZoneId.systemDefault()).toInstant().toString()
                                 scope.launch {
                                     repo.addMilkLog(
-                                        cid, milkType, volumeMl,
-                                        if (milkType == "breast") side else null,
+                                        cid, milkType, if (byMinutes) 0 else volumeMl,
+                                        if (byMinutes) side else null,
                                         notes.takeIf { it.isNotBlank() },
-                                        loggedAt
-                                    )
+                                        loggedAt,
+                                        durationMin = if (byMinutes) minutes else null
+                                    ).onSuccess {
+                                        notes = ""
+                                        reload()
+                                        nutritionViewModel.load(lang)
+                                    }.onFailure { e ->
+                                        saveError = (if (isThai) "บันทึกไม่สำเร็จ: " else "Could not save: ") + (e.message ?: e::class.simpleName)
+                                    }
                                     saving = false
-                                    notes = ""
-                                    reload()
-                                    nutritionViewModel.load(lang)
                                 }
                             },
                             enabled = !saving && childId != null,
                             modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Primary)
                         ) { Text(if (isThai) "บันทึกข้อมูล" else "Save", fontWeight = FontWeight.Bold) }
+                        saveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }
@@ -333,7 +373,7 @@ private fun MilkLogRow(log: MilkLog, isThai: Boolean) {
                 }
             }
             Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
-                Text("${log.volumeMl} ml", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
+                Text(log.durationMin?.let { "$it ${if (isThai) "นาที" else "min"}" } ?: "${log.volumeMl} ml", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Primary, fontWeight = FontWeight.Bold)
             }
         }
     }

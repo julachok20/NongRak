@@ -30,12 +30,13 @@ class NutritionRepository {
 
     suspend fun addMilkLog(
         childId: String, milkType: String, volumeMl: Int, side: String?, notes: String?,
-        loggedAt: String? = null
+        loggedAt: String? = null, durationMin: Int? = null
     ): Result<Unit> = runCatching {
         supabase.from("milk_logs").insert(buildJsonObject {
             put("child_id", JsonPrimitive(childId))
             put("milk_type", JsonPrimitive(milkType))
             put("volume_ml", JsonPrimitive(volumeMl))
+            if (durationMin != null) put("duration_min", JsonPrimitive(durationMin))
             put("side", side?.let { JsonPrimitive(it) } ?: JsonNull)
             put("notes", notes?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
             if (loggedAt != null) put("logged_at", JsonPrimitive(loggedAt))

@@ -698,6 +698,8 @@ data class MilkLog(
     @SerialName("child_id") val childId: String = "",
     @SerialName("milk_type") val milkType: String = "formula", // breast | formula
     @SerialName("volume_ml") val volumeMl: Int = 0,
+    /** Minutes at the breast for a direct feed; volumeMl is 0 then. Null for bottle/formula. */
+    @SerialName("duration_min") val durationMin: Int? = null,
     val side: String? = null, // left | right | both (breast only)
     @SerialName("logged_at") val loggedAt: String? = null,
     val notes: String? = null

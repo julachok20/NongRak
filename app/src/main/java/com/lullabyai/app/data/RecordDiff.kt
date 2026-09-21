@@ -38,6 +38,7 @@ object RecordDiff {
         "weight_kg" to Field("น้ำหนักตัว", "Weight", Kind.NUMBER_1DP, "กก.", "kg"),
         "height_cm" to Field("ส่วนสูง", "Height", Kind.NUMBER_1DP, "ซม.", "cm"),
         "volume_ml" to Field("ปริมาณ", "Volume", Kind.INTEGER, "มล.", "ml"),
+        "duration_min" to Field("ระยะเวลาเข้าเต้า", "Time at the breast", Kind.INTEGER, "นาที", "min"),
         "temperature" to Field("อุณหภูมิ", "Temperature", Kind.NUMBER_1DP, "°C", "°C"),
         "start_time" to Field("เวลาเข้านอน", "Fell asleep", Kind.TIME),
         "end_time" to Field("เวลาตื่นนอน", "Woke up", Kind.TIME),
