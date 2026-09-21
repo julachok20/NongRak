@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,13 +21,22 @@ import androidx.navigation.NavController
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.Primary
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lullabyai.app.data.repository.AuthRepository
+import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 
 /**
  * Gates screens that require an active registered account (e.g. adding children, booking doctor
  * appointments, sharing caregiver access, or recording data). In Test/Guest mode, displays a
  * locked view with clear sign-up / login action buttons.
+ *
+ * LINE and Google come first: the 5-field email form (plus captcha) was where trial users gave up,
+ * and most Thai parents already have LINE. After a one-tap sign-in the guest child is replaced by
+ * the account's real children and the user lands on Home, exactly as the Login screen routes.
  */
+private val LineGreen = androidx.compose.ui.graphics.Color(0xFF06C755)
+
 @Composable
 fun GuestLockGuard(
     childViewModel: ChildViewModel,
@@ -33,11 +44,21 @@ fun GuestLockGuard(
     onBack: () -> Unit,
     title: String? = null,
     message: String? = null,
+    authViewModel: AuthViewModel = viewModel(),
     content: @Composable () -> Unit
 ) {
     if (childViewModel.isGuest()) {
         val s = LocalStrings.current
         val isThai = s.isThai
+        val authState by authViewModel.uiState.collectAsState()
+        val onSocialSuccess: () -> Unit = {
+            authViewModel.resolveHomeForPortal(AuthRepository.AuthPortal.PARENT, isThai) {
+                childViewModel.loadChild()
+                navController.navigate(Screen.Dashboard.route) { popUpTo(0) }
+            }
+        }
+        val lineSignIn = rememberLineSignInAction(authViewModel, isThai, onSocialSuccess)
+        val googleSignIn = rememberGoogleSignInAction(authViewModel, isThai, onSocialSuccess)
 
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -106,25 +127,42 @@ fun GuestLockGuard(
                 Spacer(Modifier.height(28.dp))
 
                 Button(
-                    onClick = { navController.navigate(Screen.SignUp.route) },
+                    onClick = lineSignIn,
+                    enabled = !authState.isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(100.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                    colors = ButtonDefaults.buttonColors(containerColor = LineGreen)
                 ) {
-                    Text(if (isThai) "สมัครสมาชิก (ฟรี)" else "Sign up (Free)", fontWeight = FontWeight.Bold)
+                    Text(if (isThai) "ใช้งานต่อด้วย LINE" else "Continue with LINE", fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(Modifier.height(10.dp))
 
                 OutlinedButton(
-                    onClick = { navController.navigate(Screen.Login.route) },
+                    onClick = googleSignIn,
+                    enabled = !authState.isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(100.dp)
                 ) {
-                    Text(if (isThai) "เข้าสู่ระบบ" else "Sign in", fontWeight = FontWeight.Bold, color = Primary)
+                    Text(if (isThai) "ใช้งานต่อด้วย Google" else "Continue with Google", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 }
 
-                Spacer(Modifier.height(12.dp))
+                authState.error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { navController.navigate(Screen.SignUp.route) }) {
+                        Text(if (isThai) "สมัครด้วยอีเมล" else "Sign up with email", color = Primary, fontWeight = FontWeight.Bold)
+                    }
+                    Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { navController.navigate(Screen.Login.route) }) {
+                        Text(if (isThai) "เข้าสู่ระบบ" else "Sign in", color = Primary, fontWeight = FontWeight.Bold)
+                    }
+                }
 
                 TextButton(onClick = onBack) {
                     Text(if (isThai) "ย้อนกลับ" else "Go back", color = MaterialTheme.colorScheme.onSurfaceVariant)
