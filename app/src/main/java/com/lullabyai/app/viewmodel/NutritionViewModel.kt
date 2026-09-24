@@ -47,6 +47,13 @@ data class NutritionUiState(
     val macrosLoading: Boolean = false,
     val microStatus: Map<String, String>? = null,  // qualitative status for A/C/D/B12/Zn/DHA ("ok"|"boost"|"low")
     val microStatusLoading: Boolean = false,
+    /** The day's milk logs (type + volume/minutes); [todayMilkMl] is only their measured-volume sum. */
+    val todayMilk: List<com.lullabyai.app.data.model.MilkLog> = emptyList(),
+    /** Thai DRI 2563 targets for this child's age and sex; null outside 0-12 years. */
+    val dri: com.lullabyai.app.util.DriReference.Targets? = null,
+    /** The day's nutrient totals from the Thai food composition table (AI only for unmatched foods). */
+    val dayTotals: com.lullabyai.app.util.DayNutrition.Totals? = null,
+    val dayTotalsLoading: Boolean = false,
     val photoAddFailed: Boolean = false,  // last camera-add couldn't identify a food in the photo
     // Parent calorie-check tool (standalone): type a dish → kcal + macros + tip.
     val calorieCheck: NutritionAiService.CalorieCheck? = null,
@@ -109,39 +116,26 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
-    /** Rough age-based recommended daily energy intake (kcal) for 0–3y, per standard guidance. */
-    private fun dailyTargetKcal(child: Child?): Int = when (ageMonths(child)) {
-        in 0..5 -> 550
-        in 6..11 -> 750
-        in 12..23 -> 1000
-        else -> 1200
+    /** Thai DRI 2563 for this child — the one source for every target on the nutrition screens. */
+    private fun driFor(child: Child?): com.lullabyai.app.util.DriReference.Targets? =
+        child?.let { runCatching { com.lullabyai.app.util.DriReference.forChild(ageMonths(it), it.gender) }.getOrNull() }
+
+    /** Daily energy target (kcal) from Thai DRI 2563, by age and sex. */
+    private fun dailyTargetKcal(child: Child?): Int = driFor(child)?.energyKcal ?: 0
+
+    /** Daily (carb, protein, fat) in grams. Protein is the DRI figure; the DRI gives carbohydrate
+     *  and fat only as a share of energy, so these are the MIDPOINT of that range in grams — the
+     *  statistics page shows the full range. 0-5 months: breast milk covers it (DRI gives none). */
+    private fun dailyTargetMacros(child: Child?): Triple<Int, Int, Int> {
+        val d = driFor(child) ?: return Triple(0, 0, 0)
+        fun mid(r: ClosedFloatingPointRange<Double>?) = r?.let { ((it.start + it.endInclusive) / 2).toInt() } ?: 0
+        return Triple(mid(d.carbG), d.proteinG?.toInt() ?: 0, mid(d.fatG))
     }
 
-    /** Rough age-based daily macronutrient targets in grams (carb, protein, fat), same age
-     *  brackets as [dailyTargetKcal]. NOT equally sourced across the three:
-     *  - Protein (13g/day) and carbs (130g/day) for ages 1-3 ARE the official U.S. National
-     *    Academies (IOM) Dietary Reference Intake / RDA figures.
-     *  - The fat-gram numbers are OUR OWN back-calculation from "30-40% of daily calories" —
-     *    official guidance states fat as a %-of-energy range, not a gram target, so these are an
-     *    approximation layered on top of a real guideline, not themselves an official figure.
-     *  - The 0-11 month bracket (all three numbers) is a rough estimate scaled from breastmilk
-     *    composition, not pulled from an official table.
-     *  None of this is a per-child clinical prescription — same "rough reference" caveat as the
-     *  milk target elsewhere on this screen. */
-    private fun dailyTargetMacros(child: Child?): Triple<Int, Int, Int> = when (ageMonths(child)) {
-        in 0..5 -> Triple(60, 9, 31)
-        in 6..11 -> Triple(95, 11, 30)
-        in 12..23 -> Triple(130, 13, 35)
-        else -> Triple(150, 13, 40)
-    }
-
-    /** Official US NAS/IOM Dietary Reference Intake (calcium AI / iron RDA), in mg/day.
-     *  0-6mo iron is the real AI figure (0.27mg, rounds to 0) — breastfed infants aren't expected
-     *  to need iron intake before 6mo (body iron stores from birth cover it), not a data gap. */
-    private fun dailyTargetMinerals(child: Child?): Pair<Int, Int> = when (ageMonths(child)) {
-        in 0..5 -> 200 to 0
-        in 6..11 -> 260 to 11
-        else -> 700 to 7   // IOM's "1-3 years" DRI band covers 12-36mo as one bracket
+    /** Daily (calcium, iron) in mg from Thai DRI 2563. */
+    private fun dailyTargetMinerals(child: Child?): Pair<Int, Int> {
+        val d = driFor(child) ?: return 0 to 0
+        return (d.values["calcium"]?.toInt() ?: 0) to (d.values["iron"]?.let { kotlin.math.round(it).toInt() } ?: 0)
     }
 
     // Tracks the language the AI suggestions were generated in. Suggestions are generated ONCE and
@@ -176,9 +170,10 @@ class NutritionViewModel : ViewModel() {
             val ex = child?.let { repo.getExerciseLogs(it.id, date) } ?: emptyList()
             val weekly = child?.let { repo.getWeeklyExercise(it.id).sumOf { e -> e.durationMin ?: 0 } } ?: 0
             val summary = child?.let { repo.getDailySummary(it.id, date) }
-            val milkMl = child?.let { c ->
-                repo.getMilkLogs(c.id).filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }.sumOf { it.volumeMl }
-            } ?: 0
+            val dayMilk = child?.let { c ->
+                repo.getMilkLogs(c.id).filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
+            } ?: emptyList()
+            val milkMl = dayMilk.sumOf { it.volumeMl }
             val (targetCa, targetFe) = dailyTargetMinerals(child)
             val isOwner = child?.let { childRepo.isChildOwner(it.id).getOrDefault(false) } ?: false
             val fridgeItems = child?.let { repo.getFridgeIngredients(it.id) } ?: emptyList()
@@ -187,6 +182,7 @@ class NutritionViewModel : ViewModel() {
 
             _ui.value = _ui.value.copy(
                 loading = false, child = child, logDate = date, foods = foods, todayMilkMl = milkMl,
+                todayMilk = dayMilk, dri = driFor(child),
                 exerciseLogs = ex, weeklyMinutes = weekly, summary = summary,
                 targetKcal = dailyTargetKcal(child), targetMacros = dailyTargetMacros(child),
                 targetCalciumMg = targetCa, targetIronMg = targetFe,
@@ -325,10 +321,12 @@ class NutritionViewModel : ViewModel() {
         val foods = repo.getFoodLogs(child.id, date)
         val ex = repo.getExerciseLogs(child.id, date)
         val summary = repo.getDailySummary(child.id, date)
-        val milkMl = repo.getMilkLogs(child.id)
+        val dayMilk = repo.getMilkLogs(child.id)
             .filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
-            .sumOf { it.volumeMl }
-        _ui.value = _ui.value.copy(foods = foods, exerciseLogs = ex, summary = summary, todayMilkMl = milkMl)
+        _ui.value = _ui.value.copy(
+            foods = foods, exerciseLogs = ex, summary = summary,
+            todayMilkMl = dayMilk.sumOf { it.volumeMl }, todayMilk = dayMilk
+        )
     }
 
     private fun reloadLogs() {
@@ -340,8 +338,9 @@ class NutritionViewModel : ViewModel() {
         if (dateIso == _ui.value.logDate) return
         macrosKey = null
         microKey = null
+        dayKey = null
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(logDate = dateIso, macros = null, microStatus = null)
+            _ui.value = _ui.value.copy(logDate = dateIso, macros = null, microStatus = null, dayTotals = null)
             reloadLogsNow()
             loadMacros(lang)
         }
@@ -433,6 +432,88 @@ class NutritionViewModel : ViewModel() {
             _ui.value = _ui.value.copy(microStatusLoading = true)
             val m = NutritionAiService.estimateMicronutrients(items, ageMonths(child), lang)
             _ui.value = _ui.value.copy(microStatus = m, microStatusLoading = false)
+        }
+    }
+
+    // Per-100 g AI estimates for foods the table doesn't have, kept per name for the session so the
+    // same unmatched dish isn't re-asked every time the page opens.
+    private val aiPer100 = mutableMapOf<String, Map<String, Double>>()
+    private var dayKey: String? = null
+
+    /**
+     * The statistics page's numbers. Each logged food is looked up in the Thai food composition
+     * table; only foods it doesn't have go to the AI (one batched call). Portion weight comes from
+     * the food's logged kcal. Milk: breast milk by volume uses the table's human-milk row; formula
+     * uses an AI estimate; a direct breastfeed logged in minutes has no volume and is listed as
+     * uncounted rather than guessed.
+     */
+    fun loadDayNutrition(lang: String) {
+        val child = _ui.value.child ?: return
+        val foods = _ui.value.foods
+        val milk = _ui.value.todayMilk
+        val key = foods.joinToString("|") { "${it.itemName}:${it.calories}" } + "#" +
+            milk.joinToString("|") { "${it.milkType}:${it.volumeMl}:${it.durationMin}" } + "#$lang"
+        if (key == dayKey) return
+        dayKey = key
+        if (foods.isEmpty() && milk.isEmpty()) { _ui.value = _ui.value.copy(dayTotals = null); return }
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(dayTotalsLoading = true)
+            val isThai = !lang.startsWith("en")
+            val formulaName = if (isThai) "นมผงสำหรับเด็ก ชงแล้ว" else "Infant/toddler formula, prepared"
+            val tableMatch = foods.associate { f -> f.id to runCatching { com.lullabyai.app.util.ThaiFoodTable.match(f.itemName) }.getOrNull() }
+            val wantAi = (foods.filter { tableMatch[it.id] == null }.map { it.itemName } +
+                if (milk.any { it.milkType == "formula" && it.volumeMl > 0 }) listOf(formulaName) else emptyList())
+                .distinct().filter { it !in aiPer100 }
+            if (wantAi.isNotEmpty()) aiPer100 += NutritionAiService.estimatePer100g(wantAi, lang)
+
+            val portions = mutableListOf<com.lullabyai.app.util.DayNutrition.Portion>()
+            foods.forEach { f ->
+                val m = tableMatch[f.id]
+                portions += if (m != null) {
+                    val food = m.food
+                    val grams = com.lullabyai.app.util.DayNutrition.gramsFromKcal(f.calories, food.kcalPer100g())
+                        ?: food.servingGrams
+                    com.lullabyai.app.util.DayNutrition.Portion(
+                        label = f.itemName,
+                        source = if (grams != null) com.lullabyai.app.util.DayNutrition.Source.TABLE else com.lullabyai.app.util.DayNutrition.Source.NO_PORTION,
+                        matchedName = food.th, grams = grams,
+                        per100 = food.n + (food.kcalPer100g()?.let { mapOf("kcal" to it) } ?: emptyMap())
+                    )
+                } else {
+                    val est = aiPer100[f.itemName]
+                    val grams = est?.let { com.lullabyai.app.util.DayNutrition.gramsFromKcal(f.calories, it["kcal"]) }
+                    com.lullabyai.app.util.DayNutrition.Portion(
+                        label = f.itemName,
+                        source = when {
+                            est == null -> com.lullabyai.app.util.DayNutrition.Source.NO_DATA
+                            grams == null -> com.lullabyai.app.util.DayNutrition.Source.NO_PORTION
+                            else -> com.lullabyai.app.util.DayNutrition.Source.AI
+                        },
+                        grams = grams, per100 = est.orEmpty()
+                    )
+                }
+            }
+            milk.forEach { m ->
+                val breast = m.milkType == "breast"
+                val label = when {
+                    breast && m.durationMin != null -> if (isThai) "นมแม่เข้าเต้า ${m.durationMin} นาที" else "Breastfed ${m.durationMin} min"
+                    breast -> if (isThai) "นมแม่ ${m.volumeMl} มล." else "Breast milk ${m.volumeMl} ml"
+                    else -> if (isThai) "นมผง ${m.volumeMl} มล." else "Formula ${m.volumeMl} ml"
+                }
+                val human = com.lullabyai.app.util.ThaiFoodTable.byId("09011")
+                portions += when {
+                    m.volumeMl <= 0 -> com.lullabyai.app.util.DayNutrition.Portion(label, com.lullabyai.app.util.DayNutrition.Source.NO_PORTION)
+                    // ponytail: 1 ml ≈ 1 g for milk (density ~1.03); fine at this precision.
+                    breast && human != null -> com.lullabyai.app.util.DayNutrition.Portion(
+                        label, com.lullabyai.app.util.DayNutrition.Source.TABLE, human.th, m.volumeMl.toDouble(), human.n
+                    )
+                    else -> aiPer100[formulaName]?.let {
+                        com.lullabyai.app.util.DayNutrition.Portion(label, com.lullabyai.app.util.DayNutrition.Source.AI, null, m.volumeMl.toDouble(), it)
+                    } ?: com.lullabyai.app.util.DayNutrition.Portion(label, com.lullabyai.app.util.DayNutrition.Source.NO_DATA)
+                }
+            }
+            val totals = com.lullabyai.app.util.DayNutrition.total(portions, NutritionAiService.PER100_KEYS)
+            if (dayKey == key) _ui.value = _ui.value.copy(dayTotals = totals, dayTotalsLoading = false)
         }
     }
 

@@ -181,6 +181,37 @@ object NutritionAiService {
         return keys.associateWith { k -> (o[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it in setOf("ok", "boost", "low") } ?: "ok" }
     }
 
+    /** Keys the nutrition statistics page asks for, same names as assets/nutrition/thai_fct_2561.json. */
+    val PER100_KEYS = listOf(
+        "kcal", "protein", "fat", "carb", "calcium", "iron", "zinc",
+        "vitaminA", "vitaminC", "thiamin", "riboflavin", "niacin", "sodium"
+    )
+
+    /**
+     * Fallback for foods that are not in the Thai food composition table: typical composition PER
+     * 100 g of each named food, in the table's own keys and units, so the page's arithmetic is the
+     * same for both sources. A key the model leaves out stays unknown — it is not filled with 0.
+     * Returns only the foods it could read; an empty map means the call failed.
+     */
+    suspend fun estimatePer100g(foods: List<String>, lang: String): Map<String, Map<String, Double>> {
+        if (foods.isEmpty()) return emptyMap()
+        val list = foods.mapIndexed { i, f -> "${i + 1}. $f" }.joinToString("\n")
+        val prompt = "Typical nutrient composition PER 100 g edible portion of each Thai food below, as eaten " +
+            "(cooked dishes as served). Use Thai food composition data where you know it.\n$list\n" +
+            "Units: kcal; protein/fat/carb in g; calcium/iron/zinc/sodium in mg; vitaminA in mcg RAE; " +
+            "vitaminC/thiamin/riboflavin/niacin in mg. Omit a key you cannot estimate instead of guessing 0. " +
+            "Return JSON exactly: {\"items\":[{\"name\":\"<as given>\",\"kcal\":n,\"protein\":n,\"fat\":n,\"carb\":n," +
+            "\"calcium\":n,\"iron\":n,\"zinc\":n,\"vitaminA\":n,\"vitaminC\":n,\"thiamin\":n,\"riboflavin\":n,\"niacin\":n,\"sodium\":n}]}"
+        val items = ask(prompt, lang, maxTokens = 2048)?.objOrNull()?.get("items") as? JsonArray ?: return emptyMap()
+        return items.mapIndexedNotNull { i, e ->
+            val o = e as? JsonObject ?: return@mapIndexedNotNull null
+            val name = (o["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it in foods } ?: foods.getOrNull(i)
+                ?: return@mapIndexedNotNull null
+            val values = PER100_KEYS.mapNotNull { k -> (o[k] as? JsonPrimitive)?.doubleOrNull?.takeIf { it >= 0 }?.let { k to it } }.toMap()
+            if (values["kcal"] == null) null else name to values
+        }.toMap()
+    }
+
     /** Estimated calories burned for an activity of [durationMin] by a child of [ageMonths]. Null on failure. */
     suspend fun estimateBurn(activity: String, durationMin: Int, ageMonths: Int, lang: String): Int? {
         val prompt = "Estimate calories burned by a $ageMonths-month-old child doing \"$activity\" for $durationMin minutes. " +
