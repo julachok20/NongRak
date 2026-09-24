@@ -253,6 +253,9 @@ async function tryGeminiTts(text: string, voice: string, style: string) {
 //   * image      — only when LOCAL_AI_VISION is not "true". A text-only local model
 //                  handed an image answers confidently about nothing.
 // ---------------------------------------------------------------------------
+// [wantModel] is the caller naming a model the box serves — the food screens ask for Gemma 4 by
+// name, so they reach it whatever LOCAL_AI_MODEL happens to default to. It only ever selects
+// among the box's own models; the cloud providers below ignore it.
 async function tryLocal(
   prompt: string,
   useSearch: boolean,
@@ -260,6 +263,7 @@ async function tryLocal(
   system: string,
   jsonMode: boolean,
   image: ImageInput,
+  wantModel: string | null,
 ) {
   const base = (Deno.env.get("LOCAL_AI_URL") ?? "").trim().replace(/\/+$/, "");
   if (!base) return null;
@@ -267,7 +271,7 @@ async function tryLocal(
   if (image && Deno.env.get("LOCAL_AI_VISION") !== "true") return null;
 
   const url = base.endsWith("/chat/completions") ? base : `${base}/v1/chat/completions`;
-  const model = Deno.env.get("LOCAL_AI_MODEL") ?? "local";
+  const model = wantModel ?? Deno.env.get("LOCAL_AI_MODEL") ?? "local";
 
   // Decode on a GB10 is memory-bandwidth bound (~273 GB/s), not compute bound: a 12B at
   // 4-bit runs ~25 tok/s and a 27B nearer 12, so a full 1024-token answer can genuinely
@@ -336,6 +340,8 @@ Deno.serve(async (req: Request) => {
   let prompt = "", useSearch = false, maxTokens = 1024, system = SYSTEM_PROMPT, jsonMode = false;
   let image: ImageInput = null;
   let mode = "text", voice = TTS_DEFAULT_VOICE, style = TTS_DEFAULT_STYLE;
+  // Optional: the model on the self-hosted box this request wants (e.g. "gemma-4").
+  let model: string | null = null;
   try {
     const b = await req.json();
     prompt = b.prompt ?? "";
@@ -347,6 +353,7 @@ Deno.serve(async (req: Request) => {
     // A per-request system override replaces the persona; jsonMode is independent (see header note).
     if (typeof b.system === "string" && b.system.trim()) system = b.system;
     if (typeof b.jsonMode === "boolean") jsonMode = b.jsonMode;
+    if (typeof b.model === "string" && b.model.trim()) model = b.model.trim();
     else if (system !== SYSTEM_PROMPT) jsonMode = true;
     // Optional image (base64, no data: prefix) for vision questions.
     if (typeof b.imageBase64 === "string" && b.imageBase64.length > 0) {
@@ -376,7 +383,7 @@ Deno.serve(async (req: Request) => {
 
   // Cost order: self-hosted GB10 (free, private) -> free Gemini -> free OpenRouter
   // -> PAID Claude (true last resort). tryLocal is a no-op until LOCAL_AI_URL is set.
-  const result = (await tryLocal(prompt, useSearch, maxTokens, system, jsonMode, image))
+  const result = (await tryLocal(prompt, useSearch, maxTokens, system, jsonMode, image, model))
     ?? (await tryGemini(prompt, useSearch, maxTokens, system, jsonMode, image))
     // Audio goes to Gemini or nowhere. The other two take images in shapes that cannot carry a
     // sound file, so falling through would send them a question with the question missing — they

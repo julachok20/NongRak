@@ -32,11 +32,11 @@ object NutritionAiService {
 
     private suspend fun ask(
         prompt: String, lang: String, maxTokens: Int = 1024, useSearch: Boolean = false,
-        imageBase64: String? = null, imageMimeType: String? = null
+        imageBase64: String? = null, imageMimeType: String? = null, model: String? = null
     ): JsonElement? {
         val raw = ClaudeClient.generateContent(
             prompt, useSearch = useSearch, maxTokens = maxTokens, system = sys(lang),
-            imageBase64 = imageBase64, imageMimeType = imageMimeType
+            imageBase64 = imageBase64, imageMimeType = imageMimeType, model = model
         )
         return runCatching { json.parseToJsonElement(extractJson(raw)) }.getOrNull()
     }
@@ -73,7 +73,7 @@ object NutritionAiService {
             "Also assign a meal type given the current hour is $hour (0-23). " +
             "meal must be exactly one of: breakfast, lunch, dinner, snack, other. " +
             "Return JSON exactly: {\"kcal\":int, \"meal\":\"...\"}"
-        val o = ask(prompt, lang, useSearch = true)?.objOrNull() ?: return null
+        val o = ask(prompt, lang, model = ClaudeClient.GEMMA)?.objOrNull() ?: return null
         val kcal = (o["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
         val meal = (o["meal"] as? JsonPrimitive)?.contentOrNull?.lowercase()?.takeIf {
             it in setOf("breakfast", "lunch", "dinner", "snack", "other")
@@ -99,7 +99,8 @@ object NutritionAiService {
             "meal must be exactly one of: breakfast, lunch, dinner, snack, other. " +
             "If no food is clearly visible, return {\"itemName\":null}. " +
             "Return JSON exactly: {\"itemName\":\"...\", \"kcal\":int, \"meal\":\"...\"}"
-        val o = ask(prompt, lang, imageBase64 = imageBase64, imageMimeType = imageMimeType)?.objOrNull() ?: return null
+        val o = ask(prompt, lang, imageBase64 = imageBase64, imageMimeType = imageMimeType, model = ClaudeClient.GEMMA)
+            ?.objOrNull() ?: return null
         val name = (o["itemName"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
         val kcal = (o["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
         val meal = (o["meal"] as? JsonPrimitive)?.contentOrNull?.lowercase()?.takeIf {
@@ -183,7 +184,7 @@ object NutritionAiService {
 
     /** Keys the nutrition statistics page asks for, same names as assets/nutrition/thai_fct_2561.json. */
     val PER100_KEYS = listOf(
-        "kcal", "protein", "fat", "carb", "calcium", "iron", "zinc",
+        "kcal", "protein", "fat", "carb", "fibre", "calcium", "iron", "zinc",
         "vitaminA", "vitaminC", "thiamin", "riboflavin", "niacin", "sodium"
     )
 
@@ -198,9 +199,9 @@ object NutritionAiService {
         val list = foods.mapIndexed { i, f -> "${i + 1}. $f" }.joinToString("\n")
         val prompt = "Typical nutrient composition PER 100 g edible portion of each Thai food below, as eaten " +
             "(cooked dishes as served). Use Thai food composition data where you know it.\n$list\n" +
-            "Units: kcal; protein/fat/carb in g; calcium/iron/zinc/sodium in mg; vitaminA in mcg RAE; " +
+            "Units: kcal; protein/fat/carb/fibre in g; calcium/iron/zinc/sodium in mg; vitaminA in mcg RAE; " +
             "vitaminC/thiamin/riboflavin/niacin in mg. Omit a key you cannot estimate instead of guessing 0. " +
-            "Return JSON exactly: {\"items\":[{\"name\":\"<as given>\",\"kcal\":n,\"protein\":n,\"fat\":n,\"carb\":n," +
+            "Return JSON exactly: {\"items\":[{\"name\":\"<as given>\",\"kcal\":n,\"protein\":n,\"fat\":n,\"carb\":n,\"fibre\":n," +
             "\"calcium\":n,\"iron\":n,\"zinc\":n,\"vitaminA\":n,\"vitaminC\":n,\"thiamin\":n,\"riboflavin\":n,\"niacin\":n,\"sodium\":n}]}"
         val items = ask(prompt, lang, maxTokens = 2048)?.objOrNull()?.get("items") as? JsonArray ?: return emptyMap()
         return items.mapIndexedNotNull { i, e ->

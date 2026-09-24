@@ -53,15 +53,22 @@ class NutritionRepository {
         }.decodeList<FoodLog>()
     }.getOrDefault(emptyList())
 
-    suspend fun addFood(childId: String, mealType: String, itemName: String, calories: Int? = null, date: String = today()): Result<Unit> = runCatching {
-        supabase.from("food_logs").insert(buildJsonObject {
+    /** Returns the new row's id, so the record screen can show exactly what it just logged. */
+    suspend fun addFood(
+        childId: String, mealType: String, itemName: String, calories: Int? = null, date: String = today(),
+        photoPath: String? = null, eatenPct: Int? = null
+    ): Result<String> = runCatching {
+        val row = supabase.from("food_logs").insert(buildJsonObject {
             put("child_id", JsonPrimitive(childId))
             put("log_date", JsonPrimitive(date))
             put("meal_type", JsonPrimitive(mealType))
             put("item_name", JsonPrimitive(itemName))
             put("calories", calories?.let { JsonPrimitive(it) } ?: JsonNull)
-        })
+            put("photo_path", photoPath?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("eaten_pct", eatenPct?.let { JsonPrimitive(it) } ?: JsonNull)
+        }) { select() }.decodeSingle<com.lullabyai.app.data.model.FoodLog>()
         MascotRewards.noteCareToday()
+        row.id
     }
 
     suspend fun updateFood(id: String, itemName: String): Result<Unit> = runCatching {

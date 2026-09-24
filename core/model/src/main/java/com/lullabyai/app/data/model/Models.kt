@@ -971,6 +971,10 @@ data class FoodLog(
     @SerialName("meal_type") val mealType: String = "breakfast", // breakfast|lunch|dinner|snack|other
     @SerialName("item_name") val itemName: String = "",
     val calories: Int? = null,
+    /** care-media object path of the photo the parent took; private, shown via a signed URL. */
+    @SerialName("photo_path") val photoPath: String? = null,
+    /** How much of the serving the child actually ate, 0-100. Null = the parent was not asked. */
+    @SerialName("eaten_pct") val eatenPct: Int? = null,
     @SerialName("created_at") val createdAt: String? = null
 )
 

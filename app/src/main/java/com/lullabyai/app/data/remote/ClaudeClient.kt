@@ -14,6 +14,9 @@ package com.lullabyai.app.data.remote
  */
 object ClaudeClient {
 
+    /** The family box's general model, text and vision. Food logging asks for it by name. */
+    const val GEMMA = "gemma-4"
+
     /** Which provider answered the most recent request (for the in-app indicator). */
     @Volatile
     var lastProvider: String = ""
@@ -40,10 +43,15 @@ object ClaudeClient {
         system: String? = null,
         jsonMode: Boolean? = null,
         imageBase64: String? = null,
-        imageMimeType: String? = null
+        imageMimeType: String? = null,
+        /**
+         * A model on the family's own box to answer this, by name (e.g. [GEMMA]). Ignored when the
+         * box is unreachable — the cloud chain then answers exactly as it does for any other call.
+         */
+        model: String? = null
     ): String {
         val errors = mutableListOf<String>()
-        val result = AiProxyClient.generate(prompt, useSearch, maxTokens, errors, system, jsonMode, imageBase64, imageMimeType)
+        val result = AiProxyClient.generate(prompt, useSearch, maxTokens, errors, system, jsonMode, imageBase64, imageMimeType, model)
         if (result.text != null) {
             lastProvider = result.provider
             android.util.Log.i("ClaudeClient", "answered by ${result.provider.ifBlank { "fallback" }}")

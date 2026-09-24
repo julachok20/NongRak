@@ -166,6 +166,29 @@ class NutritionReferenceTest {
         assertNull(DayNutrition.overallShare(listOf(3.0 to 0.0)))
     }
 
+    // ---------------------------------------------------------------- food log cards
+
+    @Test fun `fibre target is the age-plus-five rule, and nothing under two years`() {
+        assertNull(DayNutrition.fibreTargetG(18))
+        near(7.0, DayNutrition.fibreTargetG(24))      // 2 y + 5
+        near(10.0, DayNutrition.fibreTargetG(65))     // 5 y + 5
+    }
+
+    @Test fun `a serving is only called high in what it really covers a quarter of`() {
+        val targets = mapOf("iron" to 8.0, "calcium" to 500.0, "protein" to 16.0)
+        val amounts = mapOf("iron" to 2.4, "calcium" to 40.0, "protein" to 6.0)
+        assertEquals(listOf("protein", "iron"), DayNutrition.strongPoints(amounts, targets))   // best first
+        assertEquals(emptyList<String>(), DayNutrition.strongPoints(mapOf("iron" to 1.0), targets))
+        assertEquals(emptyList<String>(), DayNutrition.strongPoints(mapOf("iron" to 5.0), mapOf("iron" to 0.0)))
+    }
+
+    @Test fun `a serving's own amount comes from its weight`() {
+        val p = Portion("egg", Source.TABLE, grams = 50.0, per100 = mapOf("iron" to 1.8))
+        near(0.9, p.amountOf("iron"))
+        assertNull(p.amountOf("calcium"))                                    // not in the table row
+        assertNull(Portion("x", Source.NO_PORTION, per100 = mapOf("iron" to 1.8)).amountOf("iron"))
+    }
+
     @Test fun `sodium over the range is flagged even with gaps`() {
         assertEquals(Status.TOO_MUCH, DayNutrition.rangeStatus(900.0, 225.0..675.0, missing = 3))
         assertEquals(Status.ENOUGH, DayNutrition.rangeStatus(400.0, 225.0..675.0, missing = 0))

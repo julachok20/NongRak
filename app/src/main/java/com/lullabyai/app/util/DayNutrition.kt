@@ -27,8 +27,17 @@ object DayNutrition {
         /** The table row used, for TABLE. */
         val matchedName: String? = null,
         val grams: Double? = null,
-        val per100: Map<String, Double> = emptyMap()
-    )
+        val per100: Map<String, Double> = emptyMap(),
+        /** The food_logs row this came from, so a screen can put the numbers back on its own card. */
+        val logId: String? = null
+    ) {
+        /** This serving's amount of [key], or null when the weight or the figure is unknown. */
+        fun amountOf(key: String): Double? {
+            val g = grams ?: return null
+            val per = per100[key] ?: return null
+            return per * g / 100.0
+        }
+    }
 
     data class Totals(
         /** Sum over portions that have both a weight and a value for the nutrient. */
@@ -99,6 +108,27 @@ object DayNutrition {
         5 -> setOf(4)
         else -> null
     }
+
+    /**
+     * Daily dietary fibre in grams: "age in years + 5", the rule Thai and US paediatrics both give
+     * parents. The Thai DRI 2563 tables this app bundles (energy, protein, vitamins, minerals) carry
+     * no fibre figure, so this is the one target that is a rule of thumb rather than a book value.
+     * Null under two years: before that no body recommends a fibre amount for a child.
+     */
+    fun fibreTargetG(ageMonths: Int): Double? =
+        if (ageMonths < 24) null else (ageMonths / 12) + 5.0
+
+    /**
+     * What one serving is genuinely good for: the nutrients it covers at least [minShare] of the
+     * whole day's target for, best first. This is what turns into a "ธาตุเหล็กสูง" chip, so the
+     * threshold is a real claim about the day and not a flattering label on a spoonful.
+     */
+    fun strongPoints(amounts: Map<String, Double>, targets: Map<String, Double>, minShare: Double = 0.25): List<String> =
+        targets.mapNotNull { (key, target) ->
+            val amount = amounts[key] ?: return@mapNotNull null
+            val share = if (target > 0) amount / target else 0.0
+            if (share >= minShare) key to share else null
+        }.sortedByDescending { it.second }.map { it.first }
 
     enum class Risk { LOW, WATCH, HIGH, UNKNOWN }
 

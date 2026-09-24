@@ -81,7 +81,8 @@ object AiProxyClient {
         system: String? = null,
         jsonMode: Boolean? = null,
         imageBase64: String? = null,
-        imageMimeType: String? = null
+        imageMimeType: String? = null,
+        model: String? = null
     ): Result {
         val token = runCatching { supabase.auth.currentAccessTokenOrNull() }.getOrNull()
         if (token.isNullOrBlank()) {
@@ -95,6 +96,8 @@ object AiProxyClient {
                 put("maxTokens", maxTokens)
                 if (!system.isNullOrBlank()) put("system", system)
                 if (jsonMode != null) put("jsonMode", jsonMode)
+                // Names a model the self-hosted box serves; the cloud providers ignore it.
+                if (!model.isNullOrBlank()) put("model", model)
                 if (!imageBase64.isNullOrBlank()) {
                     put("imageBase64", imageBase64)
                     put("imageMimeType", imageMimeType ?: "image/jpeg")

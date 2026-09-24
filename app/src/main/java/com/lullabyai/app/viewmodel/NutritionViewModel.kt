@@ -60,6 +60,8 @@ data class NutritionUiState(
     val dayTotals: com.lullabyai.app.util.DayNutrition.Totals? = null,
     val dayTotalsLoading: Boolean = false,
     val photoAddFailed: Boolean = false,  // last camera-add couldn't identify a food in the photo
+    /** food_logs ids added since the record screen last cleared — "this meal", not the whole day. */
+    val mealFoodIds: Set<String> = emptySet(),
     // Parent calorie-check tool (standalone): type a dish → kcal + macros + tip.
     val calorieCheck: NutritionAiService.CalorieCheck? = null,
     val checkedFood: String = "",
@@ -383,13 +385,33 @@ class NutritionViewModel : ViewModel() {
             _ui.value = _ui.value.copy(calculating = true)
             val hour = java.time.LocalTime.now().hour
             val est = NutritionAiService.estimateFood(name.trim(), ageMonths(child), hour, lang, portion.takeIf { it.isNotBlank() })
-            val kcal = est?.first?.let { (it * (1f - spillFraction.coerceIn(0f, 1f))).toInt() }
-            repo.addFood(child.id, est?.second ?: "other", name.trim(), kcal, _ui.value.logDate)
+            val spill = spillFraction.coerceIn(0f, 1f)
+            val kcal = est?.first?.let { (it * (1f - spill)).toInt() }
+            val id = repo.addFood(
+                child.id, est?.second ?: "other", name.trim(), kcal, _ui.value.logDate,
+                eatenPct = eatenPctOf(spill)
+            ).getOrNull()
             macrosKey = null
             reloadLogs()
-            _ui.value = _ui.value.copy(calculating = false)
+            _ui.value = _ui.value.copy(calculating = false, mealFoodIds = _ui.value.mealFoodIds + listOfNotNull(id))
         }
     }
+
+    /** The spill question turned into "how much of it actually went in", for the food row. */
+    private fun eatenPctOf(spillFraction: Float): Int = ((1f - spillFraction.coerceIn(0f, 1f)) * 100).toInt()
+
+    /** Clears "this meal" after the parent presses save; the rows stay in the day's log. */
+    fun clearMealSession() {
+        _ui.value = _ui.value.copy(mealFoodIds = emptySet())
+    }
+
+    // Signed care-media URLs for food photos, kept for the session: each one is a network round
+    // trip and the same row is drawn again on every scroll.
+    private val photoUrls = mutableMapOf<String, String>()
+
+    /** A short-lived link for a food photo's care-media [path]. Null when it cannot be signed. */
+    suspend fun foodPhotoUrl(path: String): String? =
+        photoUrls[path] ?: childRepo.signedCareMediaUrl(path)?.also { photoUrls[path] = it }
 
     /** Camera-add flow: AI identifies the food from a photo (base64 JPEG) and estimates kcal —
      *  same [portion]/[spillFraction] handling as [addFoodSmart]. Sets [NutritionUiState.photoAddFailed]
@@ -405,11 +427,18 @@ class NutritionViewModel : ViewModel() {
                 _ui.value = _ui.value.copy(calculating = false, photoAddFailed = true)
                 return@launch
             }
-            val kcal = (est.kcal * (1f - spillFraction.coerceIn(0f, 1f))).toInt()
-            repo.addFood(child.id, est.meal, est.itemName, kcal, _ui.value.logDate)
+            // Kept only once the AI has read it: a photo of nothing recognisable would otherwise
+            // sit in storage with no row pointing at it.
+            val photoPath = childRepo.uploadCareMedia(child.id, imageBytes, "jpg", "image/jpeg").getOrNull()
+            val spill = spillFraction.coerceIn(0f, 1f)
+            val kcal = (est.kcal * (1f - spill)).toInt()
+            val id = repo.addFood(
+                child.id, est.meal, est.itemName, kcal, _ui.value.logDate,
+                photoPath = photoPath, eatenPct = eatenPctOf(spill)
+            ).getOrNull()
             macrosKey = null
             reloadLogs()
-            _ui.value = _ui.value.copy(calculating = false)
+            _ui.value = _ui.value.copy(calculating = false, mealFoodIds = _ui.value.mealFoodIds + listOfNotNull(id))
         }
     }
 
@@ -525,7 +554,8 @@ class NutritionViewModel : ViewModel() {
                         label = f.itemName,
                         source = if (grams != null) com.lullabyai.app.util.DayNutrition.Source.TABLE else com.lullabyai.app.util.DayNutrition.Source.NO_PORTION,
                         matchedName = food.th, grams = grams,
-                        per100 = food.n + (food.kcalPer100g()?.let { mapOf("kcal" to it) } ?: emptyMap())
+                        per100 = food.n + (food.kcalPer100g()?.let { mapOf("kcal" to it) } ?: emptyMap()),
+                        logId = f.id
                     )
                 } else {
                     val est = aiPer100[f.itemName]
@@ -537,7 +567,7 @@ class NutritionViewModel : ViewModel() {
                             grams == null -> com.lullabyai.app.util.DayNutrition.Source.NO_PORTION
                             else -> com.lullabyai.app.util.DayNutrition.Source.AI
                         },
-                        grams = grams, per100 = est.orEmpty()
+                        grams = grams, per100 = est.orEmpty(), logId = f.id
                     )
                 }
             }

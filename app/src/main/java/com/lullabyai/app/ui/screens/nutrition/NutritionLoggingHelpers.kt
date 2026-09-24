@@ -22,14 +22,14 @@ internal fun mealLabel(key: String, isThai: Boolean): String = when (key) {
 internal fun snackSlotForHour(hour: Int): String =
     if (hour < 12) "snack_morning" else "snack_afternoon"
 
-internal fun displayMealLabel(food: FoodLog, isThai: Boolean): String {
-    if (food.mealType != "snack") return mealLabel(food.mealType, isThai)
-    val hour = TimeUtils.localTime(food.createdAt)
-        ?.take(2)
-        ?.toIntOrNull()
-        ?: 15
-    return mealLabel(snackSlotForHour(hour), isThai)
+/** The slot a logged food belongs to, snacks split by the clock. The key, for filtering. */
+internal fun foodSlotKey(food: FoodLog): String {
+    if (food.mealType != "snack") return food.mealType
+    val hour = TimeUtils.localTime(food.createdAt)?.take(2)?.toIntOrNull() ?: 15
+    return snackSlotForHour(hour)
 }
+
+internal fun displayMealLabel(food: FoodLog, isThai: Boolean): String = mealLabel(foodSlotKey(food), isThai)
 
 internal fun formatLogDateHeader(dateIso: String, isThai: Boolean): String {
     val d = runCatching { LocalDate.parse(dateIso) }.getOrNull() ?: return dateIso
@@ -53,6 +53,42 @@ internal fun ageAppropriateBadge(intake: Int, target: Int, isThai: Boolean): Str
         pct < 0.70f -> if (isThai) "ต่ำกว่าเป้าหมาย" else "Below target"
         else -> if (isThai) "เกินเป้าหมาย" else "Above target"
     }
+}
+
+/** Chip wording for a nutrient this serving is genuinely a good source of (see DayNutrition.strongPoints). */
+internal fun nutrientChipLabel(key: String, isThai: Boolean): String? = when (key) {
+    "protein" -> if (isThai) "โปรตีนสูง" else "High protein"
+    "fibre" -> if (isThai) "ใยอาหารสูง" else "High fibre"
+    "calcium" -> if (isThai) "แคลเซียมสูง" else "High calcium"
+    "iron" -> if (isThai) "ธาตุเหล็กสูง" else "High iron"
+    "zinc" -> if (isThai) "สังกะสีสูง" else "High zinc"
+    "vitaminA" -> if (isThai) "วิตามินเอ" else "Vitamin A"
+    "vitaminC" -> if (isThai) "วิตามินซี" else "Vitamin C"
+    else -> null
+}
+
+/** How much of the serving went in, from food_logs.eaten_pct. Null when the parent was not asked. */
+internal fun eatenLabel(eatenPct: Int?, isThai: Boolean): String? = when {
+    eatenPct == null -> null
+    eatenPct >= 100 -> if (isThai) "ทานหมดเกลี้ยง (100%)" else "Ate it all (100%)"
+    eatenPct >= 80 -> if (isThai) "ทานเหลือเล็กน้อย (~$eatenPct%)" else "Left a little (~$eatenPct%)"
+    eatenPct >= 40 -> if (isThai) "ทานได้ราวครึ่งหนึ่ง (~$eatenPct%)" else "About half (~$eatenPct%)"
+    else -> if (isThai) "ทานได้น้อย (~$eatenPct%)" else "Ate little (~$eatenPct%)"
+}
+
+/**
+ * The allergen from the child's own list that appears in this food's name, or null.
+ *
+ * Deliberately one-sided: a match warns, but no match says nothing. The list is free text a parent
+ * typed, so "no word matched" is not evidence the dish is safe, and a green "no allergy" badge on
+ * a dish nobody checked is the kind of reassurance that gets a child hurt.
+ */
+internal fun allergyHit(itemName: String, allergies: String?): String? {
+    val name = itemName.lowercase()
+    return allergies?.split(',', '/', '\n', ' ')
+        ?.map { it.trim().lowercase() }
+        ?.filter { it.length >= 2 }
+        ?.firstOrNull { name.contains(it) }
 }
 
 /** Compact nutrient tags (Fe / Ca / A …) from free-text nutrition notes or AI tags. */
