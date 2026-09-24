@@ -212,6 +212,29 @@ object NutritionAiService {
         }.toMap()
     }
 
+    /**
+     * Thai "อาหารหลัก 5 หมู่" in each named dish (1 protein, 2 carbohydrate, 3 vegetables, 4 fruit,
+     * 5 fat/oil) — for mixed dishes and foods the food table cannot place. One call for the list.
+     * Returns only the foods it could read; an empty map means the call failed.
+     */
+    suspend fun classifyThaiGroups(foods: List<String>, lang: String): Map<String, Set<Int>> {
+        if (foods.isEmpty()) return emptyMap()
+        val list = foods.mapIndexed { i, f -> "${i + 1}. $f" }.joinToString("\n")
+        val prompt = "For each Thai food below, which of the Thai 5 food groups (อาหารหลัก 5 หมู่) does a " +
+            "typical serving contain in a meaningful amount? 1 = protein (meat, fish, egg, milk, beans), " +
+            "2 = carbohydrate (rice, noodles, bread, starchy roots, sugar), 3 = vegetables, 4 = fruit, " +
+            "5 = fat or oil (frying oil, coconut milk, butter).\n$list\n" +
+            "Return JSON exactly: {\"items\":[{\"name\":\"<as given>\",\"groups\":[1,2]}]}"
+        val items = ask(prompt, lang, maxTokens = 1024)?.objOrNull()?.get("items") as? JsonArray ?: return emptyMap()
+        return items.mapIndexedNotNull { i, e ->
+            val o = e as? JsonObject ?: return@mapIndexedNotNull null
+            val name = (o["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it in foods } ?: foods.getOrNull(i)
+                ?: return@mapIndexedNotNull null
+            val groups = (o["groups"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.intOrNull?.takeIf { g -> g in 1..5 } }?.toSet()
+            groups?.let { name to it }
+        }.toMap()
+    }
+
     /** Estimated calories burned for an activity of [durationMin] by a child of [ageMonths]. Null on failure. */
     suspend fun estimateBurn(activity: String, durationMin: Int, ageMonths: Int, lang: String): Int? {
         val prompt = "Estimate calories burned by a $ageMonths-month-old child doing \"$activity\" for $durationMin minutes. " +

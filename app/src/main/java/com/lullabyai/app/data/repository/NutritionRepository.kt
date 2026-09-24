@@ -164,7 +164,7 @@ class NutritionRepository {
         val foods = getFoodLogs(childId, date)
         val ex = getExerciseLogs(childId, date)
         val milkMl = getMilkLogs(childId)
-            .filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
+            .filter { !it.isWater && com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
             .sumOf { it.volumeMl }
         val milkKcal = (milkMl * MILK_KCAL_PER_ML).toInt()
         val perMeal = foods.groupBy { it.mealType }

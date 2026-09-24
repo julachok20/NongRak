@@ -35,7 +35,11 @@ object DayNutrition {
         val amount: Map<String, Double>,
         /** Portions with a weight but no value for the nutrient (not analysed / not returned). */
         val missing: Map<String, Int>,
-        val portions: List<Portion>
+        val portions: List<Portion>,
+        /** Thai 5 food groups eaten today (see [thaiGroups]); filled in by the caller. */
+        val groups: Set<Int> = emptySet(),
+        /** Foods neither the table nor the AI could place in a group. */
+        val groupsUnknown: List<String> = emptyList()
     ) {
         val tableCount get() = portions.count { it.source == Source.TABLE }
         val aiCount get() = portions.count { it.source == Source.AI }
@@ -78,6 +82,44 @@ object DayNutrition {
             else -> Status.LOW
         }
     }
+
+    /**
+     * Which of the Thai "อาหารหลัก 5 หมู่" a single food belongs to, from its food-table group:
+     * 1 protein (meat, fish, egg, milk, legumes), 2 carbohydrate (cereals, starchy roots),
+     * 3 minerals (vegetables), 4 vitamins (fruit), 5 fat. Null for mixed dishes (11), desserts (12)
+     * and foods not in the table — those need the AI to say what is in them.
+     * ponytail: no fat-share rule. Egg, milk and nuts are หมู่ 1 in the Thai scheme even though most
+     * of their energy is fat; หมู่ 5 means added oil, which กรมอนามัย tells parents to put in baby food,
+     * so "missing หมู่ 5" on a plain rice-egg-banana day is the right prompt.
+     */
+    fun thaiGroups(tableGroup: Int?): Set<Int>? = when (tableGroup) {
+        1, 2 -> setOf(2)
+        3, 6, 7, 8, 9 -> setOf(1)
+        4 -> setOf(3)
+        5 -> setOf(4)
+        else -> null
+    }
+
+    enum class Risk { LOW, WATCH, HIGH, UNKNOWN }
+
+    /**
+     * Overweight risk from the WHO BMI-for-age z-score (the long-term signal) and today's energy
+     * share of the DRI (the short-term one). One day over target is only worth watching; the body
+     * measurement decides HIGH.
+     */
+    fun overweightRisk(bmiZ: Double?, energyShare: Double?): Risk = when {
+        bmiZ != null && bmiZ > 2 -> Risk.HIGH
+        bmiZ != null && bmiZ > 1 -> Risk.WATCH
+        energyShare != null && energyShare > 1.2 -> Risk.WATCH
+        bmiZ == null -> Risk.UNKNOWN
+        else -> Risk.LOW
+    }
+
+    /** Average share of target over the given (amount, target) pairs, each capped at 100 % so one
+     *  big surplus cannot hide a shortfall elsewhere. Null when nothing has a target. */
+    fun overallShare(pairs: List<Pair<Double, Double>>): Double? =
+        pairs.filter { it.second > 0 }.takeIf { it.isNotEmpty() }
+            ?.map { (a, t) -> (a / t).coerceAtMost(1.0) }?.average()
 
     /** Against a range (sodium): over the top is a problem even with gaps, since it is a floor. */
     fun rangeStatus(amount: Double, range: ClosedFloatingPointRange<Double>, missing: Int): Status = when {

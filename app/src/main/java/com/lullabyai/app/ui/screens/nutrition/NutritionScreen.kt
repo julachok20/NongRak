@@ -2,317 +2,198 @@
 package com.lullabyai.app.ui.screens.nutrition
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.lullabyai.app.data.model.SuggestionItem
-import com.lullabyai.app.ui.components.AIInsightCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.screens.child.ChildScreenScaffold
+import com.lullabyai.app.ui.screens.child.HubChildAvatar
+import com.lullabyai.app.ui.screens.child.hubAgeLabel
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.util.DayNutrition
 import com.lullabyai.app.viewmodel.NutritionViewModel
+import java.time.LocalTime
 
-/** Hub page — matches Child-Project/Update/32.Food/enhanced_daily_nutrient_dashboard: nutrients
- *  are the hero (4 big cards up top), kcal and milk are demoted to small summary cards near the
- *  bottom. Same underlying data as before (ui.macros / ui.summary / ui.todayMilkMl) — this is a
- *  reorder + restyle to match the agreed "nutrients first, not kcal" direction, not new backend. */
+private val Mint = Color(0xFF5EEAD4)
+private val Good = Color(0xFF00796B)
+private val Watch = Color(0xFFEF6C00)
+
+/**
+ * Nutrition hub — Stitch "โภชนาการและการเจริญเติบโต (Nutrition & Growth Guardian)". Same numbers as
+ * สถิติ → โภชนาการ: targets from Thai DRI 2563, intake from the กรมอนามัย food table (AI only for foods
+ * the table lacks). The obesity card adds WHO BMI-for-age from the profile weight and height.
+ */
 @Composable
 fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavController) {
     val ui by vm.ui.collectAsState()
     val isThai = lang.startsWith("th")
     LaunchedEffect(lang) { vm.load(lang) }
-    // AI-estimates today's macronutrients from the logged food names (loadMacros internally
-    // caches by food-set so this is a no-op once already loaded for the current foods).
-    LaunchedEffect(ui.foods, ui.todayMilkMl, lang) { vm.loadMacros(lang) }
-    LaunchedEffect(ui.child?.id, lang, ui.macros) { vm.ensureMenuRecommendations(lang) }
+    LaunchedEffect(ui.foods, ui.todayMilk, lang) { vm.loadDayNutrition(lang) }
+    LaunchedEffect(ui.child?.id, lang, ui.dayTotals) { vm.ensureMenuRecommendations(lang) }
 
-    val todayMilkMl = ui.todayMilkMl
-    val milkTargetMl = 850 // rough reference; no per-child feeding target field exists yet
+    val child = ui.child
+    val dri = ui.dri
+    val months = vm.ageMonths()
+    val totals = ui.dayTotals
+    val nothingLogged = ui.foods.isEmpty() && ui.todayMilk.isEmpty()
+    val intake = vm.dayIntakeKcal() ?: ui.foods.sumOf { it.calories ?: 0 }
+    val targetKcal = dri?.energyKcal ?: ui.targetKcal
+    val energyShare = if (targetKcal > 0 && !nothingLogged) intake.toDouble() / targetKcal else null
+    val (targetCarb, targetProtein, _) = ui.targetMacros
+    val pillars = listOf(
+        Pillar(if (isThai) "โปรตีน (Protein)" else "Protein", Icons.Filled.Egg, "protein", targetProtein, "g", Primary),
+        Pillar(if (isThai) "คาร์โบไฮเดรต (Carbs)" else "Carbs", Icons.Filled.BakeryDining, "carb", targetCarb, "g", PrimaryContainer),
+        Pillar(if (isThai) "แคลเซียม (Calcium)" else "Calcium", Icons.Filled.LocalDrink, "calcium", ui.targetCalciumMg, "mg", Good),
+        Pillar(if (isThai) "ธาตุเหล็ก (Iron)" else "Iron", Icons.Filled.Bloodtype, "iron", ui.targetIronMg, "mg", SurfaceTint)
+    )
+    val overall = if (nothingLogged) null
+        else DayNutrition.overallShare(pillars.map { (totals?.amount?.get(it.key) ?: 0.0) to it.target.toDouble() })
+    val breastMilkOnly = dri?.breastMilkCovers == true
 
-    ChildScreenScaffold(title = if (isThai) "โภชนาการและสารอาหาร" else "Nutrition", currentTab = "nutrition", navController = navController) { padding ->
+    ChildScreenScaffold(title = if (isThai) "โภชนาการและการเจริญเติบโต" else "Nutrition & Growth", currentTab = "nutrition", navController = navController) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
-            item { Text(if (isThai) "แดชบอร์ดสารอาหาร" else "Nutrient Dashboard", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-
             item {
-                AIInsightCard(
-                    text = vm.loggingInsightText(isThai),
-                    isLoading = ui.macrosLoading && ui.macros == null
+                val status = when {
+                    breastMilkOnly -> if (isThai) "นมคืออาหารหลักของวัยนี้" else "Milk is the whole diet at this age"
+                    nothingLogged -> if (isThai) "ยังไม่มีบันทึกวันนี้" else "Nothing logged yet today"
+                    overall == null -> "—"
+                    overall >= 0.9 -> if (isThai) "สมดุลดีเยี่ยม" else "Well balanced"
+                    overall >= 0.7 -> if (isThai) "ค่อนข้างดี" else "Fairly good"
+                    else -> if (isThai) "ยังต้องเสริม" else "Needs more"
+                }
+                HeaderCard(
+                    name = child?.name.orEmpty(), avatarUrl = child?.avatarUrl, age = hubAgeLabel(child?.birthdate, isThai),
+                    status = status, intake = intake, targetKcal = targetKcal, energyShare = energyShare,
+                    milkMl = ui.todayMilkMl, milkMin = ui.todayMilk.sumOf { it.durationMin ?: 0 },
+                    waterMl = ui.todayWaterMl.takeIf { months >= 6 }, isThai = isThai,
+                    onTrend = { navController.navigate(Screen.NutritionInsights.route) },
+                    onDrink = { navController.navigate(Screen.MilkRecord.route) }
                 )
             }
 
-            // Nutrient hero cards — one big card per nutrient, matches the mockup's visual weight.
-            if (ui.macrosLoading) {
-                item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Primary) }
-            } else if (ui.macros == null) {
-                item {
-                    Text(if (isThai) "ยังไม่มีข้อมูลอาหารวันนี้" else "No food logged today yet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else {
-                val m = ui.macros!!
-                val (targetCarb, targetProtein, _) = ui.targetMacros
-                item { NutrientHeroCard(Icons.Filled.Circle, if (isThai) "โปรตีน" else "Protein", m.protein, targetProtein, "g", isThai) }
-                item { NutrientHeroCard(Icons.Filled.BarChart, if (isThai) "คาร์โบไฮเดรต" else "Carbs", m.carb, targetCarb, "g", isThai) }
-                item { NutrientHeroCard(Icons.Filled.Storage, if (isThai) "แคลเซียม" else "Calcium", m.calciumMg, ui.targetCalciumMg, "mg", isThai) }
-                item { NutrientHeroCard(Icons.Filled.WaterDrop, if (isThai) "ธาตุเหล็ก" else "Iron", m.ironMg, ui.targetIronMg, "mg", isThai) }
-
-                // AI analysis card — insight bullets + recommendation/report actions.
-                item {
-                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(18.dp))
-                                    Text(if (isThai) "วิเคราะห์เชิงลึกโดย AI" else "AI deep analysis", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = Primary)
-                                }
-                                TextButton(onClick = { navController.navigate(Screen.NutritionInsights.route) }, contentPadding = PaddingValues(0.dp)) {
-                                    Text(if (isThai) "ดูแผนโภชนาการรายสัปดาห์" else "Weekly plan", color = Primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                            val enough = m.calciumMg >= ui.targetCalciumMg.coerceAtLeast(1) * 0.9f
-                            val ironOk = m.ironMg >= ui.targetIronMg.coerceAtLeast(1) * 0.9f
-                            listOf(
-                                (if (enough) (if (isThai) "แคลเซียมอยู่ในเกณฑ์ดี: ส่งผลดีต่อการสร้างมวลกระดูกและฟันในช่วงขยายตัว" else "Calcium looks good: supports healthy bone and teeth growth")
-                                 else (if (isThai) "ควรเพิ่มแคลเซียม: สำคัญต่อการเสริมสร้างกระดูกและฟัน" else "Could use more calcium: important for bone and teeth development")) to enough,
-                                (if (ironOk) (if (isThai) "ธาตุเหล็กอยู่ในเกณฑ์ดี: ช่วยพัฒนาสมองและการสร้างเม็ดเลือด" else "Iron looks good: supports brain development and red blood cells")
-                                 else (if (isThai) "ควรเสริมธาตุเหล็ก: ลองอาหารไม่แนะนำ ตับบด หรือผักโขม เพื่อช่วยเรื่องการสร้างเม็ดเลือด" else "Could use more iron: try liver, or spinach, to help with red blood cell production")) to ironOk
-                            ).forEach { (text, ok) ->
-                                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(if (ok) Icons.Filled.CheckCircle else Icons.Filled.Info, null, tint = if (ok) Color(0xFF2E7D32) else Color(0xFFEF6C00), modifier = Modifier.size(16.dp))
-                                    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Button(
-                                onClick = { navController.navigate(Screen.RecommendedFood.route) },
-                                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                            ) {
-                                Icon(Icons.Filled.Lightbulb, null); Spacer(Modifier.width(8.dp))
-                                Text(if (isThai) "รับคำแนะนำเมนูอาหารฉบับเต็ม" else "View All Meal Recommendations", fontWeight = FontWeight.Bold)
-                            }
-                            OutlinedButton(
-                                onClick = { navController.navigate(Screen.NutritionInsights.route) },
-                                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)
-                            ) {
-                                Icon(Icons.Filled.Assessment, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                                Text(if (isThai) "ดูรายงานฉบับเต็ม" else "View full report", fontWeight = FontWeight.Bold)
-                            }
-                            Text(
-                                if (isThai) "ประมาณการโดย AI จากรายการอาหารที่บันทึกวันนี้ (ค่าอ้างอิงคร่าวๆ ไม่ใช่คำแนะนำทางการแพทย์)"
-                                else "AI estimate from today's logged foods (rough reference, not medical advice)",
-                                style = MaterialTheme.typography.labelSmall, color = Outline
-                            )
-                        }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Filled.Shield, null, tint = Primary, modifier = Modifier.size(20.dp))
+                        Text(if (isThai) "ดัชนีชี้วัดความเสี่ยง 2 ด้าน" else "2 risk indicators", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
+                    Text(if (isThai) "เกณฑ์ WHO · DRI" else "WHO · DRI", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
-            // ==================== AI RECOMMENDED MEALS SECTION ====================
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(Primary.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(16.dp))
-                            }
-                            Text(
-                                if (isThai) "เมนูอาหารแนะนำจาก AI สำหรับน้อง" else "AI Recommended Meals",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        TextButton(
-                            onClick = { navController.navigate(Screen.RecommendedFood.route) },
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                        ) {
-                            Text(
-                                if (isThai) "ดูทั้งหมด" else "View all",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    Text(
-                        if (isThai) "คัดสรรเมนูตามช่วงวัย เสริมสารอาหารที่ลูกต้องการ พร้อมตรวจเช็ควัตถุดิบในบ้าน"
-                        else "Tailored age-appropriate meals to boost target nutrients and match ingredients at home",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val bmi = vm.bmiStatus()
+                    val risk = DayNutrition.overweightRisk(bmi?.z, energyShare)
+                    RiskCard(
+                        modifier = Modifier.weight(1f), icon = Icons.Filled.MonitorWeight,
+                        badge = when (risk) {
+                            DayNutrition.Risk.LOW -> (if (isThai) "ความเสี่ยงต่ำ" else "Low risk") to Good
+                            DayNutrition.Risk.WATCH -> (if (isThai) "เฝ้าระวัง" else "Watch") to Watch
+                            DayNutrition.Risk.HIGH -> (if (isThai) "ความเสี่ยงสูง" else "High risk") to Error
+                            DayNutrition.Risk.UNKNOWN -> (if (isThai) "ยังไม่มีข้อมูล" else "No data") to Outline
+                        },
+                        title = if (isThai) "ป้องกันโรคอ้วน" else "Overweight",
+                        body = bmi?.let { (if (isThai) "รูปร่างตามวัย: " else "Build for age: ") + (if (isThai) it.labelTh else it.labelEn) }
+                            ?: (if (isThai) "บันทึกน้ำหนักและส่วนสูงเพื่อประเมินตามเกณฑ์ WHO" else "Log weight and height to check against WHO"),
+                        footer = when {
+                            energyShare == null -> if (isThai) "ยังไม่มีบันทึกอาหาร" else "No food logged"
+                            energyShare > 1.2 -> if (isThai) "พลังงานเกินเป้าวันนี้" else "Energy over target today"
+                            else -> if (isThai) "พลังงานสมดุล" else "Energy on track"
+                        },
+                        footerOk = energyShare != null && energyShare <= 1.2,
+                        onClick = { navController.navigate(if (bmi == null) Screen.AddGrowthRecord.route else Screen.GrowthHistory.route) }
+                    )
+                    val groupNames = mapOf(
+                        1 to (if (isThai) "โปรตีน" else "protein"), 2 to (if (isThai) "คาร์โบไฮเดรต" else "carbs"),
+                        3 to (if (isThai) "ผัก" else "vegetables"), 4 to (if (isThai) "ผลไม้" else "fruit"), 5 to (if (isThai) "ไขมัน" else "fat")
+                    )
+                    val missing = totals?.let { (1..5) - it.groups }.orEmpty()
+                    RiskCard(
+                        modifier = Modifier.weight(1f), icon = Icons.Filled.MonitorHeart,
+                        badge = when {
+                            breastMilkOnly -> (if (isThai) "นมเพียงพอ" else "Milk covers it") to Good
+                            totals == null -> (if (isThai) "ยังไม่มีข้อมูล" else "No data") to Outline
+                            missing.isEmpty() -> (if (isThai) "ครบ 5 หมู่" else "All 5 groups") to Good
+                            else -> (if (isThai) "ขาด ${missing.size} หมู่" else "${missing.size} missing") to Watch
+                        },
+                        title = if (isThai) "ป้องกันขาดสารอาหาร" else "Undernutrition",
+                        body = when {
+                            breastMilkOnly -> if (isThai) "0–5 เดือน: นมแม่หรือนมผงให้สารอาหารครบ ยังไม่ต้องเริ่มอาหารอื่น" else "0–5 months: breast milk or formula covers everything"
+                            totals == null -> if (isThai) "บันทึกมื้ออาหารเพื่อเช็กอาหารหลัก 5 หมู่" else "Log meals to check the 5 food groups"
+                            missing.isEmpty() -> if (isThai) "ได้อาหารครบ 5 หมู่ตามวัย $months เดือน" else "All 5 food groups for $months months"
+                            else -> (if (isThai) "ยังขาด: " else "Missing: ") + missing.mapNotNull { groupNames[it] }.joinToString(", ")
+                        },
+                        footer = when {
+                            breastMilkOnly || totals == null -> if (isThai) "อาหารหลัก 5 หมู่" else "Thai 5 food groups"
+                            totals.groupsUnknown.isNotEmpty() -> if (isThai) "ระบุหมู่ไม่ได้ ${totals.groupsUnknown.size} รายการ" else "${totals.groupsUnknown.size} not classified"
+                            missing == setOf(5) -> if (isThai) "เติมน้ำมันพืชเล็กน้อยในอาหาร" else "Add a little vegetable oil"
+                            missing.isEmpty() -> if (isThai) "ครบถ้วนทุกหมู่" else "Complete"
+                            else -> if (isThai) "เพิ่ม${groupNames[missing.first()]}ในมื้อถัดไป" else "Add ${groupNames[missing.first()]} next meal"
+                        },
+                        footerOk = breastMilkOnly || (missing.isEmpty() && totals != null),
+                        onClick = { navController.navigate(Screen.NutritionInsights.route) }
                     )
                 }
             }
 
-            if (ui.menuRecsLoading) {
-                item {
-                    Card(
-                        Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Row(
-                            Modifier.padding(16.dp).fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Primary)
-                            Text(
-                                if (isThai) "AI กำลังคิดค้นเมนูที่เหมาะสมกับน้อง..." else "AI is generating customized recipes...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else if (ui.menuRecs.isNotEmpty()) {
-                items(ui.menuRecs.take(3), key = { it.title }) { rec ->
-                    DishRecommendationCard(
-                        rec = rec,
-                        isThai = isThai,
-                        onOpen = {
-                            vm.loadRecipe(rec.title, lang)
-                            navController.navigate(Screen.RecipeDetail.route)
-                        }
-                    )
-                }
-            } else {
-                item {
-                    Card(
-                        Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(0.3f))
-                    ) {
-                        Column(
-                            Modifier.padding(16.dp).fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                if (isThai) "แตะด้านล่างเพื่อรับคำแนะนำเมนูอาหารจาก AI" else "Tap below to get AI meal recommendations",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Outline
-                            )
-                            Button(
-                                onClick = { vm.ensureMenuRecommendations(lang) },
-                                shape = RoundedCornerShape(100.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                            ) {
-                                Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (isThai) "สร้างเมนูแนะนำจาก AI" else "Generate Meal Ideas", style = MaterialTheme.typography.labelMedium)
+            item {
+                PillarsCard(
+                    pillars = pillars, amounts = totals?.amount.orEmpty(), missing = totals?.missing.orEmpty(),
+                    overall = overall, loading = ui.dayTotalsLoading && totals == null, breastMilkOnly = breastMilkOnly,
+                    isThai = isThai, onClick = { navController.navigate(Screen.NutritionInsights.route) }
+                )
+            }
+
+            item { ServicesCard(isThai, ui.fridgeIngredients.size, navController) }
+
+            item {
+                RecommendationsCard(
+                    recs = ui.menuRecs, loading = ui.menuRecsLoading, isThai = isThai,
+                    onOpen = { rec -> vm.loadRecipe(rec.title, lang); navController.navigate(Screen.RecipeDetail.route) },
+                    onGenerate = { vm.ensureMenuRecommendations(lang) },
+                    onMore = { navController.navigate(Screen.RecommendedFood.route) }
+                )
+            }
+
+            item {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                        Box(Modifier.width(5.dp).fillMaxHeight().background(Primary))
+                        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.SmartToy, null, tint = Primary)
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(if (isThai) "น้องรัก AI วิเคราะห์วันนี้" else "NongRak AI today", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text(vm.loggingInsightText(isThai), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
             }
 
-            // Log-food actions
-            item {
-                Button(
-                    onClick = { navController.navigate(Screen.CalorieCalculator.route) },
-                    modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(100.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                ) {
-                    Icon(Icons.Filled.Restaurant, null); Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "บันทึกอาหาร" else "Log food", fontWeight = FontWeight.Bold)
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { navController.navigate(Screen.RefrigeratorScanner.route) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp)
-                ) {
-                    Icon(Icons.Filled.Kitchen, null, tint = Primary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "ตู้เย็นอัจฉริยะ & สแกนวัตถุดิบ (${ui.fridgeIngredients.size})" else "Smart Refrigerator & Ingredients (${ui.fridgeIngredients.size})", fontWeight = FontWeight.Bold)
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { navController.navigate(Screen.CalorieCheck.route) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(100.dp)
-                ) {
-                    Icon(Icons.Filled.FactCheck, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "ตรวจสอบอาหารและสารอาหาร" else "Check food & nutrients", fontWeight = FontWeight.Bold)
-                }
-            }
-            item {
-                TextButton(onClick = { navController.navigate(Screen.EditFoodEntries.route) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.ListAlt, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "ดูรายการอาหารวันนี้" else "View today's food list", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Kcal — demoted to a small summary card (nutrients are the hero now, not calories).
-            item {
-                val intake = ui.summary?.intakeKcal ?: 0
-                val target = ui.targetKcal.coerceAtLeast(1)
-                val pct = (intake.toFloat() / target).coerceIn(0f, 1f)
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.Bolt, null, tint = Outline, modifier = Modifier.size(16.dp))
-                            Text(if (isThai) "สรุปแคลอรี่วันนี้" else "Today's calories", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        }
-                        Text("$intake / ${ui.targetKcal} kcal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(100.dp)), color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
-                    }
-                }
-            }
-
-            // Milk — also demoted to a compact card.
-            item {
-                val pct = (todayMilkMl.toFloat() / milkTargetMl).coerceIn(0f, 1f)
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.BabyChangingStation, null, tint = Outline, modifier = Modifier.size(16.dp))
-                            Text(if (isThai) "การดื่มนม" else "Milk", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        }
-                        Text("$todayMilkMl / $milkTargetMl มล.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(100.dp)), color = Primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
-                        OutlinedButton(onClick = { navController.navigate(Screen.MilkRecord.route) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp)) {
-                            Icon(Icons.Filled.AddCircle, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                            Text(if (isThai) "บันทึกการดื่มนม" else "Log a feeding", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // Allergy watch — moved near the bottom, matches the mockup's position.
-            val allergyText = ui.child?.allergies?.takeIf { it.isNotBlank() }
-            if (allergyText != null) {
+            child?.allergies?.takeIf { it.isNotBlank() }?.let { allergyText ->
                 item {
                     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Error.copy(0.08f))) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -330,20 +211,65 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                     }
                 }
             }
+        }
+    }
+}
 
-            // Feeding tips — static, matches the mockup's "เคล็ดลับการป้อนสัปดาห์นี้" strip.
-            item {
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = SecondaryContainer.copy(0.3f))) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (isThai) "เคล็ดลับการป้อนสัปดาห์นี้" else "This week's feeding tips", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                        listOf(
-                            if (isThai) "เริ่มต้นเพียง 1-2 ช้อนชาในช่วงแรก เพื่อให้ลูกคุ้นเคยกับช้อน" else "Start with just 1-2 teaspoons at first, so your child gets used to the spoon",
-                            if (isThai) "ให้อาหารเสริมในเวลาที่ลูกอารมณ์ดีและไม่หิวจัดเกินไป" else "Offer solids when your child is in a good mood and not overly hungry"
-                        ).forEach { tip ->
-                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
-                                Text(tip, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private data class Pillar(val label: String, val icon: ImageVector, val key: String, val target: Int, val unit: String, val color: Color)
+
+@Composable
+private fun HeaderCard(
+    name: String, avatarUrl: String?, age: String, status: String,
+    intake: Int, targetKcal: Int, energyShare: Double?,
+    milkMl: Int, milkMin: Int, waterMl: Int?, isThai: Boolean,
+    onTrend: () -> Unit, onDrink: () -> Unit
+) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HubChildAvatar(avatarUrl, 64.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (age.isNotBlank()) Surface(shape = RoundedCornerShape(100.dp), color = Mint) {
+                            Text(age, Modifier.padding(horizontal = 10.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFF00201C), maxLines = 1)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(Good))
+                        Text((if (isThai) "โภชนาการวันนี้: " else "Today: ") + status, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = Good)
+                    }
+                }
+                Surface(onClick = onTrend, shape = CircleShape, color = Primary.copy(0.1f), modifier = Modifier.size(44.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Insights, if (isThai) "สถิติโภชนาการ" else "Nutrition statistics", tint = Primary) }
+                }
+            }
+            Surface(shape = RoundedCornerShape(18.dp), color = Primary.copy(0.06f)) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            progress = { (energyShare ?: 0.0).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxSize(),
+                            color = Primary, strokeWidth = 10.dp, trackColor = Primary.copy(0.15f)
+                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(energyShare?.let { "${(it * 100).toInt()}%" } ?: "–", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(if (isThai) "เกณฑ์ DRI" else "of DRI", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                            Text(if (isThai) "พลังงานรวม" else "Energy", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("%,d / %,d kcal".format(intake, targetKcal), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Primary)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val ml = if (isThai) "มล." else "ml"
+                            val milkValue = when {
+                                milkMl > 0 && milkMin > 0 -> "$milkMl $ml +${milkMin}′"
+                                milkMin > 0 -> "$milkMin ${if (isThai) "นาที" else "min"}"
+                                else -> "$milkMl $ml"
                             }
+                            DrinkTile(Modifier.weight(1f), Icons.Filled.BabyChangingStation, if (isThai) "นมแม่/ชง" else "Milk", milkValue, onDrink)
+                            if (waterMl != null) DrinkTile(Modifier.weight(1f), Icons.Filled.WaterDrop, if (isThai) "น้ำต้มสุก" else "Water", "$waterMl $ml", onDrink)
                         }
                     }
                 }
@@ -352,117 +278,136 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
     }
 }
 
-/** One nutrient's hero card: icon, %-of-target badge, label, current/target, progress bar. */
 @Composable
-private fun NutrientHeroCard(icon: ImageVector, label: String, current: Int, target: Int, unit: String, isThai: Boolean) {
-    val safeTarget = target.coerceAtLeast(1)
-    val pct = (current.toFloat() / safeTarget).coerceIn(0f, 1f)
-    val pctInt = (current * 100 / safeTarget).coerceIn(0, 999)
-    val sufficient = current >= safeTarget * 0.9f
-    val barColor = if (sufficient) Color(0xFF2E7D32) else Primary
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun DrinkTile(modifier: Modifier, icon: ImageVector, label: String, value: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(icon, null, tint = Primary, modifier = Modifier.size(16.dp))
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+            Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun RiskCard(
+    modifier: Modifier, icon: ImageVector, badge: Pair<String, Color>, title: String, body: String,
+    footer: String, footerOk: Boolean, onClick: () -> Unit
+) {
+    Card(onClick = onClick, modifier = modifier.fillMaxHeight(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(14.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
-                    Icon(icon, null, tint = Primary, modifier = Modifier.size(18.dp))
+                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                    Icon(icon, null, tint = Primary, modifier = Modifier.size(22.dp))
                 }
-                Surface(shape = RoundedCornerShape(100.dp), color = barColor.copy(0.1f)) {
-                    Text("$pctInt%", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = barColor, fontWeight = FontWeight.Bold)
+                Surface(shape = RoundedCornerShape(100.dp), color = badge.second.copy(0.15f)) {
+                    Text(badge.first, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = badge.second, maxLines = 1)
                 }
             }
-            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("$current / $target $unit", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(100.dp)), color = barColor, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(if (footerOk) Icons.Filled.CheckCircle else Icons.Filled.Info, null, tint = if (footerOk) Good else Watch, modifier = Modifier.size(16.dp))
+                Text(footer, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (footerOk) Good else Watch)
+            }
         }
     }
 }
 
-/**
- * Modern Bento Dish Recommendation Card for the Nutrition Dashboard
- */
 @Composable
-private fun DishRecommendationCard(rec: SuggestionItem, isThai: Boolean, onOpen: () -> Unit) {
-    val tags = nutrientTagSymbols(listOf(rec.subtitle) + rec.tags)
-    val timeTag = rec.tags.firstOrNull { it.contains("min", ignoreCase = true) || it.contains("นาที") }
-    val inFridgeTag = rec.tags.any { it.contains("มีวัตถุดิบ", ignoreCase = true) || it.contains("fridge", ignoreCase = true) || it.contains("ในบ้าน", ignoreCase = true) }
-
-    Card(
-        onClick = onOpen,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(1.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column {
-            Box(Modifier.fillMaxWidth().height(120.dp).background(Primary.copy(0.08f))) {
-                AsyncImage(
-                    model = foodImageUrl(rec.title),
-                    contentDescription = rec.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Row(
-                    modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (timeTag != null) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(0.92f)
-                        ) {
-                            Row(Modifier.padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Filled.Schedule, null, tint = Primary, modifier = Modifier.size(12.dp))
-                                Text(timeTag, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold)
-                            }
-                        }
+private fun PillarsCard(
+    pillars: List<Pillar>, amounts: Map<String, Double>, missing: Map<String, Int>, overall: Double?,
+    loading: Boolean, breastMilkOnly: Boolean, isThai: Boolean, onClick: () -> Unit
+) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Filled.MilitaryTech, null, tint = Primary, modifier = Modifier.size(20.dp))
+                        Text(if (isThai) "4 เสาหลักโภชนาการวันนี้" else "Today's 4 key nutrients", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
-                    if (inFridgeTag) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Primary
-                        ) {
-                            Row(Modifier.padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Filled.Kitchen, null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                Text(if (isThai) "มีวัตถุดิบครบ" else "In Fridge", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
-                    }
+                    Text(if (isThai) "สารอาหารสำคัญต่อการพัฒนาสมองและกระดูก" else "Key for brain and bone growth", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                overall?.let { Text((if (isThai) "ภาพรวม " else "Overall ") + "${(it * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = Primary, fontWeight = FontWeight.Bold) }
             }
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(rec.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                if (rec.subtitle.isNotBlank()) {
-                    Text(rec.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        tags.take(4).forEach { t ->
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Primary.copy(0.1f)
-                            ) {
+            when {
+                breastMilkOnly -> Text(
+                    if (isThai) "0–5 เดือน: นมแม่ให้สารอาหารครบตามเกณฑ์ DRI ยังไม่ต้องติดตามทีละตัว" else "0–5 months: breast milk covers the DRI; no need to track each nutrient yet.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = Primary)
+                else -> pillars.forEach { p ->
+                    val amount = amounts[p.key] ?: 0.0
+                    val share = if (p.target > 0) amount / p.target else 0.0
+                    val gap = (missing[p.key] ?: 0) > 0 && share < 0.9
+                    Surface(shape = RoundedCornerShape(14.dp), color = Primary.copy(0.06f)) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(p.color.copy(0.12f)), contentAlignment = Alignment.Center) {
+                                        Icon(p.icon, null, tint = p.color, modifier = Modifier.size(16.dp))
+                                    }
+                                    Text(p.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                                 Text(
-                                    t,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    fontWeight = FontWeight.Bold,
-                                    color = Primary
+                                    "${fmt(amount)} / ${p.target}${p.unit} (${(share * 100).toInt()}%)" + if (gap) "*" else "",
+                                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold
                                 )
                             }
+                            LinearProgressIndicator(
+                                progress = { share.toFloat().coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(100.dp)),
+                                color = p.color, trackColor = p.color.copy(0.15f)
+                            )
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            if (isThai) "ดูสูตรอาหาร" else "See Recipe",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Primary
-                        )
-                        Icon(Icons.Filled.ChevronRight, null, tint = Primary, modifier = Modifier.size(16.dp))
+                }
+            }
+            if (!breastMilkOnly && pillars.any { (missing[it.key] ?: 0) > 0 }) Text(
+                if (isThai) "* บางรายการไม่มีข้อมูลสารอาหารนี้ ตัวเลขจริงอาจสูงกว่า" else "* Some foods have no figure for this nutrient; the real amount may be higher",
+                style = MaterialTheme.typography.labelSmall, color = Outline
+            )
+        }
+    }
+}
+
+private fun fmt(v: Double) = if (v < 10) "%.1f".format(v) else "%.0f".format(v)
+
+@Composable
+private fun ServicesCard(isThai: Boolean, fridgeCount: Int, navController: NavController) {
+    val go = { route: String -> { navController.navigate(route) } }
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TileIcon(Icons.Filled.Tune, Primary)
+                Column(Modifier.weight(1f)) {
+                    Text(if (isThai) "บริการและการจัดการโภชนาการ" else "Nutrition tools", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(if (isThai) "บันทึกและติดตามกิจกรรมสุขภาพรายวัน" else "Log and track daily", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
+                    Text(if (isThai) "5 รายการ" else "5 tools", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Primary)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ServiceTile(Modifier.weight(1f), Icons.Filled.Restaurant, Primary, if (isThai) "บันทึกอาหาร" else "Log food", if (isThai) "มื้อหลักและว่าง" else "Meals and snacks", go(Screen.CalorieCalculator.route))
+                ServiceTile(Modifier.weight(1f), Icons.Filled.LocalFireDepartment, Error, if (isThai) "การเผาผลาญ" else "Energy burned", if (isThai) "กิจกรรมและแคลอรี่" else "Activity and kcal", go(Screen.Exercise.route))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ServiceTile(Modifier.weight(1f), Icons.Filled.Kitchen, Good, if (isThai) "คลังวัตถุดิบ" else "Fridge", if (isThai) "เช็กของสดในบ้าน ($fridgeCount)" else "At home ($fridgeCount)", go(Screen.RefrigeratorScanner.route))
+                ServiceTile(Modifier.weight(1f), Icons.Filled.LocalDrink, Tertiary, if (isThai) "บันทึกการดื่ม" else "Log drinks", if (isThai) "นม · น้ำ (มล.)" else "Milk · water (ml)", go(Screen.MilkRecord.route))
+            }
+            Surface(onClick = go(Screen.FoodHistory.route), shape = RoundedCornerShape(16.dp), color = Primary.copy(0.06f)) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TileIcon(Icons.AutoMirrored.Filled.ReceiptLong, Primary)
+                    Column(Modifier.weight(1f)) {
+                        Text(if (isThai) "ประวัติมื้ออาหาร" else "Meal history", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Text(if (isThai) "รายการอาหารที่ทานและสารอาหารย้อนหลัง" else "Past meals and nutrients", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    Text(if (isThai) "ดูประวัติ" else "View", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Primary)
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Primary, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -470,18 +415,87 @@ private fun DishRecommendationCard(rec: SuggestionItem, isThai: Boolean, onOpen:
 }
 
 @Composable
-fun SuggestionCard(item: SuggestionItem, onClick: () -> Unit) {
-    Card(onClick = onClick, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Restaurant, null, tint = Primary)
+private fun TileIcon(icon: ImageVector, color: Color) {
+    Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(color.copy(0.12f)), contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = color)
+    }
+}
+
+@Composable
+private fun ServiceTile(modifier: Modifier, icon: ImageVector, color: Color, title: String, subtitle: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp), color = Primary.copy(0.06f)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TileIcon(icon, color)
+            Column {
+                Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Column(Modifier.weight(1f)) {
-                Text(item.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                if (item.subtitle.isNotBlank()) Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-            }
-            Icon(Icons.Filled.ChevronRight, null, tint = Outline)
         }
     }
 }
 
+@Composable
+private fun RecommendationsCard(
+    recs: List<SuggestionItem>, loading: Boolean, isThai: Boolean,
+    onOpen: (SuggestionItem) -> Unit, onGenerate: () -> Unit, onMore: () -> Unit
+) {
+    val meal = LocalTime.now().hour.let {
+        when {
+            it < 10 -> if (isThai) "มื้อเช้าวันนี้" else "Breakfast"
+            it < 14 -> if (isThai) "มื้อกลางวันวันนี้" else "Lunch"
+            it < 17 -> if (isThai) "มื้อว่างบ่าย" else "Snack"
+            else -> if (isThai) "มื้อเย็นวันนี้" else "Dinner"
+        }
+    }
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(Primary.copy(0.1f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Lightbulb, null, tint = Primary)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(if (isThai) "คำแนะนำสิ่งที่ลูกควรทานเพิ่ม" else "What to add next", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(if (isThai) "ปรับสมดุลตามสารอาหารที่ยังขาด" else "Balanced for today's gaps", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
+                    Text(meal, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Primary)
+                }
+            }
+            when {
+                loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Primary)
+                    Text(if (isThai) "AI กำลังคิดเมนูที่เหมาะกับน้อง..." else "AI is picking dishes...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                recs.isEmpty() -> Button(onClick = onGenerate, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                    Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                    Text(if (isThai) "สร้างเมนูแนะนำจาก AI" else "Get meal ideas")
+                }
+                else -> recs.take(2).forEach { rec ->
+                    Surface(onClick = { onOpen(rec) }, shape = RoundedCornerShape(16.dp), color = Primary.copy(0.06f)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AsyncImage(
+                                model = foodImageUrl(rec.title), contentDescription = rec.title, contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Primary.copy(0.08f))
+                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(rec.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    nutrientTagSymbols(listOf(rec.subtitle) + rec.tags).firstOrNull()?.let {
+                                        Text(it, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Primary, maxLines = 1)
+                                    }
+                                }
+                                if (rec.subtitle.isNotBlank()) Text(rec.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+            Surface(onClick = onMore, shape = RoundedCornerShape(14.dp), color = Primary.copy(0.1f), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (isThai) "ดูเพิ่มเติม (See More)" else "See more", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Primary)
+                    Icon(Icons.Filled.KeyboardArrowDown, null, tint = Primary)
+                }
+            }
+        }
+    }
+}

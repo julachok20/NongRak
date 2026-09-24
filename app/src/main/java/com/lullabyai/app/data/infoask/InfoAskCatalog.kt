@@ -242,7 +242,7 @@ object InfoAskCatalog {
 
     private fun hasMilkSince(snapshot: InfoAskSnapshot, days: Int): Boolean {
         val cutoff = snapshot.today.minusDays(days.toLong())
-        return snapshot.milkLogs.any { logDate(it.loggedAt)?.let { !it.isBefore(cutoff) } == true }
+        return snapshot.milkLogs.any { !it.isWater && logDate(it.loggedAt)?.let { !it.isBefore(cutoff) } == true }
     }
 
     private fun hasVisitSince(snapshot: InfoAskSnapshot, days: Int): Boolean {

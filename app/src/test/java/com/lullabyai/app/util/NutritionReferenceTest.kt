@@ -141,6 +141,31 @@ class NutritionReferenceTest {
         assertEquals(Status.LOW, DayNutrition.status(1.0, 5.0, missing = 0))
     }
 
+    // ---------------------------------------------------------------- main nutrition page
+
+    @Test fun `table groups map onto the Thai 5 food groups`() {
+        val g = { id: String -> DayNutrition.thaiGroups(ThaiFoodTable.byId(id)!!.group) }
+        assertEquals(setOf(2), g("01017"))          // steamed rice
+        assertEquals(setOf(1), g("08003"))          // egg is หมู่ 1 even though most of its energy is fat
+        assertEquals(setOf(1), g("09011"))          // breast milk
+        assertEquals(setOf(4), g("05021"))          // banana
+        assertNull(g("11044"))                      // fried rice is a dish: the AI decides
+    }
+
+    @Test fun `overweight risk leans on the body measurement, not one big day`() {
+        assertEquals(DayNutrition.Risk.HIGH, DayNutrition.overweightRisk(2.4, 0.8))
+        assertEquals(DayNutrition.Risk.WATCH, DayNutrition.overweightRisk(1.3, 1.0))
+        assertEquals(DayNutrition.Risk.WATCH, DayNutrition.overweightRisk(0.0, 1.3))
+        assertEquals(DayNutrition.Risk.LOW, DayNutrition.overweightRisk(0.2, 1.1))
+        assertEquals(DayNutrition.Risk.UNKNOWN, DayNutrition.overweightRisk(null, 1.0))
+    }
+
+    @Test fun `overall share caps each nutrient so a surplus cannot hide a gap`() {
+        near(0.83, DayNutrition.overallShare(listOf(14.0 to 16.0, 55.0 to 70.0, 420.0 to 500.0, 6.5 to 8.0)))
+        near(0.75, DayNutrition.overallShare(listOf(30.0 to 15.0, 5.0 to 10.0)))
+        assertNull(DayNutrition.overallShare(listOf(3.0 to 0.0)))
+    }
+
     @Test fun `sodium over the range is flagged even with gaps`() {
         assertEquals(Status.TOO_MUCH, DayNutrition.rangeStatus(900.0, 225.0..675.0, missing = 3))
         assertEquals(Status.ENOUGH, DayNutrition.rangeStatus(400.0, 225.0..675.0, missing = 0))

@@ -696,14 +696,20 @@ data class VaccineRecord(
 data class MilkLog(
     val id: String = "",
     @SerialName("child_id") val childId: String = "",
-    @SerialName("milk_type") val milkType: String = "formula", // breast | formula
+    @SerialName("milk_type") val milkType: String = "formula", // breast | formula | water
     @SerialName("volume_ml") val volumeMl: Int = 0,
     /** Minutes at the breast for a direct feed; volumeMl is 0 then. Null for bottle/formula. */
     @SerialName("duration_min") val durationMin: Int? = null,
     val side: String? = null, // left | right | both (breast only)
     @SerialName("logged_at") val loggedAt: String? = null,
     val notes: String? = null
-)
+) {
+    /** Boiled water shares this table (same RLS, edit history, AI tools) but is not a feed: every
+     *  milk total, "last feed" and energy sum must skip it. */
+    val isWater: Boolean get() = milkType == WATER
+
+    companion object { const val WATER = "water" }
+}
 
 @Serializable
 data class WasteRecord(

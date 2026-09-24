@@ -70,7 +70,7 @@ object WidgetDataFetcher {
     suspend fun fetchDailyOverview(): DailyOverviewSnapshot {
         val childId = ChildSelection.current() ?: return DailyOverviewSnapshot(null, null, false, null, 0, 0, 0)
         val child = ChildRepository().getChildren().getOrDefault(emptyList()).find { it.id == childId }
-        val milkLogs = NutritionRepository().getMilkLogs(childId)
+        val milkLogs = NutritionRepository().getMilkLogs(childId).filterNot { it.isWater }
         val lastMilk = milkLogs.firstOrNull()
         val sleepLogs = SleepRepository().getLogs(childId).getOrDefault(emptyList())
         val lastSleep = sleepLogs.firstOrNull()

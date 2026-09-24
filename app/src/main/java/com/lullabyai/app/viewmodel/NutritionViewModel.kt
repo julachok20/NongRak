@@ -13,11 +13,14 @@ import com.lullabyai.app.data.repository.HealthRepository
 import com.lullabyai.app.data.repository.NutritionAiService
 import com.lullabyai.app.data.repository.NutritionRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.Period
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 data class NutritionUiState(
     val loading: Boolean = false,
@@ -26,6 +29,8 @@ data class NutritionUiState(
     val logDate: String = LocalDate.now().toString(),
     val foods: List<FoodLog> = emptyList(),
     val todayMilkMl: Int = 0,
+    /** Boiled water logged on the milk screen (type "water"); never part of the milk figures. */
+    val todayWaterMl: Int = 0,
     val summary: NutritionRepository.DailySummary? = null,
     val mealSuggestion: SuggestionItem? = null,
     val recommendedFoods: List<SuggestionItem> = emptyList(),
@@ -104,7 +109,7 @@ class NutritionViewModel : ViewModel() {
             "iron" to (if (isThai) "ธาตุเหล็ก" else "iron")
         )
         return when {
-            m == null -> if (isThai) "ยังไม่มีข้อมูลอาหารวันนี้ บันทึกมื้ออาหารเพื่อรับคำแนะนำที่ตรงจุดค่ะ"
+            m == null && freshTotals() == null -> if (isThai) "ยังไม่มีข้อมูลอาหารวันนี้ บันทึกมื้ออาหารเพื่อรับคำแนะนำที่ตรงจุดค่ะ"
             else "No food logged yet — log meals to get tailored tips."
             needs.isEmpty() -> if (isThai) "วันนี้ได้รับสารอาหารครบตามเป้าหมายแล้วค่ะ เก่งมาก!"
             else "Today's logged nutrients look on track for your child's age."
@@ -170,9 +175,9 @@ class NutritionViewModel : ViewModel() {
             val ex = child?.let { repo.getExerciseLogs(it.id, date) } ?: emptyList()
             val weekly = child?.let { repo.getWeeklyExercise(it.id).sumOf { e -> e.durationMin ?: 0 } } ?: 0
             val summary = child?.let { repo.getDailySummary(it.id, date) }
-            val dayMilk = child?.let { c ->
+            val (dayWater, dayMilk) = (child?.let { c ->
                 repo.getMilkLogs(c.id).filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
-            } ?: emptyList()
+            } ?: emptyList()).partition { it.isWater }
             val milkMl = dayMilk.sumOf { it.volumeMl }
             val (targetCa, targetFe) = dailyTargetMinerals(child)
             val isOwner = child?.let { childRepo.isChildOwner(it.id).getOrDefault(false) } ?: false
@@ -182,7 +187,7 @@ class NutritionViewModel : ViewModel() {
 
             _ui.value = _ui.value.copy(
                 loading = false, child = child, logDate = date, foods = foods, todayMilkMl = milkMl,
-                todayMilk = dayMilk, dri = driFor(child),
+                todayMilk = dayMilk, todayWaterMl = dayWater.sumOf { it.volumeMl }, dri = driFor(child),
                 exerciseLogs = ex, weeklyMinutes = weekly, summary = summary,
                 targetKcal = dailyTargetKcal(child), targetMacros = dailyTargetMacros(child),
                 targetCalciumMg = targetCa, targetIronMg = targetFe,
@@ -283,6 +288,18 @@ class NutritionViewModel : ViewModel() {
 
     /** Which of the 5 tracked nutrients are currently under 90% of the child's daily target. */
     fun deficientNutrients(): List<String> {
+        val t = freshTotals()
+        if (t != null && _ui.value.dri?.breastMilkCovers == false) {
+            val (tc, tp, tf) = _ui.value.targetMacros
+            fun low(key: String, target: Int) = target > 0 &&
+                com.lullabyai.app.util.DayNutrition.status(t.amount[key] ?: 0.0, target.toDouble(), t.missing[key] ?: 0)
+                    .let { it == com.lullabyai.app.util.DayNutrition.Status.FAIRLY_LOW || it == com.lullabyai.app.util.DayNutrition.Status.LOW }
+            return listOfNotNull(
+                "protein".takeIf { low("protein", tp) }, "carbohydrates".takeIf { low("carb", tc) },
+                "fat".takeIf { low("fat", tf) }, "calcium".takeIf { low("calcium", _ui.value.targetCalciumMg) },
+                "iron".takeIf { low("iron", _ui.value.targetIronMg) }
+            )
+        }
         val m = _ui.value.macros ?: return emptyList()
         val (targetCarb, targetProtein, targetFat) = _ui.value.targetMacros
         val list = mutableListOf<String>()
@@ -321,11 +338,13 @@ class NutritionViewModel : ViewModel() {
         val foods = repo.getFoodLogs(child.id, date)
         val ex = repo.getExerciseLogs(child.id, date)
         val summary = repo.getDailySummary(child.id, date)
-        val dayMilk = repo.getMilkLogs(child.id)
+        val (dayWater, dayMilk) = repo.getMilkLogs(child.id)
             .filter { com.lullabyai.app.util.TimeUtils.localDate(it.loggedAt) == date }
+            .partition { it.isWater }
         _ui.value = _ui.value.copy(
             foods = foods, exerciseLogs = ex, summary = summary,
-            todayMilkMl = dayMilk.sumOf { it.volumeMl }, todayMilk = dayMilk
+            todayMilkMl = dayMilk.sumOf { it.volumeMl }, todayMilk = dayMilk,
+            todayWaterMl = dayWater.sumOf { it.volumeMl }
         )
     }
 
@@ -438,7 +457,30 @@ class NutritionViewModel : ViewModel() {
     // Per-100 g AI estimates for foods the table doesn't have, kept per name for the session so the
     // same unmatched dish isn't re-asked every time the page opens.
     private val aiPer100 = mutableMapOf<String, Map<String, Double>>()
+    private val aiGroups = mutableMapOf<String, Set<Int>>()
     private var dayKey: String? = null
+    /** The foods and milk [NutritionUiState.dayTotals] was computed from; totals for an older list are stale. */
+    private var totalsFor: Pair<List<FoodLog>, List<com.lullabyai.app.data.model.MilkLog>>? = null
+
+    private fun freshTotals(): com.lullabyai.app.util.DayNutrition.Totals? =
+        _ui.value.dayTotals?.takeIf { totalsFor == (_ui.value.foods to _ui.value.todayMilk) }
+
+    /** Today's energy: kcal of every portioned food and milk, plus the logged kcal of foods that could
+     *  not be portioned. Shared by the nutrition hub and the statistics page. Null until computed. */
+    fun dayIntakeKcal(): Int? {
+        val t = freshTotals() ?: return null
+        val uncounted = _ui.value.foods.filter { f -> t.uncounted.any { it.label == f.itemName } }.sumOf { it.calories ?: 0 }
+        return ((t.amount["kcal"] ?: 0.0) + uncounted).roundToInt()
+    }
+
+    /** WHO BMI-for-age of the profile weight and height at today's age; null when either is missing
+     *  or the value is implausible (a typo must not raise an obesity flag). */
+    fun bmiStatus(): com.lullabyai.app.util.GrowthReference.GrowthStatus? {
+        val c = _ui.value.child ?: return null
+        return com.lullabyai.app.util.GrowthReference.weightForHeightStatus(
+            c.weightKg, c.heightCm, com.lullabyai.app.util.GrowthReference.ageDaysAt(c.birthdate), c.gender
+        )?.takeIf { it.z == null || abs(it.z) <= 5 }
+    }
 
     /**
      * The statistics page's numbers. Each logged food is looked up in the Thai food composition
@@ -464,6 +506,12 @@ class NutritionViewModel : ViewModel() {
             val wantAi = (foods.filter { tableMatch[it.id] == null }.map { it.itemName } +
                 if (milk.any { it.milkType == "formula" && it.volumeMl > 0 }) listOf(formulaName) else emptyList())
                 .distinct().filter { it !in aiPer100 }
+            // Thai 5 food groups: the table's group for plain foods; dishes and unmatched foods go to
+            // the AI, in parallel with the per-100 g call.
+            val needGroups = foods.filter { com.lullabyai.app.util.DayNutrition.thaiGroups(tableMatch[it.id]?.food?.group) == null }
+                .map { it.itemName }.distinct()
+            val askGroups = needGroups.filter { it !in aiGroups }
+            val groupsCall = async { if (askGroups.isEmpty()) emptyMap() else NutritionAiService.classifyThaiGroups(askGroups, lang) }
             if (wantAi.isNotEmpty()) aiPer100 += NutritionAiService.estimatePer100g(wantAi, lang)
 
             val portions = mutableListOf<com.lullabyai.app.util.DayNutrition.Portion>()
@@ -512,8 +560,16 @@ class NutritionViewModel : ViewModel() {
                     } ?: com.lullabyai.app.util.DayNutrition.Portion(label, com.lullabyai.app.util.DayNutrition.Source.NO_DATA)
                 }
             }
+            aiGroups += groupsCall.await()
+            val groups = foods.flatMap { f ->
+                com.lullabyai.app.util.DayNutrition.thaiGroups(tableMatch[f.id]?.food?.group) ?: aiGroups[f.itemName].orEmpty()
+            }.toSet() + (if (milk.isNotEmpty()) setOf(1) else emptySet())   // breast milk / formula: หมู่ 1
             val totals = com.lullabyai.app.util.DayNutrition.total(portions, NutritionAiService.PER100_KEYS)
-            if (dayKey == key) _ui.value = _ui.value.copy(dayTotals = totals, dayTotalsLoading = false)
+                .copy(groups = groups, groupsUnknown = needGroups.filter { it !in aiGroups })
+            if (dayKey == key) {
+                totalsFor = foods to milk
+                _ui.value = _ui.value.copy(dayTotals = totals, dayTotalsLoading = false)
+            }
         }
     }
 

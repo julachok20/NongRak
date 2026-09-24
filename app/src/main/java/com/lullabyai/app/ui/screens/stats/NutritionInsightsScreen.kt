@@ -69,10 +69,7 @@ fun NutritionInsightsScreen(
 
     // Energy: table/AI-weighted portions, plus the logged kcal of any food we could not weigh — its
     // energy is known even when its nutrients are not.
-    val uncountedFoodKcal = totals?.let { t ->
-        ui.foods.filter { f -> t.uncounted.any { it.label == f.itemName } }.sumOf { it.calories ?: 0 }
-    } ?: ui.foods.sumOf { it.calories ?: 0 }
-    val intake = ((totals?.amount?.get("kcal") ?: 0.0) + uncountedFoodKcal).roundToInt()
+    val intake = nutritionViewModel.dayIntakeKcal() ?: ui.foods.sumOf { it.calories ?: 0 }
     val target = dri?.energyKcal ?: ui.targetKcal
 
     val micro = remember(totals, dri, isThai) { microRows(totals, dri, isThai) }

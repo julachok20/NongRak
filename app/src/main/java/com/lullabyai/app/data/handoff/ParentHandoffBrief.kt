@@ -332,7 +332,7 @@ object ParentHandoffBrief {
     }
 
     fun todayMilkMl(logs: List<MilkLog>, today: String): Int =
-        logs.filter { TimeUtils.localDate(it.loggedAt) == today }.sumOf { it.volumeMl }
+        logs.filter { !it.isWater && TimeUtils.localDate(it.loggedAt) == today }.sumOf { it.volumeMl }
 
     /** Urine count, then stool count, for records on [today]. */
     fun todayWasteSplit(records: List<WasteRecord>, today: String): Pair<Int, Int> {
