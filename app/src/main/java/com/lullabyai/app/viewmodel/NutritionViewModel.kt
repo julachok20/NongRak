@@ -74,8 +74,12 @@ data class NutritionUiState(
     val currentExerciseName: String? = null,  // the activity name requested (for reliable done-matching)
     val isChildOwner: Boolean = false,
     // Smart Refrigerator & Ingredient Scanner state
+    /** The HOUSEHOLD's pantry: shared by every child of this child's owner, and by their carers. */
     val fridgeIngredients: List<com.lullabyai.app.data.model.FridgeIngredient> = emptyList(),
     val fridgeScanning: Boolean = false,
+    /** This child's own food trials (the 3-4 day wait rule); a sibling's result never applies here. */
+    val foodTrials: List<com.lullabyai.app.data.model.FoodTrial> = emptyList(),
+    val allergies: List<com.lullabyai.app.data.model.Allergy> = emptyList(),
     val siblingChildren: List<Child> = emptyList(),
     val error: String? = null
 )
@@ -183,7 +187,7 @@ class NutritionViewModel : ViewModel() {
             val milkMl = dayMilk.sumOf { it.volumeMl }
             val (targetCa, targetFe) = dailyTargetMinerals(child)
             val isOwner = child?.let { childRepo.isChildOwner(it.id).getOrDefault(false) } ?: false
-            val fridgeItems = child?.let { repo.getFridgeIngredients(it.id) } ?: emptyList()
+            val fridgeItems = child?.let { repo.getFridgeIngredients(it.userId) } ?: emptyList()
             val allChildren = childRepo.getChildren().getOrDefault(emptyList())
             val siblings = allChildren.filter { it.id != child?.id }
 
@@ -206,33 +210,83 @@ class NutritionViewModel : ViewModel() {
     fun loadFridgeIngredients() {
         viewModelScope.launch {
             val child = _ui.value.child ?: return@launch
-            val items = repo.getFridgeIngredients(child.id)
+            val items = repo.getFridgeIngredients(child.userId)
+            val trials = repo.getFoodTrials(child.id)
+            val allergyList = healthRepo.getAllergies(child.id).getOrDefault(emptyList())
             val allChildren = childRepo.getChildren().getOrDefault(emptyList())
-            val siblings = allChildren.filter { it.id != child.id }
-            _ui.value = _ui.value.copy(fridgeIngredients = items, siblingChildren = siblings)
+            // Siblings = the other children of this SAME household. Another family a carer works
+            // for is not a sibling and must never share this pantry.
+            val siblings = allChildren.filter { it.id != child.id && it.userId == child.userId }
+            _ui.value = _ui.value.copy(
+                fridgeIngredients = items, foodTrials = trials, allergies = allergyList, siblingChildren = siblings
+            )
         }
     }
 
-    fun addFridgeIngredient(name: String, quantity: String? = null, category: String = "general", lang: String? = null) {
+    private suspend fun refreshPantry(lang: String?) {
+        val child = _ui.value.child ?: return
+        _ui.value = _ui.value.copy(
+            fridgeIngredients = repo.getFridgeIngredients(child.userId),
+            foodTrials = repo.getFoodTrials(child.id)
+        )
+        menuRecsKey = null
+        lang?.let { ensureMenuRecommendations(it) }
+    }
+
+    fun addFridgeIngredient(
+        name: String, quantity: String? = null, category: String = "general", lang: String? = null,
+        expiresOn: String? = null, storage: String? = null, storageNote: String? = null, note: String? = null
+    ) {
         if (name.isBlank()) return
         viewModelScope.launch {
             val child = _ui.value.child ?: return@launch
-            repo.addFridgeIngredient(child.id, name.trim(), category, quantity)
-            val updated = repo.getFridgeIngredients(child.id)
-            _ui.value = _ui.value.copy(fridgeIngredients = updated)
-            menuRecsKey = null
-            lang?.let { ensureMenuRecommendations(it) }
+            repo.addFridgeIngredient(
+                child.id, name.trim(), category, quantity,
+                boughtOn = java.time.LocalDate.now().toString(),
+                expiresOn = expiresOn, storage = storage, storageNote = storageNote, note = note
+            )
+            refreshPantry(lang)
+        }
+    }
+
+    fun editFridgeIngredient(
+        id: String, name: String? = null, quantity: String? = null, expiresOn: String? = null,
+        storage: String? = null, storageNote: String? = null, note: String? = null, lang: String? = null
+    ) {
+        viewModelScope.launch {
+            repo.updateFridgeIngredient(id, name, quantity, expiresOn, storage, storageNote, note)
+            refreshPantry(lang)
         }
     }
 
     fun removeFridgeIngredient(id: String, lang: String? = null) {
         viewModelScope.launch {
-            val child = _ui.value.child ?: return@launch
             repo.removeFridgeIngredient(id)
-            val updated = repo.getFridgeIngredients(child.id)
-            _ui.value = _ui.value.copy(fridgeIngredients = updated)
-            menuRecsKey = null
-            lang?.let { ensureMenuRecommendations(it) }
+            refreshPantry(lang)
+        }
+    }
+
+    /** Starts the 3-4 day watch on a food for the CHILD being viewed, not for the household. */
+    fun startFoodTrial(foodName: String) {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            repo.startFoodTrial(child.id, foodName)
+            _ui.value = _ui.value.copy(foodTrials = repo.getFoodTrials(child.id))
+        }
+    }
+
+    /** [result] is "safe" or "allergic". An allergic result also joins the child's allergy list. */
+    fun decideFoodTrial(trialId: String, foodName: String, result: String, reaction: String? = null) {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch
+            repo.setFoodTrialResult(trialId, result, reaction)
+            if (result == "allergic") {
+                healthRepo.addAllergy(child.id, foodName.trim(), "food", "mild", reaction)
+            }
+            _ui.value = _ui.value.copy(
+                foodTrials = repo.getFoodTrials(child.id),
+                allergies = healthRepo.getAllergies(child.id).getOrDefault(_ui.value.allergies)
+            )
         }
     }
 
@@ -245,12 +299,10 @@ class NutritionViewModel : ViewModel() {
             if (detected.isNotEmpty()) {
                 val currentNames = _ui.value.fridgeIngredients.map { it.ingredientName.lowercase().trim() }.toSet()
                 detected.filterNot { currentNames.contains(it.lowercase().trim()) }.forEach { name ->
-                    repo.addFridgeIngredient(child.id, name)
+                    repo.addFridgeIngredient(child.id, name, boughtOn = java.time.LocalDate.now().toString())
                 }
-                val updated = repo.getFridgeIngredients(child.id)
-                _ui.value = _ui.value.copy(fridgeIngredients = updated, fridgeScanning = false)
-                menuRecsKey = null
-                ensureMenuRecommendations(lang)
+                _ui.value = _ui.value.copy(fridgeScanning = false)
+                refreshPantry(lang)
             } else {
                 _ui.value = _ui.value.copy(fridgeScanning = false)
             }
@@ -258,13 +310,8 @@ class NutritionViewModel : ViewModel() {
         }
     }
 
-    fun syncFridgeToSibling(targetChildId: String, lang: String? = null, onDone: () -> Unit = {}) {
-        viewModelScope.launch {
-            val child = _ui.value.child ?: return@launch
-            repo.syncFridgeIngredients(child.id, targetChildId)
-            onDone()
-        }
-    }
+    // Copying the fridge to a sibling used to be a button here. Children of one household now read
+    // the same pantry rows, so there is nothing left to copy.
 
     /**
      * Generates the exercise "activities" list exactly ONCE and keeps it (no refresh on every open).
@@ -394,6 +441,28 @@ class NutritionViewModel : ViewModel() {
             macrosKey = null
             reloadLogs()
             _ui.value = _ui.value.copy(calculating = false, mealFoodIds = _ui.value.mealFoodIds + listOfNotNull(id))
+        }
+    }
+
+    /**
+     * Logs a cooked recipe straight into today's food, using the recipe's own kcal rather than
+     * asking the AI again. Returns through [onDone] so the screen can confirm and close.
+     */
+    fun logRecipeAsMeal(title: String, kcal: Int?, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val child = _ui.value.child ?: return@launch onDone(false)
+            val hour = java.time.LocalTime.now().hour
+            val meal = when {
+                hour < 10 -> "breakfast"
+                hour < 14 -> "lunch"
+                hour < 17 -> "snack"
+                else -> "dinner"
+            }
+            val id = repo.addFood(child.id, meal, title.trim(), kcal, _ui.value.logDate).getOrNull()
+            macrosKey = null
+            reloadLogs()
+            _ui.value = _ui.value.copy(mealFoodIds = _ui.value.mealFoodIds + listOfNotNull(id))
+            onDone(id != null)
         }
     }
 

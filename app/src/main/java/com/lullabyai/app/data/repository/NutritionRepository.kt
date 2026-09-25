@@ -187,18 +187,29 @@ class NutritionRepository {
 
     // ---------------- SMART REFRIGERATOR & INGREDIENTS ----------------
 
-    suspend fun getFridgeIngredients(childId: String): List<com.lullabyai.app.data.model.FridgeIngredient> = runCatching {
+    /**
+     * The household's pantry — one fridge shared by every child of [ownerUserId] and by everyone
+     * who cares for any of them. Row-level security still decides what comes back, so a carer who
+     * works for two families gets this family's list only.
+     */
+    suspend fun getFridgeIngredients(ownerUserId: String): List<com.lullabyai.app.data.model.FridgeIngredient> = runCatching {
         supabase.from("fridge_ingredients").select {
-            filter { eq("child_id", childId) }
+            filter { eq("owner_user_id", ownerUserId) }
             order("created_at", Order.DESCENDING)
         }.decodeList<com.lullabyai.app.data.model.FridgeIngredient>()
     }.getOrDefault(emptyList())
 
+    /** [childId] says which household this lands in; the database derives the household from it. */
     suspend fun addFridgeIngredient(
         childId: String,
         ingredientName: String,
         category: String = "general",
-        quantity: String? = null
+        quantity: String? = null,
+        boughtOn: String? = null,
+        expiresOn: String? = null,
+        storage: String? = null,
+        storageNote: String? = null,
+        note: String? = null
     ): Result<com.lullabyai.app.data.model.FridgeIngredient> = runCatching {
         val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not authenticated")
         supabase.from("fridge_ingredients").insert(buildJsonObject {
@@ -207,9 +218,79 @@ class NutritionRepository {
             put("ingredient_name", JsonPrimitive(ingredientName.trim()))
             put("category", JsonPrimitive(category))
             put("quantity", quantity?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("bought_on", boughtOn?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("expires_on", expiresOn?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("storage", storage?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("storage_note", storageNote?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("note", note?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
         }) {
             select()
         }.decodeSingle<com.lullabyai.app.data.model.FridgeIngredient>()
+    }
+
+    suspend fun updateFridgeIngredient(
+        id: String,
+        ingredientName: String? = null,
+        quantity: String? = null,
+        expiresOn: String? = null,
+        storage: String? = null,
+        storageNote: String? = null,
+        note: String? = null
+    ): Result<Unit> = runCatching {
+        supabase.from("fridge_ingredients").update(buildJsonObject {
+            ingredientName?.let { put("ingredient_name", JsonPrimitive(it.trim())) }
+            quantity?.let { put("quantity", JsonPrimitive(it)) }
+            expiresOn?.let { put("expires_on", JsonPrimitive(it)) }
+            storage?.let { put("storage", JsonPrimitive(it)) }
+            storageNote?.let { put("storage_note", JsonPrimitive(it)) }
+            note?.let { put("note", JsonPrimitive(it)) }
+            put("updated_at", JsonPrimitive(java.time.Instant.now().toString()))
+        }) {
+            filter { eq("id", id) }
+        }
+        Unit
+    }
+
+    // ---------------- FOOD TRIALS (the 3-4 day wait rule, per child) ----------------
+
+    suspend fun getFoodTrials(childId: String): List<com.lullabyai.app.data.model.FoodTrial> = runCatching {
+        supabase.from("food_trials").select {
+            filter { eq("child_id", childId) }
+            order("started_on", Order.DESCENDING)
+        }.decodeList<com.lullabyai.app.data.model.FoodTrial>()
+    }.getOrDefault(emptyList())
+
+    /** Starts the watch on a food for ONE child. Starting a food already listed resets its watch. */
+    suspend fun startFoodTrial(childId: String, foodName: String): Result<Unit> = runCatching {
+        val existing = getFoodTrials(childId).firstOrNull {
+            it.foodName.trim().equals(foodName.trim(), ignoreCase = true)
+        }
+        val body = buildJsonObject {
+            put("child_id", JsonPrimitive(childId))
+            put("food_name", JsonPrimitive(foodName.trim()))
+            put("started_on", JsonPrimitive(java.time.LocalDate.now().toString()))
+            put("result", JsonPrimitive("testing"))
+            put("reaction", JsonNull)
+            put("decided_on", JsonNull)
+            put("updated_at", JsonPrimitive(java.time.Instant.now().toString()))
+        }
+        if (existing == null) supabase.from("food_trials").insert(body)
+        else supabase.from("food_trials").update(body) { filter { eq("id", existing.id) } }
+        Unit
+    }
+
+    /** [result] is "safe" or "allergic"; [reaction] is what the parent saw, for an allergic one. */
+    suspend fun setFoodTrialResult(id: String, result: String, reaction: String? = null): Result<Unit> = runCatching {
+        require(result in setOf("testing", "safe", "allergic")) { "unknown trial result: $result" }
+        supabase.from("food_trials").update(buildJsonObject {
+            put("result", JsonPrimitive(result))
+            put("reaction", reaction?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("decided_on", if (result == "testing") JsonNull else JsonPrimitive(java.time.LocalDate.now().toString()))
+            put("updated_at", JsonPrimitive(java.time.Instant.now().toString()))
+        }) {
+            filter { eq("id", id) }
+        }
+        Unit
     }
 
     suspend fun removeFridgeIngredient(id: String): Result<Unit> = runCatching {
@@ -219,36 +300,5 @@ class NutritionRepository {
         Unit
     }
 
-    suspend fun setFridgeIngredients(childId: String, ingredientNames: List<String>): Result<Unit> = runCatching {
-        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not authenticated")
-        // Clear old list
-        supabase.from("fridge_ingredients").delete {
-            filter { eq("child_id", childId) }
-        }
-        // Insert new list
-        val distinct = ingredientNames.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-        if (distinct.isNotEmpty()) {
-            distinct.forEach { name ->
-                supabase.from("fridge_ingredients").insert(buildJsonObject {
-                    put("child_id", JsonPrimitive(childId))
-                    put("user_id", JsonPrimitive(userId))
-                    put("ingredient_name", JsonPrimitive(name))
-                    put("category", JsonPrimitive("general"))
-                })
-            }
-        }
-        Unit
-    }
-
-    suspend fun syncFridgeIngredients(sourceChildId: String, targetChildId: String): Result<Unit> = runCatching {
-        supabase.from("fridge_ingredients").postgrest.rpc(
-            "sync_fridge_ingredients",
-            buildJsonObject {
-                put("p_source_child_id", JsonPrimitive(sourceChildId))
-                put("p_target_child_id", JsonPrimitive(targetChildId))
-            }
-        )
-        Unit
-    }
 }
 

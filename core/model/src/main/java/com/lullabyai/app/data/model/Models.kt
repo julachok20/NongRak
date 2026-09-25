@@ -1102,11 +1102,34 @@ data class FridgeIngredient(
     val id: String = "",
     @SerialName("child_id") val childId: String = "",
     @SerialName("user_id") val userId: String = "",
+    /** The household this belongs to (the child's owner). Set server-side; the whole family shares it. */
+    @SerialName("owner_user_id") val ownerUserId: String = "",
     @SerialName("ingredient_name") val ingredientName: String = "",
     val category: String = "general", // vegetable | fruit | meat | dairy | grain | general
     val quantity: String? = null,
+    @SerialName("bought_on") val boughtOn: String? = null,
+    @SerialName("expires_on") val expiresOn: String? = null,
+    val storage: String? = null,                                  // fridge | freezer | pantry
+    @SerialName("storage_note") val storageNote: String? = null,  // "แช่เย็น 2-4°C"
+    val note: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
+)
+
+/**
+ * One new food being watched for a reaction, for ONE child (กฎการทดสอบ 3-4 วัน). Kept per child
+ * because a sibling's result says nothing about this one.
+ */
+@Serializable
+data class FoodTrial(
+    val id: String = "",
+    @SerialName("child_id") val childId: String = "",
+    @SerialName("food_name") val foodName: String = "",
+    @SerialName("started_on") val startedOn: String = "",
+    val result: String = "testing",   // testing | safe | allergic
+    val reaction: String? = null,
+    @SerialName("decided_on") val decidedOn: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
 )
 
 
