@@ -30,7 +30,9 @@ class NutritionRepository {
 
     suspend fun addMilkLog(
         childId: String, milkType: String, volumeMl: Int, side: String?, notes: String?,
-        loggedAt: String? = null, durationMin: Int? = null
+        loggedAt: String? = null, durationMin: Int? = null,
+        subtype: String? = null, leftMin: Int? = null, rightMin: Int? = null,
+        temperature: String? = null, reaction: String? = null, method: String? = null
     ): Result<Unit> = runCatching {
         supabase.from("milk_logs").insert(buildJsonObject {
             put("child_id", JsonPrimitive(childId))
@@ -40,6 +42,12 @@ class NutritionRepository {
             put("side", side?.let { JsonPrimitive(it) } ?: JsonNull)
             put("notes", notes?.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: JsonNull)
             if (loggedAt != null) put("logged_at", JsonPrimitive(loggedAt))
+            put("subtype", subtype?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("left_min", leftMin?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("right_min", rightMin?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("temperature", temperature?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("reaction", reaction?.let { JsonPrimitive(it) } ?: JsonNull)
+            put("method", method?.let { JsonPrimitive(it) } ?: JsonNull)
         })
         MascotRewards.noteCareToday()
     }

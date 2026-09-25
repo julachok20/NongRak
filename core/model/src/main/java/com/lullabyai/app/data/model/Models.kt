@@ -696,11 +696,19 @@ data class VaccineRecord(
 data class MilkLog(
     val id: String = "",
     @SerialName("child_id") val childId: String = "",
-    @SerialName("milk_type") val milkType: String = "formula", // breast | formula | water
+    @SerialName("milk_type") val milkType: String = "formula", // breast | formula | uht | water
     @SerialName("volume_ml") val volumeMl: Int = 0,
     /** Minutes at the breast for a direct feed; volumeMl is 0 then. Null for bottle/formula. */
     @SerialName("duration_min") val durationMin: Int? = null,
     val side: String? = null, // left | right | both (breast only)
+    /** direct | pumped for breast milk; boiled | mineral | warm for water. */
+    val subtype: String? = null,
+    @SerialName("left_min") val leftMin: Int? = null,
+    @SerialName("right_min") val rightMin: Int? = null,
+    val temperature: String? = null,             // warm | room | cold
+    /** finished | left_some | spit_up for milk; easy | little | refused for water. */
+    val reaction: String? = null,
+    val method: String? = null,                  // cup | straw | spoon | bottle (water)
     @SerialName("logged_at") val loggedAt: String? = null,
     val notes: String? = null
 ) {
