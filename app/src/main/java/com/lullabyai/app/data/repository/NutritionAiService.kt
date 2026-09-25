@@ -109,44 +109,71 @@ object NutritionAiService {
         return FoodPhotoEstimate(name, kcal, meal)
     }
 
-    data class CalorieCheck(val kcal: Int, val carb: Int, val protein: Int, val fat: Int, val tip: String, val itemName: String? = null)
+    /**
+     * One analysed dish for the calorie-check screen. [fromTable] names the
+     * ตารางแสดงคุณค่าทางโภชนาการของอาหารไทย row the figures came from; when it is null the numbers are
+     * the AI's own estimate, and the screen says so rather than showing an invented accuracy score.
+     */
+    data class CalorieCheck(
+        val kcal: Int, val carb: Int, val protein: Int, val fat: Int, val tip: String,
+        val itemName: String? = null,
+        val portionText: String? = null,
+        val portionGrams: Int? = null,
+        val meal: String? = null,
+        val fibreG: Double? = null,
+        val ironMg: Double? = null,
+        val calciumMg: Double? = null,
+        val sodiumMg: Double? = null,
+        val fromTable: String? = null
+    )
 
-    /** Parent-facing quick calorie check for any typed dish/meal: total kcal + macros + one tip. */
-    suspend fun calorieCheck(food: String, lang: String): CalorieCheck? {
-        if (food.isBlank()) return null
-        val prompt = "Estimate the TOTAL calories (kcal) and macronutrients in grams for this food or meal: \"$food\". " +
-            "Also give ONE short, practical healthy-eating tip. " +
-            "Return JSON exactly: {\"kcal\":int,\"carb\":int,\"protein\":int,\"fat\":int,\"tip\":\"...\"}"
-        val o = ask(prompt, lang, useSearch = true)?.objOrNull() ?: return null
-        val kcal = (o["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
+    private val CHECK_SCHEMA =
+        "{\"itemName\":\"...\",\"portionText\":\"...\",\"portionGrams\":int,\"meal\":\"breakfast|lunch|dinner|snack|other\"," +
+            "\"kcal\":int,\"carb\":int,\"protein\":int,\"fat\":int,\"fibre\":number,\"iron\":number," +
+            "\"calcium\":number,\"sodium\":number,\"tip\":\"...\"}"
+
+    private fun JsonObject.toCheck(fallbackName: String?): CalorieCheck? {
+        val kcal = (this["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
+        fun num(key: String) = (this[key] as? JsonPrimitive)?.doubleOrNull?.takeIf { it >= 0 }
         return CalorieCheck(
             kcal = kcal,
-            carb = (o["carb"] as? JsonPrimitive)?.intOrNull ?: 0,
-            protein = (o["protein"] as? JsonPrimitive)?.intOrNull ?: 0,
-            fat = (o["fat"] as? JsonPrimitive)?.intOrNull ?: 0,
-            tip = o.str("tip")
+            carb = (this["carb"] as? JsonPrimitive)?.intOrNull ?: 0,
+            protein = (this["protein"] as? JsonPrimitive)?.intOrNull ?: 0,
+            fat = (this["fat"] as? JsonPrimitive)?.intOrNull ?: 0,
+            tip = str("tip"),
+            itemName = (this["itemName"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: fallbackName,
+            portionText = (this["portionText"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() },
+            portionGrams = (this["portionGrams"] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 },
+            meal = (this["meal"] as? JsonPrimitive)?.contentOrNull?.lowercase()
+                ?.takeIf { it in setOf("breakfast", "lunch", "dinner", "snack", "other") },
+            fibreG = num("fibre"), ironMg = num("iron"), calciumMg = num("calcium"), sodiumMg = num("sodium")
         )
+    }
+
+    /** Parent-facing check for a typed dish: portion, energy, macros, key minerals and one tip. */
+    suspend fun calorieCheck(food: String, lang: String): CalorieCheck? {
+        if (food.isBlank()) return null
+        val prompt = "A parent is checking one dish served to a young child (0-3 years): \"$food\". " +
+            "Work out the portion actually served (if the text names one, use it), then the TOTAL energy and " +
+            "nutrients for THAT portion. Units: kcal; carb/protein/fat/fibre in g; iron/calcium/sodium in mg. " +
+            "Assign a meal from the dish itself. Give ONE short, practical tip for a child this age. " +
+            "Return JSON exactly: $CHECK_SCHEMA"
+        return ask(prompt, lang, model = ClaudeClient.GEMMA)?.objOrNull()?.toCheck(food.trim())
     }
 
     /** Same as [calorieCheck] but the dish is identified from a photo instead of typed text.
      *  Null if no food is clearly visible in the photo. */
     suspend fun calorieCheckFromPhoto(imageBase64: String, imageMimeType: String, lang: String): CalorieCheck? {
-        val prompt = "This photo shows a food or meal a young child (0-3 years old) is eating. Identify the dish, " +
-            "then estimate the TOTAL calories (kcal) and macronutrients in grams for it. " +
-            "Also give ONE short, practical healthy-eating tip. " +
+        val prompt = "This photo shows a food or meal a young child (0-3 years old) is eating. Identify the dish and " +
+            "the portion visible on the plate, then give the TOTAL energy and nutrients for THAT portion. " +
+            "Units: kcal; carb/protein/fat/fibre in g; iron/calcium/sodium in mg. Assign a meal from the dish itself. " +
+            "Give ONE short, practical tip for a child this age. " +
             "If no food is clearly visible, return {\"itemName\":null}. " +
-            "Return JSON exactly: {\"itemName\":\"...\",\"kcal\":int,\"carb\":int,\"protein\":int,\"fat\":int,\"tip\":\"...\"}"
-        val o = ask(prompt, lang, imageBase64 = imageBase64, imageMimeType = imageMimeType)?.objOrNull() ?: return null
+            "Return JSON exactly: $CHECK_SCHEMA"
+        val o = ask(prompt, lang, imageBase64 = imageBase64, imageMimeType = imageMimeType, model = ClaudeClient.GEMMA)
+            ?.objOrNull() ?: return null
         val name = (o["itemName"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
-        val kcal = (o["kcal"] as? JsonPrimitive)?.intOrNull ?: return null
-        return CalorieCheck(
-            kcal = kcal,
-            carb = (o["carb"] as? JsonPrimitive)?.intOrNull ?: 0,
-            protein = (o["protein"] as? JsonPrimitive)?.intOrNull ?: 0,
-            fat = (o["fat"] as? JsonPrimitive)?.intOrNull ?: 0,
-            tip = o.str("tip"),
-            itemName = name
-        )
+        return o.toCheck(name)
     }
 
     /** Estimated TOTAL nutrients for today's foods: macros in grams + calcium/iron in mg. */

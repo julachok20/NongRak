@@ -682,7 +682,7 @@ class NutritionViewModel : ViewModel() {
         checkJob?.cancel()
         checkJob = viewModelScope.launch {
             _ui.value = _ui.value.copy(checkLoading = true, checkedFood = food.trim())
-            val r = NutritionAiService.calorieCheck(food.trim(), lang)
+            val r = NutritionAiService.calorieCheck(food.trim(), lang)?.let { fromTableIfKnown(it) }
             _ui.value = _ui.value.copy(calorieCheck = r, checkLoading = false)
         }
     }
@@ -698,8 +698,39 @@ class NutritionViewModel : ViewModel() {
                 _ui.value = _ui.value.copy(checkLoading = false, checkPhotoFailed = true)
                 return@launch
             }
-            _ui.value = _ui.value.copy(calorieCheck = r, checkedFood = r.itemName ?: "", checkLoading = false)
+            _ui.value = _ui.value.copy(
+                calorieCheck = fromTableIfKnown(r), checkedFood = r.itemName ?: "", checkLoading = false
+            )
         }
+    }
+
+    /**
+     * Replaces the AI's nutrient guesses with the กรมอนามัย food table whenever the dish is one the
+     * table actually has, scaled to the portion the AI read. The AI is then only doing what it is
+     * good at — naming the dish and judging how much is on the plate.
+     */
+    private fun fromTableIfKnown(check: NutritionAiService.CalorieCheck): NutritionAiService.CalorieCheck {
+        val name = check.itemName ?: return check
+        val match = runCatching { com.lullabyai.app.util.ThaiFoodTable.match(name) }.getOrNull() ?: return check
+        val food = match.food
+        val per100 = food.n + (food.kcalPer100g()?.let { mapOf("kcal" to it) } ?: emptyMap())
+        val grams = check.portionGrams?.toDouble()
+            ?: com.lullabyai.app.util.DayNutrition.gramsFromKcal(check.kcal, food.kcalPer100g())
+            ?: food.servingGrams
+            ?: return check
+        fun at(key: String): Double? = per100[key]?.let { it * grams / 100.0 }
+        return check.copy(
+            kcal = at("kcal")?.roundToInt() ?: check.kcal,
+            carb = at("carb")?.roundToInt() ?: check.carb,
+            protein = at("protein")?.roundToInt() ?: check.protein,
+            fat = at("fat")?.roundToInt() ?: check.fat,
+            fibreG = at("fibre") ?: check.fibreG,
+            ironMg = at("iron") ?: check.ironMg,
+            calciumMg = at("calcium") ?: check.calciumMg,
+            sodiumMg = at("sodium") ?: check.sodiumMg,
+            portionGrams = grams.roundToInt(),
+            fromTable = food.th
+        )
     }
 
     /** Cancel button on the Calorie Check screen — aborts an in-flight photo/AI check and
