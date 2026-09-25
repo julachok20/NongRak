@@ -81,8 +81,10 @@ fun MilkRecordScreen(childViewModel: ChildViewModel, nutritionViewModel: Nutriti
     var tab by remember { mutableStateOf("milk") }
     var milkType by remember { mutableStateOf("breast") }
     var subtype by remember { mutableStateOf("direct") }
-    var leftMin by remember { mutableStateOf(10) }
-    var rightMin by remember { mutableStateOf(10) }
+    // Starts at zero like the water amount does: the parent counts up from nothing, and can take
+    // the minutes back down when the timer ran on after the baby had already stopped.
+    var leftMin by remember { mutableStateOf(0) }
+    var rightMin by remember { mutableStateOf(0) }
     var timerRunning by remember { mutableStateOf<String?>(null) }   // "left" | "right" | null
     var volumeMl by remember { mutableStateOf(150) }
     var unitOz by remember { mutableStateOf(false) }
@@ -641,12 +643,17 @@ private fun SideTimer(
                 Text(if (isThai) " นาที" else " min", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(5, 10).forEach { step ->
-                    Surface(onClick = { onAdd(step) }, shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface) {
+                listOf(-5, 5, 10).forEach { step ->
+                    val canPress = step > 0 || minutes > 0
+                    Surface(
+                        onClick = { onAdd(step) }, enabled = canPress, shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
                         Text(
-                            if (isThai) "+${step}น." else "+${step}m",
+                            (if (step < 0) "-" else "+") + kotlin.math.abs(step) + (if (isThai) "น." else "m"),
                             Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Primary
+                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                            color = if (canPress) Primary else Outline
                         )
                     }
                 }

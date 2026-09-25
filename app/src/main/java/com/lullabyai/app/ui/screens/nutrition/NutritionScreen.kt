@@ -85,7 +85,7 @@ fun NutritionScreen(vm: NutritionViewModel, lang: String, navController: NavCont
                     else -> if (isThai) "ยังต้องเสริม" else "Needs more"
                 }
                 HeaderCard(
-                    name = child?.name.orEmpty(), avatarUrl = child?.avatarUrl, age = hubAgeLabel(child?.birthdate, isThai),
+                    name = child?.name.orEmpty(), avatarUrl = ui.childAvatarUrl, age = hubAgeLabel(child?.birthdate, isThai),
                     status = status, intake = intake, targetKcal = targetKcal, energyShare = energyShare,
                     milkMl = ui.todayMilkMl, milkMin = ui.todayMilk.sumOf { it.durationMin ?: 0 },
                     waterMl = ui.todayWaterMl.takeIf { months >= 6 }, isThai = isThai,

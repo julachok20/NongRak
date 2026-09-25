@@ -129,7 +129,7 @@ fun CalorieCheckScreen(vm: NutritionViewModel, lang: String, navController: NavC
             // ---------------- who this is for, and the day's target
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HubChildAvatar(ui.child?.avatarUrl, 44.dp)
+                    HubChildAvatar(ui.childAvatarUrl, 44.dp)
                     Column(Modifier.weight(1f)) {
                         Text(ui.child?.name.orEmpty(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(

@@ -146,7 +146,7 @@ fun CalorieCalculatorScreen(vm: NutritionViewModel, lang: String, navController:
         ) {
             item {
                 EnergyHeader(
-                    name = ui.child?.name.orEmpty(), avatarUrl = ui.child?.avatarUrl,
+                    name = ui.child?.name.orEmpty(), avatarUrl = ui.childAvatarUrl,
                     age = hubAgeLabel(ui.child?.birthdate, isThai),
                     intake = intake, target = targetKcal, share = share, isThai = isThai
                 )

@@ -25,6 +25,8 @@ import kotlin.math.roundToInt
 data class NutritionUiState(
     val loading: Boolean = false,
     val child: Child? = null,
+    /** A signed link to the child's photo. children.avatar_url is a private bucket path, not a URL. */
+    val childAvatarUrl: String? = null,
     /** ISO date (yyyy-MM-dd) for food/exercise/summary loads — defaults to today; changeable on Today's Full Food List. */
     val logDate: String = LocalDate.now().toString(),
     val foods: List<FoodLog> = emptyList(),
@@ -190,9 +192,12 @@ class NutritionViewModel : ViewModel() {
             val fridgeItems = child?.let { repo.getFridgeIngredients(it.userId) } ?: emptyList()
             val allChildren = childRepo.getChildren().getOrDefault(emptyList())
             val siblings = allChildren.filter { it.id != child?.id }
+            val avatar = child?.avatarUrl?.let {
+                runCatching { com.lullabyai.app.data.remote.StorageHelper.signedAvatarUrl(it) }.getOrNull()
+            }
 
             _ui.value = _ui.value.copy(
-                loading = false, child = child, logDate = date, foods = foods, todayMilkMl = milkMl,
+                loading = false, child = child, childAvatarUrl = avatar, logDate = date, foods = foods, todayMilkMl = milkMl,
                 todayMilk = dayMilk, todayWaterMl = dayWater.sumOf { it.volumeMl }, dri = driFor(child),
                 exerciseLogs = ex, weeklyMinutes = weekly, summary = summary,
                 targetKcal = dailyTargetKcal(child), targetMacros = dailyTargetMacros(child),
