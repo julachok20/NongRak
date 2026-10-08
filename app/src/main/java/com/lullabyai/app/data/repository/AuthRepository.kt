@@ -633,8 +633,26 @@ class AuthRepository {
      * it back. Null clears it. A username someone else holds fails as `username_taken`
      * (profiles_username_key), so the dialog can say so instead of showing a raw Postgres error.
      */
+    /**
+     * Turns the เพื่อนที่คุณอาจรู้จัก suggestion on or off for this account.
+     *
+     * Separate from [updateProfileField] because that one verifies a text column round-tripped,
+     * and this is a boolean. Off means this parent is never offered to strangers; it does not
+     * hide the profile from anyone who reaches it another way.
+     */
+    suspend fun setDiscoverable(discoverable: Boolean): Result<Unit> = runCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
+        supabase.from("profiles").update(
+            buildJsonObject { put("discoverable", JsonPrimitive(discoverable)) }
+        ) { filter { eq("id", userId) } }
+        val saved = getProfile().getOrThrow()
+        check(saved.discoverable == discoverable) {
+            "discoverable_not_saved: wanted $discoverable, got ${saved.discoverable}"
+        }
+    }
+
     suspend fun updateProfileField(column: String, value: String?): Result<Profile> = runCatching {
-        require(column in setOf("username", "full_name", "phone")) { "field_not_editable: $column" }
+        require(column in setOf("username", "full_name", "phone", "bio", "city", "family_name")) { "field_not_editable: $column" }
         val userId = supabase.auth.currentUserOrNull()?.id ?: error("Not logged in")
         try {
             supabase.from("profiles").update(buildJsonObject { put(column, value?.let { JsonPrimitive(it) } ?: JsonNull) }) {
@@ -645,7 +663,18 @@ class AuthRepository {
             throw e
         }
         val saved = getProfile().getOrThrow()
-        val now = when (column) { "username" -> saved.username; "full_name" -> saved.fullName; else -> saved.phone }
+        // Every editable column needs its own branch. An `else` here silently compared the wrong
+        // field: adding bio/city to the allow-list above would have checked them against phone
+        // and failed a save that actually worked.
+        val now = when (column) {
+            "username" -> saved.username
+            "full_name" -> saved.fullName
+            "phone" -> saved.phone
+            "bio" -> saved.bio
+            "city" -> saved.city
+            "family_name" -> saved.familyName
+            else -> error("field_not_verified: $column")
+        }
         check(now == value) { "profile_field_not_saved: $column wanted '$value', got '$now'" }
         saved
     }

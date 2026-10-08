@@ -178,24 +178,30 @@ class AccessPermissionViewModel(
     }
 
     fun savePermissions(member: ChildAccessMember) {
+        saveCapabilitySet(member.userId, member.role, AccessCapabilities.effectiveCaps(member))
+    }
+
+    fun saveCapabilitySet(userId: String, role: String, caps: Set<String>) {
         val childId = _uiState.value.childId ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(saving = true, error = null, savedOk = false) }
+            val list = caps.filter { it in AccessCapabilities.ALL }.sorted()
             childRepo.updateMemberPermissions(
                 childId = childId,
-                userId = member.userId,
-                role = member.role,
-                canViewHealth = member.canViewHealth,
-                canLogSymptoms = member.canLogSymptoms,
-                canEditGrowth = member.canEditGrowth,
-                canViewAppointments = member.canViewAppointments,
-                canBookDoctor = member.canBookDoctor,
-                canCancelAppointments = member.canCancelAppointments,
-                canViewDocuments = member.canViewDocuments,
-                canUploadDocuments = member.canUploadDocuments,
-                canEditProfile = member.canEditProfile
+                userId = userId,
+                role = role,
+                canViewHealth = AccessCapabilities.VIEW_HEALTH in caps,
+                canLogSymptoms = AccessCapabilities.LOG_SYMPTOMS in caps,
+                canEditGrowth = AccessCapabilities.EDIT_GROWTH in caps,
+                canViewAppointments = AccessCapabilities.VIEW_APPOINTMENTS in caps,
+                canBookDoctor = AccessCapabilities.BOOK_DOCTOR in caps,
+                canCancelAppointments = AccessCapabilities.CANCEL_APPOINTMENTS in caps,
+                canViewDocuments = AccessCapabilities.VIEW_DOCUMENTS in caps,
+                canUploadDocuments = AccessCapabilities.UPLOAD_DOCUMENTS in caps,
+                canEditProfile = AccessCapabilities.EDIT_PROFILE in caps,
+                capabilities = list
             ).onSuccess {
-                _uiState.update { it.copy(saving = false, savedOk = true, selectedMember = member) }
+                _uiState.update { it.copy(saving = false, savedOk = true) }
                 load(childId, _uiState.value.childName)
             }.onFailure { e ->
                 _uiState.update { it.copy(saving = false, error = e.message) }
@@ -207,6 +213,34 @@ class AccessPermissionViewModel(
      * Flips the "helps care for this child" tick. Optimistic: the row updates immediately and
      * [load] reconciles, because a checkbox that waits on a round trip reads as broken.
      */
+    /**
+     * Family, or help.
+     *
+     * Separate from [setCaregiver] on purpose: a nanny IS a caregiver and belongs in the handover
+     * and chat screens, and is still not family on the home screen. One flag cannot answer both.
+     */
+    fun setFamily(userId: String, value: Boolean) {
+        val childId = _uiState.value.childId ?: return
+        _uiState.update { s ->
+            s.copy(members = s.members.map { if (it.userId == userId) it.copy(isFamily = value) else it })
+        }
+        viewModelScope.launch {
+            childRepo.setMemberFamily(childId, userId, value)
+                .onSuccess { load(childId, _uiState.value.childName) }
+                .onFailure { e ->
+                    // Put the tick back where it was - the server refused.
+                    _uiState.update { s ->
+                        s.copy(
+                            error = e.message,
+                            members = s.members.map {
+                                if (it.userId == userId) it.copy(isFamily = !value) else it
+                            }
+                        )
+                    }
+                }
+        }
+    }
+
     fun setCaregiver(userId: String, value: Boolean) {
         val childId = _uiState.value.childId ?: return
         _uiState.update { s ->
@@ -335,7 +369,10 @@ object AccessRoleLabels {
      */
     fun accessLevel(member: ChildAccessMember, isThai: Boolean): Triple<String, Boolean, Boolean> {
         val full = isFullAccess(member.role)
-        val canLog = member.canLogSymptoms || member.canEditGrowth || member.canUploadDocuments
+        val canLog = member.canLogSymptoms || member.canEditGrowth || member.canUploadDocuments ||
+            member.canBookDoctor || AccessCapabilities.LOG_ACTIVITIES in member.capabilities ||
+            AccessCapabilities.LOG_FEEDING in member.capabilities ||
+            AccessCapabilities.LOG_SLEEP in member.capabilities
         val label = when {
             full -> if (isThai) "สิทธิ์จัดการทั้งหมด" else "Full access"
             canLog -> if (isThai) "บันทึกข้อมูลรายวัน" else "Can record"

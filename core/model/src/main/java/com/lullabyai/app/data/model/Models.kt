@@ -95,6 +95,8 @@ data class Profile(
     val username: String? = null,
     val relationship: String? = null,
     @SerialName("full_name") val fullName: String? = null,
+    /** What this family calls itself. Null means the home screen falls back to a default. */
+    @SerialName("family_name") val familyName: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
@@ -115,6 +117,18 @@ data class Profile(
     @SerialName("email_verified_at") val emailVerifiedAt: String? = null,
     /** Home address for the Health Book guardian block. Optional; collected via Info Ask. */
     val address: String? = null,
+    /** The line under the name on the community profile. Up to 300 characters. */
+    val bio: String? = null,
+    /** City shown on the community profile, e.g. "กทม.". Free text, not a lookup. */
+    val city: String? = null,
+    /**
+     * Whether this parent may be SUGGESTED to strangers in เพื่อนที่คุณอาจรู้จัก.
+     *
+     * Suggestions match on the child's age BAND only - never a birthdate, never the child's name.
+     * Turning this off does not hide the profile; it stops it being offered to people the family
+     * has never met.
+     */
+    val discoverable: Boolean = true,
     /** Two-factor authentication toggle: when enabled, signing into a new device requires verification from an active device. */
     @SerialName("two_factor_enabled") val twoFactorEnabled: Boolean = false,
     @SerialName("two_factor_enabled_at") val twoFactorEnabledAt: String? = null
@@ -354,7 +368,13 @@ data class ChildAccessMember(
     // "บุคคลที่ช่วยดูแลเด็ก" — deliberately not one of the can_* permissions. It answers
     // "does this person physically care for the child", which is what decides who appears in
     // the caregiver chat row and who lands on the daily-update screen instead of the history.
-    @SerialName("is_caregiver") val isCaregiver: Boolean = false
+    @SerialName("is_caregiver") val isCaregiver: Boolean = false,
+    // Family, as opposed to hired or professional help. Set explicitly when the membership is
+    // approved, and editable afterwards - NEVER inferred from [role], because role is partly
+    // free-form (custom roles live in child_roles) and any whitelist would silently mis-sort them.
+    // Distinct from [isCaregiver]: a nanny genuinely cares for the child, so she belongs in the
+    // caregiver chat row and the handover screens, without being family on the home screen.
+    @SerialName("is_family") val isFamily: Boolean = false
 )
 
 /**

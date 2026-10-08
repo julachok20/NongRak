@@ -386,6 +386,40 @@ fun PermissionAccessScreen(
                                         )
                                     }
                                 }
+
+                                // Family, or hired help. Decides who appears under ครอบครัว on the
+                                // home screen and nothing else - a nanny can still be a caregiver
+                                // above, which is what puts her in handover and chat.
+                                Surface(
+                                    onClick = {
+                                        if (iCanManage) viewModel.setFamily(m.userId, !m.isFamily)
+                                    },
+                                    enabled = iCanManage,
+                                    shape = RoundedCornerShape(100.dp),
+                                    color = if (m.isFamily) Primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    border = if (m.isFamily) androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.3f)) else null
+                                ) {
+                                    Row(
+                                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            if (m.isFamily) Icons.Filled.Diversity3 else Icons.Filled.WorkOutline,
+                                            contentDescription = null,
+                                            tint = if (m.isFamily) Primary else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            if (m.isFamily) (if (isThai) "คนในครอบครัว" else "Family")
+                                            else (if (isThai) "ผู้ช่วยเหลือ" else "Helper"),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (m.isFamily) Primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (m.isFamily) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

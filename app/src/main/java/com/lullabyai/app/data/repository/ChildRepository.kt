@@ -43,6 +43,7 @@ import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -286,6 +287,29 @@ class ChildRepository {
      * owners and co-owners already hold every permission, but may or may not be the daily carer.
      * The RPC rejects anyone who is not an owner/co-owner and writes its own audit row.
      */
+    /**
+     * Marks a member as family, or as help.
+     *
+     * Deliberately its own call rather than anything derived from [ChildAccessMember.role]: role is
+     * partly free-form, so a whitelist would hide a real aunt filed under a custom role and a
+     * blacklist would show a second nanny as family. Owner and co-owner only, enforced in Postgres.
+     */
+    suspend fun setMemberFamily(
+        childId: String,
+        userId: String,
+        isFamily: Boolean
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "set_child_member_family",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_user_id", JsonPrimitive(userId))
+                put("p_is_family", JsonPrimitive(isFamily))
+            }
+        )
+        Unit
+    }
+
     suspend fun setMemberCaregiver(
         childId: String,
         userId: String,
@@ -427,6 +451,21 @@ class ChildRepository {
                     put("p_within_days", JsonPrimitive(withinDays))
                 }
             ).decodeList<ChildExpense>()
+        }
+
+    /** Products expiring soon (default within 7 days) or already expired, that are not yet marked as used. */
+    suspend fun listExpiringProducts(childId: String? = null, withinDays: Int = 7): Result<List<ChildExpense>> =
+        runCatching {
+            val all = listExpenses(childId, limit = 500).getOrThrow()
+            val today = LocalDate.now()
+            val maxDate = today.plusDays(withinDays.toLong())
+            all.filter { e ->
+                val expires = e.expiresOn
+                e.hasExpiration && !e.alreadyUsed && !expires.isNullOrBlank() && runCatching {
+                    val exp = LocalDate.parse(expires.take(10))
+                    !exp.isBefore(today.minusDays(7)) && !exp.isAfter(maxDate)
+                }.getOrDefault(false)
+            }.sortedBy { it.expiresOn }
         }
 
     /** One parent↔caregiver conversation about this child, oldest first. */
@@ -1060,7 +1099,8 @@ class ChildRepository {
         canCancelAppointments: Boolean? = null,
         canViewDocuments: Boolean? = null,
         canUploadDocuments: Boolean? = null,
-        canEditProfile: Boolean? = null
+        canEditProfile: Boolean? = null,
+        capabilities: List<String>? = null
     ): Result<Unit> = runCatching {
         supabase.postgrest.rpc(
             "update_child_member_permissions",
@@ -1077,6 +1117,26 @@ class ChildRepository {
                 put("p_can_view_documents", canViewDocuments?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("p_can_upload_documents", canUploadDocuments?.let { JsonPrimitive(it) } ?: JsonNull)
                 put("p_can_edit_profile", canEditProfile?.let { JsonPrimitive(it) } ?: JsonNull)
+                if (capabilities != null) {
+                    put("p_capabilities", JsonArray(capabilities.map { JsonPrimitive(it) }))
+                }
+            }
+        )
+        Unit
+    }
+
+    /** Member asks the owner to grant [capability] — logged on the access activity feed. */
+    suspend fun requestCapability(
+        childId: String,
+        capability: String,
+        note: String? = null
+    ): Result<Unit> = runCatching {
+        supabase.postgrest.rpc(
+            "request_child_capability",
+            buildJsonObject {
+                put("p_child_id", JsonPrimitive(childId))
+                put("p_capability", JsonPrimitive(capability))
+                put("p_note", note?.let { JsonPrimitive(it) } ?: JsonNull)
             }
         )
         Unit
@@ -1345,13 +1405,25 @@ class ChildRepository {
     }
 
     /** Owner confirms or rejects a pending sync request with optional role assignment. Approving grants the requester member access. */
-    suspend fun confirmSyncRequest(requestId: String, approve: Boolean, role: String? = null): Result<Unit> = runCatching {
+    /**
+     * Approves or rejects a sync request.
+     *
+     * [isFamily] is set HERE because this is where the child_members row is created - the invite
+     * code never reaches it. Defaults to false, so family status is always a deliberate choice.
+     */
+    suspend fun confirmSyncRequest(
+        requestId: String,
+        approve: Boolean,
+        role: String? = null,
+        isFamily: Boolean = false
+    ): Result<Unit> = runCatching {
         supabase.postgrest.rpc(
             "confirm_child_sync_request",
             buildJsonObject {
                 put("p_request_id", JsonPrimitive(requestId))
                 put("p_approve", JsonPrimitive(approve))
                 put("p_role", role?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("p_is_family", JsonPrimitive(isFamily))
             }
         )
         Unit
@@ -1364,15 +1436,25 @@ class ChildRepository {
     }
 
     /** Partial vitals write — keeps `children.weight_kg` / `height_cm` as a denormalized cache of the
-     *  latest growth reading. Only patches the fields that are non-null so a weight-only update
-     *  never blanks height (and vice versa). Callers that own growth history should prefer
-     *  [HealthRepository.addGrowthRecord], which syncs here automatically. */
-    suspend fun updateVitals(childId: String, weightKg: Double?, heightCm: Double?): Result<Unit> = runCatching {
-        if (weightKg == null && heightCm == null) return@runCatching
+     *  latest growth reading. Nulls are skipped unless [clearMissing] so a weight-only update never
+     *  blanks height. Pass [clearMissing] when the parent deleted the value and the UI must show none. */
+    suspend fun updateVitals(
+        childId: String,
+        weightKg: Double?,
+        heightCm: Double?,
+        clearMissing: Boolean = false
+    ): Result<Unit> = runCatching {
+        if (!clearMissing && weightKg == null && heightCm == null) return@runCatching
         supabase.from("children").update(
             buildJsonObject {
-                weightKg?.let { put("weight_kg", JsonPrimitive(it)) }
-                heightCm?.let { put("height_cm", JsonPrimitive(it)) }
+                when {
+                    weightKg != null -> put("weight_kg", JsonPrimitive(weightKg))
+                    clearMissing -> put("weight_kg", JsonNull)
+                }
+                when {
+                    heightCm != null -> put("height_cm", JsonPrimitive(heightCm))
+                    clearMissing -> put("height_cm", JsonNull)
+                }
             }
         ) { filter { eq("id", childId) } }
     }

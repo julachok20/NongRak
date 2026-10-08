@@ -209,6 +209,16 @@ fun SettingsScreen(
                             trailingAction = if (isThai) "แก้ไข" else "Edit",
                             onClick = { editingField = AccountField.PHONE }
                         )
+                        RowDivider()
+                        InfoRow(
+                            // What the home screen calls this household. Empty falls back to a
+                            // default built from the username rather than showing a blank heading.
+                            label = if (isThai) "ชื่อครอบครัว (Family name)" else "Family name",
+                            value = profile?.familyName?.takeIf { it.isNotBlank() }
+                                ?: (if (isThai) "ยังไม่ได้ตั้ง" else "Not set"),
+                            trailingAction = if (isThai) "แก้ไข" else "Edit",
+                            onClick = { editingField = AccountField.FAMILY_NAME }
+                        )
                     }
                 }
                 item {
@@ -611,6 +621,7 @@ fun SettingsScreen(
                 AccountField.USERNAME -> authState.profile?.username
                 AccountField.FULL_NAME -> authState.profile?.fullName
                 AccountField.PHONE -> authState.profile?.phone
+                AccountField.FAMILY_NAME -> authState.profile?.familyName
             },
             isThai = isThai,
             onDismiss = { editingField = null },

@@ -75,6 +75,34 @@ fun DashboardScreen(
     onNavigateToConnect: () -> Unit = {},
     onNavigateToSignUp: () -> Unit = {},
     onNavigateToHealthSurvey: () -> Unit = onNavigateToVaccine,
+    /**
+     * The four บันทึกด่วน tiles used to open HUBS rather than the log each one is named after:
+     * "บันทึกการให้นม" opened the nutrition hub, "บันทึกการขับถ่าย" opened the health screen, and
+     * "บันทึกการเจริญเติบโต" opened growth HISTORY. A tile that says บันทึก has to open the thing
+     * you write in, or the one row on this screen a parent could learn is a row of near-misses.
+     *
+     * Defaulted to the old targets so no caller breaks; the real caller passes the log routes.
+     */
+    onNavigateToMilkLog: () -> Unit = onNavigateToNutrition,
+    onNavigateToWasteLog: () -> Unit = onNavigateToHealth,
+    onNavigateToAddGrowth: () -> Unit = onNavigateToGrowth,
+    /** การทำงานด่วน, as the owner specified them. Every one is an existing screen. */
+    onNavigateToAppointments: () -> Unit = onNavigateToVaccine,
+    onNavigateToHealthBook: () -> Unit = onNavigateToHealth,
+    onNavigateToMedicationLog: () -> Unit = onNavigateToHealth,
+    /** The three buttons on ครอบครัวของเรา. */
+    onNavigateToCalendar: () -> Unit = {},
+    onNavigateToTimetable: () -> Unit = onNavigateToCalendar,
+    onNavigateToFamilySummary: () -> Unit = onNavigateToChild,
+    onNavigateToTips: () -> Unit = {},
+    /**
+     * ลูกไม่สบาย. Opens AddHealthRecord, which CREATES the illness record.
+     *
+     * Not LogSicknessSymptoms: that screen reads `state.openHealthRecordId` and its save button is
+     * `enabled = record != null`, so opening it without an illness already on file shows a form
+     * that can never be submitted and never says why.
+     */
+    onNavigateToSickness: () -> Unit = onNavigateToHealth,
     /** Opens any QuickActionCatalog destination by route - used by บริการแนะนำ. */
     onNavigateToRoute: (String) -> Unit = {},
     isTourActive: Boolean = false
@@ -168,10 +196,10 @@ fun DashboardScreen(
 
     val child = childState.child
     val hasActiveChild = childState.children.isNotEmpty() && child != null
-    // Username first, as the owner asked; the full name is only a fallback for accounts that
-    // never set one, so the greeting is never blank.
+    // Username ONLY, as the owner asked - never the full name. A legal name is not what a parent
+    // wants to be greeted by at 6am, and it is the most identifying string on the account.
+    // A blank username falls through to the relationship address ("คุณแม่") below, never to a blank.
     val username = authState.profile?.username?.trim()?.takeIf { it.isNotBlank() }
-        ?: authState.profile?.fullName?.trim()?.takeIf { it.isNotBlank() }
     val relationship = authState.profile?.relationship
 
     LaunchedEffect(Unit) {
@@ -236,6 +264,55 @@ fun DashboardScreen(
         }
     }
 
+    // The lines on the ครอบครัวของเรา card. TodayPlan is pure, so recomputing when the rows change
+    // is cheap and there is nothing to cache. Every child, not only the selected one - an overdue
+    // dose for the second child must not hide behind the profile switcher.
+    val todayItems = remember(
+        childState.children,
+        childState.medicationDoses,
+        childState.vaccines,
+        childState.healthRecords,
+        childState.symptomActivityByRecord
+    ) {
+        com.lullabyai.app.util.TodayPlan.forFamily(
+            children = childState.children,
+            doses = childState.medicationDoses,
+            vaccines = childState.vaccines,
+            healthRecords = childState.healthRecords,
+            symptomActivityByRecord = childState.symptomActivityByRecord
+        )
+    }
+
+    // บริการล่าสุด, ตารางกิจกรรม and บริการแนะนำ have all been removed from this screen. The last
+    // one re-rolled its picks on every launch, so the home screen was never twice the same, and a
+    // parent cannot build muscle memory against a shuffle. RecentServices is no longer read here;
+    // its pushes in AppNavigation now only feed the quick-action search.
+
+    // Only unread warnings reach the card. "schedule" and "normal" are not emergencies and belong
+    // behind the bell - putting all five on the home screen is how the one that matters gets lost.
+    val urgentNotifications = remember(realNotifications) {
+        realNotifications.filter { it.category == "warning" && !it.isRead }.take(2)
+    }
+
+    // ครอบครัว. list_child_access_members is per child, so the family is the union across every
+    // child, deduped by user. Only is_family rows reach it: a nanny is a real caregiver and belongs
+    // in the handover and chat screens, but she is not family on somebody home screen.
+    var familyMembers by remember {
+        mutableStateOf<List<com.lullabyai.app.data.model.ChildAccessMember>>(emptyList())
+    }
+    LaunchedEffect(childState.children.map { it.id }) {
+        val repo = com.lullabyai.app.data.repository.ChildRepository()
+        // A failed read for one child must not blank the whole card, so each is its own getOrNull
+        // and FamilyRoster folds whatever came back.
+        familyMembers = com.lullabyai.app.util.FamilyRoster.of(
+            childState.children.map { c -> repo.listAccessMembers(c.id).getOrNull().orEmpty() }
+        )
+    }
+
+    // The heading of that card. A family that has not named itself gets a default built from the
+    // username rather than a blank heading or an empty card.
+    val resolvedFamilyName = com.lullabyai.app.util.FamilyRoster.name(authState.profile, isThai)
+
     // Missing info check
     var missingByChild by remember { mutableStateOf<List<Pair<com.lullabyai.app.data.model.Child, List<String>>>>(emptyList()) }
     LaunchedEffect(childState.children) {
@@ -250,48 +327,6 @@ fun DashboardScreen(
     val ownedSyncRequests = remember(childState.pendingSyncRequests, childState.children) {
         val ownedIds = childState.children.map { it.id }.toSet()
         childState.pendingSyncRequests.filter { it.childId in ownedIds }
-    }
-
-    // Recent services dynamic tracking
-    val recent by com.lullabyai.app.data.settings.RecentServices.list.collectAsState()
-    val services = listOf(
-        DashSvc("vaccine", if (isThai) "ตารางวัคซีน" else "Vaccine Schedule", if (isThai) "เช็คและบันทึก" else "Log schedule", Icons.Filled.Vaccines, Color(0xFFFEFCE8), Color(0xFFD97706), onNavigateToVaccine),
-        DashSvc("growth", if (isThai) "กราฟการเติบโต" else "Growth Chart", if (isThai) "ติดตามพัฒนาการ" else "Track WHO", Icons.Filled.TrendingUp, Color(0xFFF0FDF4), Color(0xFF059669), onNavigateToGrowth),
-        DashSvc("development", if (isThai) "บันทึกพัฒนาการ" else "Development", if (isThai) "ทักษะตามวัย" else "Skills", Icons.Filled.AutoStories, Color(0xFFFFF1F2), Color(0xFFE11D48), onNavigateToDevelopment),
-        DashSvc("health", if (isThai) "สอบถามอาการ" else "Symptoms", if (isThai) "เช็คอาการเบื้องต้น" else "Check triage", Icons.Filled.Healing, Color(0xFFF5F3FF), Color(0xFF7C3AED), onNavigateToHealth),
-        DashSvc("nutrition", if (isThai) "โภชนาการ" else "Nutrition", if (isThai) "มื้ออาหารและนม" else "Meals & Milk", Icons.Filled.LocalDrink, Color(0xFFFFF0F3), Color(0xFFFF5277), onNavigateToNutrition),
-        DashSvc("sleep", if (isThai) "การนอน" else "Sleep", if (isThai) "รอบการนอน" else "Sleep log", Icons.Filled.Bedtime, Color(0xFFFFF9E6), Color(0xFFF59E0B), onNavigateToSleep)
-    )
-    val svcMap = services.associateBy { it.key }
-    val recentKeys = (recent + listOf("vaccine", "growth", "development", "health")).distinct().take(4)
-
-    // บริการแนะนำ: random picks tailored to the active child's age, avoiding what บริการล่าสุด
-    // already shows. RecentServices stores DashSvc keys while the catalogue speaks routes; these are
-    // the same destinations AppNavigation wires the DashSvc lambdas to.
-    val dashKeyRoutes = remember {
-        mapOf(
-            "vaccine" to com.lullabyai.app.ui.navigation.Screen.VaccineBook.route,
-            "growth" to com.lullabyai.app.ui.navigation.Screen.GrowthHistory.route,
-            "development" to com.lullabyai.app.ui.navigation.Screen.ChildDevelopment.route,
-            "health" to com.lullabyai.app.ui.navigation.Screen.ChildHealth.route,
-            "nutrition" to com.lullabyai.app.ui.navigation.Screen.Nutrition.route,
-            "sleep" to com.lullabyai.app.ui.navigation.Screen.SleepTracker.route
-        )
-    }
-    // One seed per app session: fresh on each launch, but stable across recomposition so cards never
-    // reshuffle under the user's finger. The nonce is bumped by the refresh button to re-roll.
-    val sessionSeed = androidx.compose.runtime.saveable.rememberSaveable { kotlin.random.Random.nextLong() }
-    var recommendNonce by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
-    val recommendations = remember(child?.id, child?.birthdate, recentKeys, recommendNonce) {
-        // Blank birthdate = unknown age (null), not newborn - see QuickActionCatalog.recommendForHome.
-        val ageMonths = child?.birthdate
-            ?.takeIf { it.isNotBlank() }
-            ?.let { com.lullabyai.app.data.VaccineSetupCatalog.ageMonthsFromBirthdate(it) }
-        com.lullabyai.app.data.QuickActionCatalog.recommendForHome(
-            ageMonths = ageMonths,
-            excludeRoutes = recentKeys.mapNotNull { dashKeyRoutes[it] }.toSet(),
-            seed = sessionSeed + (child?.id?.hashCode() ?: 0) * 31L + recommendNonce
-        )
     }
 
     Scaffold(
@@ -369,7 +404,10 @@ fun DashboardScreen(
                             subjectName = com.lullabyai.app.data.infoask.InfoAskCatalog.bannerSubjectName(
                                 childState.infoAsks, child?.name.orEmpty(), isThai
                             ),
-                            onOpenChildInfo = onNavigateToChild
+                            onOpenChildInfo = onNavigateToChild,
+                            onRecordNow = childState.infoAsks.firstNotNullOfOrNull {
+                                com.lullabyai.app.data.infoask.InfoAskCatalog.recordRoute(it.fieldId)
+                            }?.let { route -> { onNavigateToRoute(route) } }
                         )
                     }
 
@@ -429,7 +467,7 @@ fun DashboardScreen(
                             shape = RoundedCornerShape(18.dp),
                             colors = CardDefaults.cardColors(containerColor = DashCard),
                             border = BorderStroke(1.dp, DashBorder),
-                            elevation = CardDefaults.cardElevation(2.dp)
+                            elevation = CardDefaults.cardElevation(0.dp)
                         ) {
                             Row(
                                 modifier = Modifier.padding(14.dp),
@@ -470,26 +508,61 @@ fun DashboardScreen(
                         onClick = onNavigateToChat
                     )
 
-                    // SECTION: บันทึกด่วน (Quick Action)
+                    // SECTION: ครอบครัวของเรา — today, as facts, before anything else on the page.
+                    FamilyTodayCard(
+                        isThai = isThai,
+                        items = todayItems,
+                        warnings = urgentNotifications,
+                        onWarning = onNavigateToNotifications,
+                        onCalendar = onNavigateToCalendar,
+                        onTimetable = onNavigateToTimetable,
+                        onSummary = onNavigateToFamilySummary,
+                        onItem = { item ->
+                            when (item.kind) {
+                                com.lullabyai.app.util.TodayKind.MEDICINE_OVERDUE,
+                                com.lullabyai.app.util.TodayKind.MEDICINE_DUE,
+                                com.lullabyai.app.util.TodayKind.DONE_MEDICINE -> onNavigateToMedicationLog()
+                                com.lullabyai.app.util.TodayKind.SYMPTOM_LOG -> onNavigateToSickness()
+                                com.lullabyai.app.util.TodayKind.VACCINE -> onNavigateToVaccine()
+                            }
+                        }
+                    )
+
+                    // SECTION: การทำงานด่วน (Quick Action)
                     QuickActionSection(
                         isThai = isThai,
-                        onMilk = onNavigateToNutrition,
-                        onDiaper = onNavigateToHealth,
-                        onGrowth = onNavigateToGrowth,
-                        onSleep = onNavigateToSleep,
+                        onAppointments = onNavigateToAppointments,
+                        onVaccineBook = onNavigateToVaccine,
+                        onHealthBook = onNavigateToHealthBook,
+                        onSickness = onNavigateToSickness,
+                        onNutrition = onNavigateToNutrition,
+                        onMedication = onNavigateToMedicationLog,
                         onAddMore = onNavigateToQuickLog
                     )
 
-                    // SECTION: การแจ้งเตือน (Real notifications extracted from user data)
-                    NotificationAlertsSection(
-                        realNotifications = realNotifications,
-                        nextVaccine = nextVaccine,
-                        childName = child?.name,
-                        isThai = isThai,
-                        onViewAll = onNavigateToNotifications,
-                        onVaccineClick = onNavigateToVaccine,
-                        onDoctorClick = onNavigateToDevelopment
-                    )
+                    // SECTION: ลูกของคุณ — the children, doubling as the switcher.
+                    if (childState.children.isNotEmpty()) {
+                        YourChildrenCard(
+                            isThai = isThai,
+                            children = childState.children,
+                            activeChildId = child?.id,
+                            onSelect = { childViewModel.selectChild(it) },
+                            onAdd = onNavigateToAddChild
+                        )
+                    }
+
+                    // SECTION: ครอบครัว — who else is in this family.
+                    if (familyMembers.isNotEmpty()) {
+                        FamilyMembersCard(
+                            isThai = isThai,
+                            familyName = resolvedFamilyName,
+                            members = familyMembers,
+                            onManage = onNavigateToConnect
+                        )
+                    }
+
+                    // SECTION: เคล็ดลับ — one image-led card going to the full list.
+                    ParentTipsCard(isThai = isThai, onClick = onNavigateToTips)
 
                     // SECTION: what a caregiver has to do today. CareRoleViewModel excludes people
                     // with full access, so a parent never sees their own briefing as a duty.
@@ -515,37 +588,6 @@ fun DashboardScreen(
                         }
                     }
 
-                    // SECTION: ตารางกิจกรรม entry card - the "outside" half of Activity.
-                    if (hasActiveChild && !isGuest) {
-                        ActivityEntryCard(
-                            isThai = isThai,
-                            childId = child?.id,
-                            onOpen = {
-                                onNavigateToRoute(com.lullabyai.app.ui.navigation.Screen.ActivitySchedule.route)
-                            }
-                        )
-                    }
-
-                    // SECTION: บริการล่าสุด (Recent Services)
-                    RecentServicesSection(
-                        isThai = isThai,
-                        recentKeys = recentKeys,
-                        svcMap = svcMap
-                    )
-
-                    // SECTION: บริการแนะนำ (Recommended Services)
-                    if (recommendations.isNotEmpty()) {
-                        RecommendedServicesSection(
-                            isThai = isThai,
-                            children = childState.children,
-                            activeChildId = child?.id,
-                            recommendations = recommendations,
-                            onPickChild = { id -> childViewModel.selectChild(id) },
-                            onShuffle = { recommendNonce++ },
-                            onOpen = { route -> onNavigateToRoute(route) }
-                        )
-                    }
-
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -553,15 +595,6 @@ fun DashboardScreen(
     }
 }
 
-private data class DashSvc(
-    val key: String,
-    val label: String,
-    val subtitle: String,
-    val icon: ImageVector,
-    val bgColor: Color,
-    val iconColor: Color,
-    val nav: () -> Unit
-)
 
 /**
  * Top Header using Horinzol_Nobg.jpg Logo
@@ -703,6 +736,12 @@ private val DashLabel: Color
 private val DashBorder: Color
     @Composable @androidx.compose.runtime.ReadOnlyComposable
     get() = if (dashDark) MaterialTheme.colorScheme.outlineVariant else Color(0xffe5e7eb)
+private val DashOverdue: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) Color(0xFFFF6B8A) else Color(0xFFE11D48)
+private val DashDone: Color
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = if (dashDark) Color(0xFF4ADECB) else Color(0xFF16A394)
 private val DashBorderSoft: Color
     @Composable @androidx.compose.runtime.ReadOnlyComposable
     get() = if (dashDark) MaterialTheme.colorScheme.outlineVariant else Color(0xfff2f4f7)
@@ -801,9 +840,8 @@ private fun MonthlyMentalHealthBanner(
 ) {
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .shadow(3.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFF173DB8).copy(alpha = 0.10f)),
-        shape = RoundedCornerShape(22.dp),
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = DashCard),
         border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
     ) {
@@ -874,19 +912,19 @@ private fun HomeQuestionNoticeBanner(
     isThai: Boolean,
     questionCount: Int,
     subjectName: String,
-    onOpenChildInfo: () -> Unit
+    onOpenChildInfo: () -> Unit,
+    onRecordNow: (() -> Unit)? = null
 ) {
     Card(
-        onClick = onOpenChildInfo,
         modifier = Modifier
-            .fillMaxWidth()
-            .shadow(3.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFF173DB8).copy(alpha = 0.10f)),
-        shape = RoundedCornerShape(22.dp),
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = DashCard),
         border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
     ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.clickable(onClick = onOpenChildInfo),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -934,6 +972,21 @@ private fun HomeQuestionNoticeBanner(
                 modifier = Modifier.size(20.dp)
             )
         }
+        if (onRecordNow != null) {
+            Button(
+                onClick = onRecordNow,
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                shape = RoundedCornerShape(100.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Text(
+                    if (isThai) "บันทึกเลย" else "Record now",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+        }
+        }
     }
 }
 
@@ -947,9 +1000,9 @@ private fun HeroAiChatBannerCard(
 ) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(3.dp),
+        elevation = CardDefaults.cardElevation(0.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Box(
@@ -1022,109 +1075,552 @@ private fun HeroAiChatBannerCard(
 /**
  * Section: บันทึกด่วน (Quick Action) with 4 Pastel Tiles
  */
+/**
+ * ครอบครัวของเรา - today, stated rather than hinted at.
+ *
+ * The first draft of this card read "มีข้อมูลสำคัญที่ต้องดูแลวันนี้" and made a parent tap to find
+ * out whether she should be worried. That is the anxious way of saying nothing. Every line here is
+ * a fact with a time on it, straight from TodayPlan, and when nothing is outstanding the card says
+ * so plainly instead of implying something looms.
+ */
+/**
+ * เคล็ดลับดูแลลูกน้อยในแต่ละช่วงวัย.
+ *
+ * Image-led, because that is what makes a parent stop on it - and the mascot is the app own art
+ * rather than a stock photograph of somebody else family.
+ */
+/**
+ * ลูกของคุณ — every child, and which one the app is currently showing.
+ *
+ * Tapping a row switches the active child through the same selectChild the header switcher and the
+ * quick-action picker call, so all three always agree about who is selected.
+ */
 @Composable
-private fun QuickActionSection(
+private fun YourChildrenCard(
     isThai: Boolean,
-    onMilk: () -> Unit,
-    onDiaper: () -> Unit,
-    onGrowth: () -> Unit,
-    onSleep: () -> Unit,
-    onAddMore: () -> Unit
+    children: List<com.lullabyai.app.data.model.Child>,
+    activeChildId: String?,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = DashCard),
-        elevation = CardDefaults.cardElevation(2.dp),
+        elevation = CardDefaults.cardElevation(0.dp),
         border = BorderStroke(1.dp, DashBorderSoft),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    if (isThai) "ลูกของคุณ" else "Your children",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = DashTitle
+                )
+                Text(
+                    if (isThai) "เพิ่มลูก" else "Add",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100.dp))
+                        .clickable { onAdd() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
+            children.forEach { c ->
+                com.lullabyai.app.ui.screens.child.ChildPickRow(
+                    child = c,
+                    birthOrderLabel = com.lullabyai.app.ui.screens.child.birthOrderLabel(
+                        children, c, isThai
+                    ),
+                    selected = c.id == activeChildId,
+                    isThai = isThai,
+                    onClick = { onSelect(c.id) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * ครอบครัว — who else is in this family.
+ *
+ * Only members flagged is_family appear. That flag is set deliberately when a membership is
+ * approved and is never derived from the role name, so a nanny stays out of this list however her
+ * role happens to be spelled - including under a custom role the family invented.
+ */
+@Composable
+private fun FamilyMembersCard(
+    isThai: Boolean,
+    familyName: String,
+    members: List<com.lullabyai.app.data.model.ChildAccessMember>,
+    onManage: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = BorderStroke(1.dp, DashBorderSoft),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Primary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Diversity3, null,
+                            tint = Primary, modifier = Modifier.size(17.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
                     Text(
-                        text = if (isThai) "บันทึกด่วน (Quick Action)" else "Quick Action",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        ),
-                        color = DashTitle
-                    )
-                    Text(
-                        text = if (isThai) "บันทึกข้อมูลสำคัญได้ง่ายๆ เพียงปลายนิ้ว" else "Log key baby telemetry in one tap",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = DashSubtle
+                        familyName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = DashTitle,
+                        maxLines = 1
                     )
                 }
+                Text(
+                    if (isThai) "จัดการ" else "Manage",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100.dp))
+                        .clickable { onManage() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
 
-                Surface(
-                    onClick = onAddMore,
-                    shape = CircleShape,
-                    color = Color(0xFF173DB8),
-                    shadowElevation = 2.dp,
-                    modifier = Modifier.size(36.dp)
+            members.forEach { m ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = if (isThai) "เพิ่มบันทึก" else "Add Log",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Primary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            m.displayName.trim().take(2).ifBlank { "?" },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Primary
+                        )
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            m.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = DashTitle,
+                            maxLines = 1
+                        )
+                        Text(
+                            // A family that renamed a role gets its own wording; everyone else
+                            // gets the standard label rather than a bare role key.
+                            (if (isThai) m.roleNameTh else m.roleNameEn)
+                                ?.takeIf { it.isNotBlank() }
+                                ?: com.lullabyai.app.viewmodel.AccessRoleLabels.title(m.role, isThai),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = DashBody
                         )
                     }
                 }
             }
+        }
+    }
+}
 
+@Composable
+private fun ParentTipsCard(isThai: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(DashCard)
+            .border(1.dp, DashBorderSoft, RoundedCornerShape(18.dp))
+            .clickable { onClick() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            Modifier
+                .size(62.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Primary.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(
+                    com.lullabyai.app.R.drawable.mascot_reading
+                ),
+                contentDescription = null,
+                modifier = Modifier.size(52.dp)
+            )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                if (isThai) "เคล็ดลับดูแลลูกน้อยในแต่ละช่วงวัย"
+                else "Caring for your child, age by age",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = DashTitle
+            )
+            Text(
+                if (isThai) "ข้อมูลที่คุณแม่ควรรู้ เพื่อสุขภาพที่ดี"
+                else "Worth knowing, in a couple of minutes",
+                style = MaterialTheme.typography.labelMedium,
+                color = DashBody
+            )
+        }
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = DashSubtle,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+private fun FamilyTodayCard(
+    isThai: Boolean,
+    items: List<com.lullabyai.app.util.TodayItem>,
+    warnings: List<AppNotification>,
+    onWarning: () -> Unit,
+    onCalendar: () -> Unit,
+    onTimetable: () -> Unit,
+    onSummary: () -> Unit,
+    onItem: (com.lullabyai.app.util.TodayItem) -> Unit
+) {
+    // The child name is only worth the space when more than one child has something on the card.
+    val showNames = items.map { it.childId }.distinct().size > 1
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = BorderStroke(1.dp, DashBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.CalendarMonth, null, tint = Primary, modifier = Modifier.size(17.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (isThai) "ครอบครัวของเรา" else "Our family",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = DashTitle
+                )
+            }
+
+            // A warning outranks anything the rows can say: it is the app reporting that something
+            // went wrong, not a scheduled task. Big and red, above every dose and vaccine.
+            warnings.forEach { warning ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DashOverdue.copy(alpha = 0.12f))
+                        .clickable { onWarning() }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = DashOverdue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            warning.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = DashOverdue
+                        )
+                        warning.body?.takeIf { it.isNotBlank() }?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = DashOverdue,
+                                maxLines = 2
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (items.isEmpty() && warnings.isEmpty()) {
+                Text(
+                    if (isThai) "วันนี้ยังไม่มีอะไรต้องทำค่ะ" else "Nothing needs doing today.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = DashBody
+                )
+            } else {
+                items.forEach { item -> TodayRow(item, isThai, showNames) { onItem(item) } }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TodayCardButton(
+                    if (isThai) "ปฏิทิน" else "Calendar",
+                    Icons.Filled.CalendarMonth, Modifier.weight(1f), onCalendar
+                )
+                TodayCardButton(
+                    if (isThai) "ตารางเวลา" else "Timetable",
+                    Icons.Filled.ViewAgenda, Modifier.weight(1f), onTimetable
+                )
+                TodayCardButton(
+                    if (isThai) "สรุป" else "Summary",
+                    Icons.Filled.Description, Modifier.weight(1f), onSummary
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One line of today.
+ *
+ * Only an overdue dose is tinted. Everything else is ordinary text: when three lines shout, the one
+ * that matters stops being heard.
+ */
+@Composable
+private fun TodayRow(
+    item: com.lullabyai.app.util.TodayItem,
+    isThai: Boolean,
+    showName: Boolean,
+    onClick: () -> Unit
+) {
+    val overdue = item.kind == com.lullabyai.app.util.TodayKind.MEDICINE_OVERDUE
+    val done = item.kind == com.lullabyai.app.util.TodayKind.DONE_MEDICINE
+    val accent = when {
+        overdue -> DashOverdue
+        done -> DashDone
+        else -> Primary
+    }
+    val icon = when (item.kind) {
+        com.lullabyai.app.util.TodayKind.MEDICINE_OVERDUE,
+        com.lullabyai.app.util.TodayKind.MEDICINE_DUE -> Icons.Filled.Medication
+        com.lullabyai.app.util.TodayKind.DONE_MEDICINE -> Icons.Filled.CheckCircle
+        com.lullabyai.app.util.TodayKind.SYMPTOM_LOG -> Icons.Filled.MonitorHeart
+        com.lullabyai.app.util.TodayKind.VACCINE -> Icons.Filled.Vaccines
+    }
+    val text = when (item.kind) {
+        com.lullabyai.app.util.TodayKind.MEDICINE_OVERDUE ->
+            if (isThai) "ยามื้อ " + item.time + " ยังไม่ได้ให้" else "Dose at " + item.time + " not given"
+        com.lullabyai.app.util.TodayKind.MEDICINE_DUE ->
+            if (isThai) "ยามื้อถัดไป " + item.time else "Next dose at " + item.time
+        com.lullabyai.app.util.TodayKind.DONE_MEDICINE ->
+            if (isThai) "ให้ยามื้อ " + item.time + " แล้ว" else "Dose at " + item.time + " given"
+        com.lullabyai.app.util.TodayKind.SYMPTOM_LOG -> {
+            val day = item.dayNumber
+            if (isThai) {
+                if (day != null) "บันทึกอาการวันนี้ · ป่วยวันที่ " + day else "บันทึกอาการวันนี้"
+            } else {
+                if (day != null) "Log symptoms today · day " + day else "Log symptoms today"
+            }
+        }
+        com.lullabyai.app.util.TodayKind.VACCINE -> {
+            val name = item.label
+            val on = com.lullabyai.app.util.TimeUtils.localDayMonth(item.date) ?: item.date.orEmpty()
+            if (isThai) {
+                if (name != null) "วัคซีน " + name + " · " + on else "วัคซีนเข็มถัดไป " + on
+            } else {
+                if (name != null) name + " vaccine · " + on else "Next vaccine " + on
+            }
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .then(if (overdue) Modifier.background(accent.copy(alpha = 0.10f)) else Modifier)
+            .clickable { onClick() }
+            .padding(horizontal = if (overdue) 10.dp else 2.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Icon(icon, null, tint = accent, modifier = Modifier.size(17.dp))
+        Text(
+            text = if (showName) item.childName + " · " + text else text,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal,
+            color = if (overdue) accent else if (done) DashSubtle else DashLabel,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun TodayCardButton(
+    label: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, DashBorder, RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = Primary, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = DashLabel, maxLines = 1)
+    }
+}
+
+@Composable
+private fun QuickActionSection(
+    isThai: Boolean,
+    onAppointments: () -> Unit,
+    onVaccineBook: () -> Unit,
+    onHealthBook: () -> Unit,
+    onSickness: () -> Unit,
+    onNutrition: () -> Unit,
+    onMedication: () -> Unit,
+    onAddMore: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = BorderStroke(1.dp, DashBorderSoft),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isThai) "การทำงานด่วน" else "Quick actions",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    color = DashTitle
+                )
+                Text(
+                    text = if (isThai) "ดูทั้งหมด" else "See all",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100.dp))
+                        .clickable { onAddMore() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
+            // The six the owner specified. Half of them WRITE a record rather than open a hub,
+            // which is the point: a parent logs a feed a dozen times a day and reads a benefits
+            // page once, so this row is ordered by how often a hand reaches for each thing.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickActionTile(
-                    label = if (isThai) "บันทึกการให้นม" else "Feeding",
-                    icon = Icons.Filled.LocalDrink,
-                    bgColor = Color(0xFFFFF0F3),
-                    iconColor = Color(0xFFFF5277),
-                    modifier = Modifier.weight(1f),
-                    onClick = onMilk
-                )
-
-                Spacer(Modifier.width(8.dp))
-
-                QuickActionTile(
-                    label = if (isThai) "บันทึกการขับถ่าย" else "Diaper",
-                    icon = Icons.Filled.BabyChangingStation,
+                    label = if (isThai) "นัดหมาย" else "Appointments",
+                    icon = Icons.Filled.EventNote,
                     bgColor = Color(0xFFEDF4FF),
                     iconColor = Color(0xFF3B82F6),
                     modifier = Modifier.weight(1f),
-                    onClick = onDiaper
+                    onClick = onAppointments
                 )
-
-                Spacer(Modifier.width(8.dp))
-
                 QuickActionTile(
-                    label = if (isThai) "บันทึกการเจริญเติบโต" else "Growth",
-                    icon = Icons.Filled.Straighten,
+                    label = if (isThai) "สมุดวัคซีน" else "Vaccines",
+                    icon = Icons.Filled.Vaccines,
                     bgColor = Color(0xFFEDFCF2),
                     iconColor = Color(0xFF10B981),
                     modifier = Modifier.weight(1f),
-                    onClick = onGrowth
+                    onClick = onVaccineBook
                 )
-
-                Spacer(Modifier.width(8.dp))
-
                 QuickActionTile(
-                    label = if (isThai) "บันทึกการนอน" else "Sleep",
-                    icon = Icons.Filled.Bedtime,
+                    label = if (isThai) "สมุดสุขภาพ" else "Health book",
+                    icon = Icons.Filled.MenuBook,
+                    bgColor = Color(0xFFF5F3FF),
+                    iconColor = Color(0xFF7C3AED),
+                    modifier = Modifier.weight(1f),
+                    onClick = onHealthBook
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                QuickActionTile(
+                    label = if (isThai) "บันทึกการป่วย" else "Log illness",
+                    icon = Icons.Filled.MonitorHeart,
+                    bgColor = Color(0xFFFFF1F3),
+                    iconColor = DashOverdue,
+                    modifier = Modifier.weight(1f),
+                    onClick = onSickness
+                )
+                QuickActionTile(
+                    label = if (isThai) "โภชนาการ" else "Nutrition",
+                    icon = Icons.Filled.Restaurant,
                     bgColor = Color(0xFFFFF9E6),
                     iconColor = Color(0xFFF59E0B),
                     modifier = Modifier.weight(1f),
-                    onClick = onSleep
+                    onClick = onNutrition
+                )
+                QuickActionTile(
+                    label = if (isThai) "บันทึกการทานยา" else "Medication",
+                    icon = Icons.Filled.Medication,
+                    bgColor = Color(0xFFEDFCF2),
+                    iconColor = Color(0xFF16A394),
+                    modifier = Modifier.weight(1f),
+                    onClick = onMedication
                 )
             }
         }
@@ -1172,629 +1668,6 @@ private fun QuickActionTile(
             maxLines = 2
         )
     }
-}
-
-/**
- * Section: การแจ้งเตือน (Real notifications extracted from user notifications)
- */
-@Composable
-private fun NotificationAlertsSection(
-    realNotifications: List<AppNotification>,
-    nextVaccine: Pair<com.lullabyai.app.data.model.VaccineRecord, LocalDate>?,
-    childName: String?,
-    isThai: Boolean,
-    onViewAll: () -> Unit,
-    onVaccineClick: () -> Unit,
-    onDoctorClick: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = DashCard),
-        elevation = CardDefaults.cardElevation(2.dp),
-        border = BorderStroke(1.dp, DashBorderSoft),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isThai) "การแจ้งเตือน" else "Notifications",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    ),
-                    color = DashTitle
-                )
-
-                TextButton(
-                    onClick = onViewAll,
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = if (isThai) "ดูทั้งหมด" else "View all",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        ),
-                        color = DashPrimaryText
-                    )
-                }
-            }
-
-            // Select and rank the 2 most important notifications
-            data class DisplayNotification(
-                val id: String,
-                val title: String,
-                val subtitle: String,
-                val isUrgent: Boolean,
-                val tagText: String,
-                val icon: ImageVector,
-                val onClick: () -> Unit
-            )
-
-            val displayItems = remember(realNotifications, nextVaccine, childName, isThai) {
-                val items = mutableListOf<DisplayNotification>()
-
-                // 1. Process real DB notifications
-                realNotifications.forEach { notif ->
-                    val isWarning = notif.category == "warning" ||
-                            notif.title.contains("ด่วน") ||
-                            notif.title.contains("เตือน") ||
-                            notif.title.contains("ระวัง") ||
-                            notif.title.contains("ไข้")
-                    val isSchedule = notif.category == "schedule" ||
-                            notif.title.contains("นัด") ||
-                            notif.title.contains("ตรวจ")
-
-                    items.add(
-                        DisplayNotification(
-                            id = notif.id,
-                            title = notif.title,
-                            subtitle = notif.body ?: notif.createdAt?.take(10) ?: "",
-                            isUrgent = isWarning,
-                            tagText = if (isWarning) (if (isThai) "ด่วน" else "Urgent")
-                            else if (isSchedule) (if (isThai) "นัดหมาย" else "Schedule")
-                            else (if (isThai) "แจ้งเตือน" else "Notice"),
-                            icon = if (isWarning) Icons.Filled.Warning
-                            else if (isSchedule) Icons.Filled.CalendarMonth
-                            else Icons.Filled.Notifications,
-                            onClick = onViewAll
-                        )
-                    )
-                }
-
-                // 2. If we need items to reach 2, supplement with real child clinical milestones/vaccines
-                val displayChild = childName?.takeIf { it.isNotBlank() } ?: (if (isThai) "น้องรัก" else "Leo")
-                val vaccineName = nextVaccine?.first?.vaccineName ?: "วัคซีน MMR"
-                val days = if (nextVaccine != null) {
-                    ChronoUnit.DAYS.between(LocalDate.now(), nextVaccine.second).toInt()
-                } else 3
-                val isVaccineUrgent = days <= 3
-
-                // Add vaccine notification if not enough items
-                if (items.none { it.title.contains("วัคซีน") }) {
-                    items.add(
-                        DisplayNotification(
-                            id = "vaccine_due",
-                            title = if (isThai) "นัดฉีดวัคซีน: $vaccineName สำหรับน้อง$displayChild" else "Vaccine: $vaccineName for $displayChild",
-                            subtitle = if (days <= 0) (if (isThai) "ถึงกำหนดวันนี้ ดำเนินการด่วน" else "Due today - Urgent")
-                            else (if (isThai) "มีนัดในอีก $days วัน (25 พ.ค. 2567)" else "Due in $days days"),
-                            isUrgent = isVaccineUrgent,
-                            tagText = if (isVaccineUrgent) (if (isThai) "ด่วน" else "Urgent") else (if (isThai) "นัดหมาย" else "Schedule"),
-                            icon = if (isVaccineUrgent) Icons.Filled.NotificationsActive else Icons.Filled.Vaccines,
-                            onClick = onVaccineClick
-                        )
-                    )
-                }
-
-                // Add developmental checkup / doctor visit if not enough items
-                if (items.size < 2) {
-                    items.add(
-                        DisplayNotification(
-                            id = "doctor_checkup",
-                            title = if (isThai) "นัดหมายพบแพทย์: ตรวจพัฒนาการ" else "Doctor Visit: Milestones Check",
-                            subtitle = if (isThai) "30 พ.ค. 2567 เวลา 10:00 น. (คลินิกเด็กดี)" else "30 May 2024 at 10:00 AM",
-                            isUrgent = false,
-                            tagText = if (isThai) "กำหนดการ" else "Appointment",
-                            icon = Icons.Filled.CalendarMonth,
-                            onClick = onDoctorClick
-                        )
-                    )
-                }
-
-                // Sort: Urgent items first (Red), then by timestamp / importance, take top 2
-                items.sortedByDescending { it.isUrgent }.take(2)
-            }
-
-            // Render the 2 most important notifications with distinct styles
-            displayItems.forEach { item ->
-                NotificationItemCard(
-                    title = item.title,
-                    subtitle = item.subtitle,
-                    isUrgent = item.isUrgent,
-                    tagText = item.tagText,
-                    icon = item.icon,
-                    onClick = item.onClick
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun NotificationItemCard(
-    title: String,
-    subtitle: String,
-    isUrgent: Boolean,
-    tagText: String,
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    // Dynamic theme: Red for urgent, Soft Blue for scheduled/normal. Dark keeps the hue as low-alpha
-    // washes under a lighter accent, matching the Recent Services cards.
-    val dark = com.lullabyai.app.ui.theme.LocalDarkTheme.current
-    val accentColor = when {
-        dark && isUrgent -> Color(0xFFFB7185)
-        dark -> Color(0xFF60A5FA)
-        isUrgent -> Color(0xFFE11D48)
-        else -> Color(0xFF2563EB)
-    }
-    val cardBg = when {
-        dark -> accentColor.copy(alpha = 0.10f)
-        isUrgent -> Color(0xFFFFF5F5)
-        else -> Color(0xFFF0F7FF)
-    }
-    val borderColor = when {
-        dark -> accentColor.copy(alpha = 0.30f)
-        isUrgent -> Color(0xFFFFD1D6)
-        else -> Color(0xFFDBEAFE)
-    }
-    val iconBg = when {
-        dark -> accentColor.copy(alpha = 0.20f)
-        isUrgent -> Color(0xFFFFE4E6)
-        else -> Color(0xFFDBEAFE)
-    }
-    val tagBg = when {
-        dark -> accentColor.copy(alpha = 0.20f)
-        isUrgent -> Color(0xFFFFE4E6)
-        else -> Color(0xFFE0EDFE)
-    }
-
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = cardBg,
-        border = BorderStroke(1.dp, borderColor),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Icon container
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(iconBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, null, tint = accentColor, modifier = Modifier.size(22.dp))
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        ),
-                        color = DashNotifTitle,
-                        modifier = Modifier.weight(1f, fill = false),
-                        maxLines = 1
-                    )
-
-                    Spacer(Modifier.width(6.dp))
-
-                    // Badge Pill (e.g. "ด่วน" in red or "นัดหมาย" in blue)
-                    Surface(
-                        shape = RoundedCornerShape(100.dp),
-                        color = tagBg,
-                        modifier = Modifier.padding(start = 4.dp)
-                    ) {
-                        Text(
-                            text = tagText,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            ),
-                            color = accentColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 11.sp,
-                        fontWeight = if (isUrgent) FontWeight.SemiBold else FontWeight.Normal
-                    ),
-                    color = accentColor
-                )
-            }
-
-            Icon(
-                Icons.Filled.ChevronRight,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-/**
- * Section: บริการล่าสุด (Recent Services) with 4 Square Cards
- */
-@Composable
-private fun RecentServicesSection(
-    isThai: Boolean,
-    recentKeys: List<String>,
-    svcMap: Map<String, DashSvc>
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = if (isThai) "บริการล่าสุด" else "Recent Services",
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            ),
-            color = DashTitle,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            recentKeys.forEach { key ->
-                svcMap[key]?.let { svc ->
-                    RecentServiceCard(
-                        title = svc.label,
-                        subtitle = svc.subtitle,
-                        icon = svc.icon,
-                        iconBg = svc.bgColor,
-                        iconTint = svc.iconColor,
-                        modifier = Modifier.weight(1f),
-                        onClick = svc.nav
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecentServiceCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconBg: Color,
-    iconTint: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    // Light mode keeps this page's exact existing colours; dark mode moves to theme tokens. Pastel
-    // icon backgrounds glare on a dark card, so dark mode uses a wash of the icon's own tint instead.
-    val dark = LocalDarkTheme.current
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = if (dark) scheme.surfaceContainerHigh else Color.White,
-        shadowElevation = if (dark) 0.dp else 2.dp,
-        border = BorderStroke(1.dp, if (dark) scheme.outlineVariant else DashBorderSoft),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (dark) iconTint.copy(alpha = 0.18f) else iconBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, null, tint = iconTint, modifier = Modifier.size(24.dp))
-            }
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    ),
-                    color = if (dark) scheme.onSurface else DashTitle,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 9.sp
-                    ),
-                    color = if (dark) scheme.onSurfaceVariant else DashSubtle,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1
-                )
-            }
-        }
-    }
-}
-
-/**
- * Section: บริการแนะนำ (Recommended Services).
- *
- * A row of child chips, then four random suggestions from QuickActionCatalog tailored to the
- * active child's age. Tapping a chip makes that child active app-wide - the same selectChild the
- * rest of the app uses - which re-rolls the suggestions for their age. Cards reuse
- * RecentServiceCard so the two sections read as one design.
- */
-@Composable
-private fun RecommendedServicesSection(
-    isThai: Boolean,
-    children: List<com.lullabyai.app.data.model.Child>,
-    activeChildId: String?,
-    recommendations: List<com.lullabyai.app.data.QuickAction>,
-    onPickChild: (String) -> Unit,
-    onShuffle: () -> Unit,
-    onOpen: (String) -> Unit
-) {
-    val dark = LocalDarkTheme.current
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (isThai) "บริการแนะนำ" else "Recommended for You",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                ),
-                color = if (dark) scheme.onSurface else DashTitle,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onShuffle, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Filled.Refresh,
-                    contentDescription = if (isThai) "สุ่มบริการใหม่" else "Shuffle suggestions",
-                    tint = if (dark) scheme.primary else Primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-
-        if (children.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                children.forEach { c ->
-                    val selected = c.id == activeChildId
-                    Surface(
-                        onClick = { onPickChild(c.id) },
-                        shape = RoundedCornerShape(100.dp),
-                        color = when {
-                            selected && dark -> scheme.primary
-                            selected -> Primary
-                            dark -> scheme.surfaceContainerHigh
-                            else -> Color.White
-                        },
-                        border = if (selected) null
-                        else BorderStroke(1.dp, if (dark) scheme.outlineVariant else DashBorder)
-                    ) {
-                        Text(
-                            text = c.name.ifBlank { if (isThai) "ลูก" else "Child" },
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold
-                            ),
-                            color = when {
-                                selected && dark -> scheme.onPrimary
-                                selected -> Color.White
-                                dark -> scheme.onSurfaceVariant
-                                else -> DashLabel
-                            },
-                            maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            recommendations.forEach { a ->
-                RecentServiceCard(
-                    title = if (isThai) a.labelTh else a.labelEn,
-                    subtitle = (if (isThai) a.subtitleTh else a.subtitleEn).orEmpty(),
-                    icon = a.icon,
-                    iconBg = a.iconBg,
-                    iconTint = a.iconTint,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen(a.route) }
-                )
-            }
-            // Keep card widths identical to บริการล่าสุด if fewer than four come back.
-            repeat((4 - recommendations.size).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
-        }
-    }
-}
-
-/**
- * Section: ตารางกิจกรรม entry card - the "outside" half of Activity.
- *
- * Shows the next upcoming activity and how many are planned for the coming week, and opens the full
- * Activity screen. A failed load says so on the card rather than pretending the week is empty.
- */
-@Composable
-private fun ActivityEntryCard(
-    isThai: Boolean,
-    childId: String?,
-    onOpen: () -> Unit
-) {
-    val dark = LocalDarkTheme.current
-    val scheme = MaterialTheme.colorScheme
-    val repo = remember { com.lullabyai.app.data.repository.ChildRepository() }
-
-    // null while loading; otherwise the week's activities or the failure to report.
-    var week by remember(childId) {
-        mutableStateOf<Result<List<com.lullabyai.app.data.model.ChildActivity>>?>(null)
-    }
-    LaunchedEffect(childId) {
-        if (childId == null) return@LaunchedEffect
-        val zone = java.time.ZoneId.systemDefault()
-        // From the start of today, so an all-day entry for today still counts.
-        val from = java.time.LocalDate.now().atStartOfDay(zone).toOffsetDateTime()
-        week = repo.listActivities(childId, from.toString(), from.plusDays(8).toString())
-            .map { list ->
-                list.sortedBy {
-                    runCatching { java.time.OffsetDateTime.parse(it.startsAt).toInstant() }
-                        .getOrNull() ?: java.time.Instant.MAX
-                }
-            }
-    }
-
-    val now = java.time.OffsetDateTime.now()
-    val next = week?.getOrNull()?.firstOrNull { a ->
-        a.allDay || (runCatching { java.time.OffsetDateTime.parse(a.startsAt) }.getOrNull()
-            ?.isAfter(now) ?: false)
-    }
-
-    Surface(
-        onClick = onOpen,
-        shape = RoundedCornerShape(18.dp),
-        color = if (dark) scheme.surfaceContainerHigh else Color.White,
-        shadowElevation = if (dark) 0.dp else 2.dp,
-        border = BorderStroke(1.dp, if (dark) scheme.outlineVariant else DashBorderSoft),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (dark) scheme.primary.copy(alpha = 0.18f) else Color(0xFFEEF2FF)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.Event,
-                    contentDescription = null,
-                    tint = if (dark) scheme.primary else Color(0xFF173DB8),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = if (isThai) "ตารางกิจกรรม" else "Activity Schedule",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = if (dark) scheme.onSurface else DashTitle
-                )
-                val result = week
-                val failed = result?.isFailure == true
-                Text(
-                    text = when {
-                        result == null -> if (isThai) "กำลังโหลด…" else "Loading…"
-                        failed -> if (isThai) "โหลดตารางไม่สำเร็จ แตะเพื่อเปิดดู"
-                        else "Couldn't load the schedule — tap to open"
-                        next != null -> "${next.title} • ${formatActivityWhen(next, isThai)}"
-                        else -> if (isThai) "ยังไม่มีกิจกรรมใน 7 วันข้างหน้า แตะเพื่อวางแผน"
-                        else "Nothing in the next 7 days — tap to plan"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = when {
-                        failed -> if (dark) scheme.error else Color(0xFFB42318)
-                        dark -> scheme.onSurfaceVariant
-                        else -> DashSubtle
-                    },
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-                val count = result?.getOrNull()?.size ?: 0
-                if (count > 0) {
-                    Text(
-                        text = if (isThai) "7 วันข้างหน้า: $count รายการ" else "Next 7 days: $count",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (dark) scheme.primary else Color(0xFF173DB8)
-                    )
-                }
-            }
-            Icon(
-                Icons.Filled.ChevronRight,
-                contentDescription = null,
-                tint = if (dark) scheme.onSurfaceVariant else Color(0xFF98A2B3),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-/** "ศ. 12 ก.ย. 09:00" - date only for all-day entries. */
-private fun formatActivityWhen(a: com.lullabyai.app.data.model.ChildActivity, isThai: Boolean): String {
-    val at = runCatching {
-        java.time.OffsetDateTime.parse(a.startsAt).atZoneSameInstant(java.time.ZoneId.systemDefault())
-    }.getOrNull() ?: return ""
-    val locale = if (isThai) java.util.Locale("th", "TH") else java.util.Locale.ENGLISH
-    val pattern = if (a.allDay) "EEE d MMM" else "EEE d MMM HH:mm"
-    return at.format(java.time.format.DateTimeFormatter.ofPattern(pattern, locale))
 }
 
 @Composable

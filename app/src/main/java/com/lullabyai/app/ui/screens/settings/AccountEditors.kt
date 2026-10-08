@@ -43,7 +43,10 @@ import java.io.ByteArrayOutputStream
  * The registered email is deliberately NOT here (owner, 2026-09-18): the address someone signed up
  * with is fixed, so it is shown read-only and can only be verified, never changed.
  */
-enum class AccountField { USERNAME, FULL_NAME, PHONE }
+enum class AccountField { USERNAME, FULL_NAME, PHONE, FAMILY_NAME }
+
+/** profiles_family_name_length caps this in Postgres; the dialog says so before the save fails. */
+private const val MAX_FAMILY_NAME = 40
 
 private const val MAX_NAME = 50
 private const val AVATAR_PX = 512
@@ -71,6 +74,7 @@ fun EditAccountFieldDialog(
         AccountField.USERNAME -> if (isThai) "แก้ไขชื่อผู้ใช้" else "Edit username"
         AccountField.FULL_NAME -> if (isThai) "แก้ไขชื่อ-นามสกุล" else "Edit full name"
         AccountField.PHONE -> if (isThai) "แก้ไขเบอร์โทรศัพท์" else "Edit phone number"
+        AccountField.FAMILY_NAME -> if (isThai) "ชื่อครอบครัว" else "Family name"
     }
 
     fun save() {
@@ -81,6 +85,14 @@ fun EditAccountFieldDialog(
             AccountField.USERNAME -> when {
                 value.isEmpty() -> if (isThai) "กรุณากรอกชื่อผู้ใช้" else "Enter a username"
                 value.length > MAX_NAME -> if (isThai) "ยาวได้ไม่เกิน $MAX_NAME ตัวอักษร" else "At most $MAX_NAME characters"
+                else -> null
+            }
+            AccountField.FAMILY_NAME -> when {
+                // Empty is allowed and meaningful: it clears the name, and the home screen goes
+                // back to its default heading rather than showing a blank one.
+                value.length > MAX_FAMILY_NAME ->
+                    if (isThai) "ยาวได้ไม่เกิน $MAX_FAMILY_NAME ตัวอักษร"
+                    else "At most $MAX_FAMILY_NAME characters"
                 else -> null
             }
             AccountField.FULL_NAME -> when {
@@ -107,6 +119,7 @@ fun EditAccountFieldDialog(
                 AccountField.USERNAME -> repo.updateProfileField("username", value).map { }
                 AccountField.FULL_NAME -> repo.updateProfileField("full_name", value).map { }
                 AccountField.PHONE -> repo.updateProfileField("phone", value.ifEmpty { null }?.let { ThaiPhone.normalize(it) }).map { }
+                AccountField.FAMILY_NAME -> repo.updateProfileField("family_name", value.ifEmpty { null }).map { }
             }
             saving = false
             result.onSuccess {
