@@ -502,11 +502,22 @@ fun DashboardScreen(
                         }
                     }
 
-                    // HERO CARD: คุยกับ AI ผู้ช่วย (Chat with AI Assistant Banner)
-                    HeroAiChatBannerCard(
-                        isThai = isThai,
-                        onClick = onNavigateToChat
-                    )
+                    // SECTION: ลูกของคุณ — the children, doubling as the switcher.
+                    if (childState.children.isNotEmpty()) {
+                        YourChildrenCard(
+                            isThai = isThai,
+                            children = childState.children,
+                            activeChildId = child?.id,
+                            onSelect = { id ->
+                                // Select first, then open: Child Info reads the ACTIVE child, so
+                                // navigating before the switch would show the previous child for a
+                                // frame and then swap under her.
+                                childViewModel.selectChild(id)
+                                onNavigateToChild()
+                            },
+                            onAdd = onNavigateToAddChild
+                        )
+                    }
 
                     // SECTION: ครอบครัวของเรา — today, as facts, before anything else on the page.
                     FamilyTodayCard(
@@ -528,6 +539,22 @@ fun DashboardScreen(
                         }
                     )
 
+                    // SECTION: ครอบครัว — who else is in this family.
+                    if (familyMembers.isNotEmpty()) {
+                        FamilyMembersCard(
+                            isThai = isThai,
+                            familyName = resolvedFamilyName,
+                            members = familyMembers,
+                            onManage = onNavigateToConnect
+                        )
+                    }
+
+                    // HERO CARD: คุยกับ AI ผู้ช่วย (Chat with AI Assistant Banner)
+                    HeroAiChatBannerCard(
+                        isThai = isThai,
+                        onClick = onNavigateToChat
+                    )
+
                     // SECTION: การทำงานด่วน (Quick Action)
                     QuickActionSection(
                         isThai = isThai,
@@ -539,27 +566,6 @@ fun DashboardScreen(
                         onMedication = onNavigateToMedicationLog,
                         onAddMore = onNavigateToQuickLog
                     )
-
-                    // SECTION: ลูกของคุณ — the children, doubling as the switcher.
-                    if (childState.children.isNotEmpty()) {
-                        YourChildrenCard(
-                            isThai = isThai,
-                            children = childState.children,
-                            activeChildId = child?.id,
-                            onSelect = { childViewModel.selectChild(it) },
-                            onAdd = onNavigateToAddChild
-                        )
-                    }
-
-                    // SECTION: ครอบครัว — who else is in this family.
-                    if (familyMembers.isNotEmpty()) {
-                        FamilyMembersCard(
-                            isThai = isThai,
-                            familyName = resolvedFamilyName,
-                            members = familyMembers,
-                            onManage = onNavigateToConnect
-                        )
-                    }
 
                     // SECTION: เคล็ดลับ — one image-led card going to the full list.
                     ParentTipsCard(isThai = isThai, onClick = onNavigateToTips)
@@ -1090,10 +1096,11 @@ private fun HeroAiChatBannerCard(
  * rather than a stock photograph of somebody else family.
  */
 /**
- * ลูกของคุณ — every child, and which one the app is currently showing.
+ * ลูกของคุณ — the children, as a row you scroll rather than a list you scroll past.
  *
- * Tapping a row switches the active child through the same selectChild the header switcher and the
- * quick-action picker call, so all three always agree about who is selected.
+ * Horizontal because this is a chooser, not content: three children should cost a glance, not a
+ * third of the screen. Tapping one makes it the active child AND opens Child Info on it, so
+ * choosing and going are a single gesture.
  */
 @Composable
 private fun YourChildrenCard(
@@ -1111,51 +1118,71 @@ private fun YourChildrenCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            Text(
+                if (isThai) "ลูกของคุณ" else "Your children",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = DashTitle,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    if (isThai) "ลูกของคุณ" else "Your children",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = DashTitle
-                )
-                Text(
-                    if (isThai) "เพิ่มลูก" else "Add",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Primary,
+                children.forEach { c ->
+                    PersonChip(
+                        label = c.name,
+                        caption = ageCaption(c.birthdate, isThai),
+                        avatarUrl = c.avatarUrl,
+                        fallbackIcon = Icons.Filled.ChildCare,
+                        selected = c.id == activeChildId,
+                        onClick = { onSelect(c.id) }
+                    )
+                }
+                // Adding a child is the same shape as choosing one, so the row reads as one set of
+                // options rather than a list plus a stray button.
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(100.dp))
+                        .width(72.dp)
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable { onAdd() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-
-            children.forEach { c ->
-                com.lullabyai.app.ui.screens.child.ChildPickRow(
-                    child = c,
-                    birthOrderLabel = com.lullabyai.app.ui.screens.child.birthOrderLabel(
-                        children, c, isThai
-                    ),
-                    selected = c.id == activeChildId,
-                    isThai = isThai,
-                    onClick = { onSelect(c.id) }
-                )
+                        .padding(4.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, DashBorder, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Add, null, tint = DashSubtle, modifier = Modifier.size(22.dp))
+                    }
+                    Text(
+                        if (isThai) "เพิ่มลูก" else "Add",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DashSubtle,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * ครอบครัว — who else is in this family.
+ * ครอบครัว — who else is in this family, as a row of faces.
  *
  * Only members flagged is_family appear. That flag is set deliberately when a membership is
- * approved and is never derived from the role name, so a nanny stays out of this list however her
+ * approved and is never derived from the role name, so a nanny stays out of this row however her
  * role happens to be spelled - including under a custom role the family invented.
  */
 @Composable
@@ -1173,36 +1200,22 @@ private fun FamilyMembersCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(30.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Primary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Diversity3, null,
-                            tint = Primary, modifier = Modifier.size(17.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        familyName,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = DashTitle,
-                        maxLines = 1
-                    )
-                }
+                Text(
+                    familyName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = DashTitle,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
                 Text(
                     if (isThai) "จัดการ" else "Manage",
                     style = MaterialTheme.typography.labelMedium,
@@ -1213,48 +1226,113 @@ private fun FamilyMembersCard(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
-
-            members.forEach { m ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Primary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            m.displayName.trim().take(2).ifBlank { "?" },
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Primary
-                        )
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            m.displayName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = DashTitle,
-                            maxLines = 1
-                        )
-                        Text(
-                            // A family that renamed a role gets its own wording; everyone else
-                            // gets the standard label rather than a bare role key.
-                            (if (isThai) m.roleNameTh else m.roleNameEn)
-                                ?.takeIf { it.isNotBlank() }
-                                ?: com.lullabyai.app.viewmodel.AccessRoleLabels.title(m.role, isThai),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = DashBody
-                        )
-                    }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                members.forEach { m ->
+                    PersonChip(
+                        label = m.displayName,
+                        // A family that renamed a role gets its own wording; everyone else gets the
+                        // standard label rather than a bare role key.
+                        caption = (if (isThai) m.roleNameTh else m.roleNameEn)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: com.lullabyai.app.viewmodel.AccessRoleLabels.title(m.role, isThai),
+                        avatarUrl = null,
+                        fallbackIcon = Icons.Filled.Person,
+                        initials = m.displayName.trim().take(2).ifBlank { "?" },
+                        selected = false,
+                        onClick = onManage
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * One face in a horizontal people row, shared by ลูกของคุณ and ครอบครัว so the two cannot drift.
+ *
+ * [initials] is the fallback when there is no picture. Family members use it rather than an avatar
+ * because list_child_access_members returns profiles.avatar_url raw, and in this app that column
+ * holds a private-bucket PATH, not a URL - handing it to Coil shows nothing at all.
+ */
+@Composable
+private fun PersonChip(
+    label: String,
+    caption: String?,
+    avatarUrl: String?,
+    fallbackIcon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    initials: String? = null
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .width(72.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(4.dp)
+    ) {
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(Primary.copy(alpha = if (selected) 0.18f else 0.10f))
+                .then(if (selected) Modifier.border(2.dp, Primary, CircleShape) else Modifier),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                !avatarUrl.isNullOrBlank() -> coil.compose.AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = label,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                )
+                initials != null -> Text(
+                    initials,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Primary
+                )
+                else -> Icon(fallbackIcon, null, tint = Primary, modifier = Modifier.size(24.dp))
+            }
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) Primary else DashTitle,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+        caption?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = DashSubtle,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** "7 เดือน" under a face. Null when the birthdate is missing, rather than guessing an age. */
+private fun ageCaption(birthdate: String, isThai: Boolean): String? {
+    val born = runCatching { java.time.LocalDate.parse(birthdate) }.getOrNull() ?: return null
+    val now = java.time.LocalDate.now()
+    if (born.isAfter(now)) return null
+    val p = java.time.Period.between(born, now)
+    return when {
+        p.years >= 1 -> if (isThai) "${p.years} ขวบ" else "${p.years}y"
+        p.months >= 1 -> if (isThai) "${p.months} เดือน" else "${p.months}m"
+        else -> if (isThai) "${p.days} วัน" else "${p.days}d"
     }
 }
 
@@ -1280,10 +1358,10 @@ private fun ParentTipsCard(isThai: Boolean, onClick: () -> Unit) {
         ) {
             androidx.compose.foundation.Image(
                 painter = androidx.compose.ui.res.painterResource(
-                    com.lullabyai.app.R.drawable.mascot_reading
+                    com.lullabyai.app.R.drawable.tip_bonding
                 ),
                 contentDescription = null,
-                modifier = Modifier.size(52.dp)
+                modifier = Modifier.size(56.dp)
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
