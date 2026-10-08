@@ -194,6 +194,7 @@ class ChildViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChildUiState())
     val uiState: StateFlow<ChildUiState> = _uiState
+    private var lastInfoAskEvalMs: Long = 0L
 
     init { loadChild() }
 
@@ -562,9 +563,8 @@ class ChildViewModel : ViewModel() {
             ?: return false
         if (child.userId == uid) return true
         val member = childRepo.getMyMembership(id).getOrNull() ?: return false
-        return member.role == "owner" ||
-            member.canBookDoctor ||
-            "book_doctor" in member.capabilities
+        return AccessCapabilities.holds(member, AccessCapabilities.BOOK_DOCTOR) ||
+            child.userId == uid
     }
 
     override fun onCleared() {
@@ -596,10 +596,13 @@ class ChildViewModel : ViewModel() {
     fun loadInfoAsk(context: android.content.Context, isThai: Boolean) {
         if (isGuest()) return
         val state = _uiState.value
+        val now = System.currentTimeMillis()
         if (!com.lullabyai.app.data.infoask.InfoAskCatalog.needsReload(
                 selectedChildId = state.child?.id,
                 loadedForChildId = state.infoAskChildId,
-                loaded = state.infoAsks.size
+                loaded = state.infoAsks.size,
+                lastEvalMs = lastInfoAskEvalMs,
+                nowMs = now
             )
         ) return
         viewModelScope.launch { loadInfoAskInternal(context, isThai) }
@@ -644,7 +647,15 @@ class ChildViewModel : ViewModel() {
             answeredEver = settings.infoAskAnsweredFieldIds(child.id)
         )
         val catalog = com.lullabyai.app.data.infoask.InfoAskCatalog
+        lastInfoAskEvalMs = System.currentTimeMillis()
         var prompts = catalog.openAll(snapshot)
+        if (prompts.isEmpty()) {
+            _uiState.value = _uiState.value.copy(infoAsks = emptyList(), infoAskChildId = child.id, dailyQuestion = null)
+            return
+        }
+        val dripped = catalog.drip(prompts, settings.infoAskDrip(child.id), lastInfoAskEvalMs)
+        prompts = dripped.first
+        settings.saveInfoAskDrip(child.id, dripped.second)
         if (prompts.isEmpty()) {
             _uiState.value = _uiState.value.copy(infoAsks = emptyList(), infoAskChildId = child.id, dailyQuestion = null)
             return
@@ -859,16 +870,9 @@ class ChildViewModel : ViewModel() {
 
     fun dismissDailyQuestion(context: android.content.Context? = null) = dismissInfoAsk(context)
 
-    /** Skip the whole form for today — remaining fields will mix in again tomorrow. */
+    /** Hide the form for this visit. Unanswered questions stay on the stack and come back. */
     fun dismissInfoAsk(context: android.content.Context? = null) {
-        val child = _uiState.value.child
-        val ids = _uiState.value.infoAsks.map { it.fieldId }
         _uiState.value = _uiState.value.copy(infoAsks = emptyList(), dailyQuestion = null, infoAskSaving = false)
-        if (context != null && child != null && ids.isNotEmpty()) {
-            viewModelScope.launch {
-                com.lullabyai.app.data.settings.SettingsManager(context).recordInfoAskFieldsShown(child.id, ids)
-            }
-        }
     }
 
     /**
@@ -1193,23 +1197,31 @@ class ChildViewModel : ViewModel() {
     }
 
     /** If growth history has a newer reading than the children-row cache, push it onto the child
-     *  so Summary / Health / Edit Child / Nutrition all show the same vitals as Growth History. */
-    private suspend fun healChildVitalsFromGrowth(childId: String, records: List<GrowthRecord>) {
-        val latest = records.maxByOrNull { it.recordedAt ?: "" } ?: return
+     *  so Summary / Health / Edit Child / Nutrition all show the same vitals as Growth History.
+     *  When every reading was deleted, the cache is cleared so Hub shows none. */
+    private suspend fun healChildVitalsFromGrowth(
+        childId: String,
+        records: List<GrowthRecord>,
+        clearMissing: Boolean = false
+    ) {
         val cur = _uiState.value.child ?: return
         if (cur.id != childId) return
-        val newWeight = latest.weightKg
-        val newHeight = latest.heightCm
-        if (newWeight == null && newHeight == null) return
-        val weightDiffers = newWeight != null && newWeight != cur.weightKg
-        val heightDiffers = newHeight != null && newHeight != cur.heightCm
-        if (!weightDiffers && !heightDiffers) return
-        childRepo.updateVitals(childId, newWeight, newHeight)
+        val latestWeight = records.filter { it.weightKg != null }.maxByOrNull { it.recordedAt ?: "" }?.weightKg
+        val latestHeight = records.filter { it.heightCm != null }.maxByOrNull { it.recordedAt ?: "" }?.heightCm
+        val newWeight = when {
+            clearMissing -> latestWeight
+            cur.weightKg == null -> null
+            else -> latestWeight ?: cur.weightKg
+        }
+        val newHeight = when {
+            clearMissing -> latestHeight
+            cur.heightCm == null -> null
+            else -> latestHeight ?: cur.heightCm
+        }
+        if (newWeight == cur.weightKg && newHeight == cur.heightCm) return
+        childRepo.updateVitals(childId, newWeight, newHeight, clearMissing = clearMissing)
         _uiState.value = _uiState.value.copy(
-            child = cur.copy(
-                weightKg = newWeight ?: cur.weightKg,
-                heightCm = newHeight ?: cur.heightCm
-            )
+            child = cur.copy(weightKg = newWeight, heightCm = newHeight)
         )
     }
 
@@ -1386,15 +1398,20 @@ class ChildViewModel : ViewModel() {
             childRepo.updateChild(updated)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(child = updated)
-                    if (vitalsChanged && (updated.weightKg != null || updated.heightCm != null)) {
-                        addGrowthRecord(
-                            GrowthRecord(
-                                weightKg = updated.weightKg,
-                                heightCm = updated.heightCm,
-                                recordedAt = java.time.LocalDate.now().toString(),
-                                recordType = "profile_edit"
-                            )
+                    if (vitalsChanged) {
+                        childRepo.updateVitals(
+                            updated.id, updated.weightKg, updated.heightCm, clearMissing = true
                         )
+                        if (updated.weightKg != null || updated.heightCm != null) {
+                            addGrowthRecord(
+                                GrowthRecord(
+                                    weightKg = updated.weightKg,
+                                    heightCm = updated.heightCm,
+                                    recordedAt = java.time.LocalDate.now().toString(),
+                                    recordType = "profile_edit"
+                                )
+                            )
+                        }
                     }
                     notifRepo.notify(
                         com.lullabyai.app.data.repository.NotifCategory.NORMAL,
@@ -1813,12 +1830,8 @@ class ChildViewModel : ViewModel() {
     }
 
     /** Rough age-based recommended total daily sleep (hours) for 0-3y, per standard pediatric guidance. */
-    fun sleepTargetHours(): Int = when (com.lullabyai.app.data.VaccineSetupCatalog.ageMonthsFromBirthdate(_uiState.value.child?.birthdate ?: "")) {
-        in 0..3 -> 15
-        in 4..11 -> 14
-        in 12..23 -> 13
-        else -> 11
-    }
+    fun sleepTargetHours(): Int =
+        com.lullabyai.app.util.SleepTarget.forBirthdate(_uiState.value.child?.birthdate)
 
     /** Rough age-based recommended bedtime clock time ("HH:mm" start, end), paired with
      *  [sleepTargetHours] — younger children get an earlier bedtime, per standard pediatric
@@ -1884,19 +1897,7 @@ class ChildViewModel : ViewModel() {
             healthRepo.deleteGrowthRecord(id).onSuccess {
                 healthRepo.getGrowthRecords(childId).onSuccess { records ->
                     _uiState.value = _uiState.value.copy(growthRecords = records)
-                    // Re-point the child vitals cache at the newest remaining reading (or leave as-is
-                    // if the history is now empty — parent can re-enter via Edit Child / Add Growth).
-                    val latest = records.maxByOrNull { it.recordedAt ?: "" }
-                    val cur = _uiState.value.child
-                    if (cur != null && latest != null && (latest.weightKg != null || latest.heightCm != null)) {
-                        childRepo.updateVitals(childId, latest.weightKg, latest.heightCm)
-                        _uiState.value = _uiState.value.copy(
-                            child = cur.copy(
-                                weightKg = latest.weightKg ?: cur.weightKg,
-                                heightCm = latest.heightCm ?: cur.heightCm
-                            )
-                        )
-                    }
+                    healChildVitalsFromGrowth(childId, records, clearMissing = true)
                 }
             }
         }

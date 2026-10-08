@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lullabyai.app.ui.components.PrimaryButton
@@ -31,7 +32,7 @@ fun OnboardingStep2Screen(
     val state by onboardingViewModel.uiState.collectAsState()
     var height by remember { mutableStateOf(state.heightCm) }
     var weight by remember { mutableStateOf(state.weightKg) }
-    var sleepHours by remember { mutableFloatStateOf(state.sleepHours) }
+    var sleepHours by remember { mutableStateOf(state.sleepHours) }
     var activityLevel by remember { mutableStateOf(state.activityLevel) }
     var bloodGroup by remember { mutableStateOf(state.bloodGroup) }
 
@@ -81,19 +82,59 @@ fun OnboardingStep2Screen(
                     }
                 }
 
+                // Sleep hours. A slider pre-set to 14 made an optional field look already
+                // answered, and left a parent dragging a thumb for a number she probably does not
+                // know. This stays unset until she says otherwise: big plus/minus targets, no
+                // dragging, and a clear way back to "not known".
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ชั่วโมงการนอนต่อวัน (ไม่บังคับ)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                    Slider(
-                        value = sleepHours,
-                        onValueChange = { sleepHours = it },
-                        valueRange = 8f..20f,
-                        steps = 11,
-                        colors = SliderDefaults.colors(thumbColor = Primary, activeTrackColor = Primary)
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("8 ชม.", style = MaterialTheme.typography.labelSmall, color = Outline)
-                        Text("${sleepHours.toInt()} ชม.", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text("20 ชม.", style = MaterialTheme.typography.labelSmall, color = Outline)
+
+                    val suggested = com.lullabyai.app.util.SleepTarget.forBirthdate(state.birthdate)
+                    val current = sleepHours
+
+                    if (current == null) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { sleepHours = suggested.toFloat() },
+                                shape = RoundedCornerShape(100.dp)
+                            ) { Text("ประมาณ $suggested ชม.") }
+                            Text(
+                                "ข้ามได้ ถ้ายังไม่ทราบ",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Outline
+                            )
+                        }
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledTonalIconButton(
+                                onClick = { sleepHours = (current - 1f).coerceAtLeast(1f) },
+                                enabled = current > 1f
+                            ) { Icon(Icons.Filled.Remove, contentDescription = "ลดหนึ่งชั่วโมง") }
+
+                            Text(
+                                "${current.toInt()} ชม.",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            FilledTonalIconButton(
+                                onClick = { sleepHours = (current + 1f).coerceAtMost(24f) },
+                                enabled = current < 24f
+                            ) { Icon(Icons.Filled.Add, contentDescription = "เพิ่มหนึ่งชั่วโมง") }
+
+                            TextButton(onClick = { sleepHours = null }) { Text("ล้าง") }
+                        }
                     }
                 }
 

@@ -34,7 +34,10 @@ data class OnboardingUiState(
     // Step 2
     val heightCm: String = "",
     val weightKg: String = "",
-    val sleepHours: Float = 14f,
+    // Null until the parent actually sets it. It used to default to 14f, which made an
+    // "(ไม่บังคับ)" field arrive pre-answered and then SAVED that invented number - and
+    // ChatRepository feeds sleep_hours to the AI as a stated fact about the child.
+    val sleepHours: Float? = null,
     val activityLevel: String = "moderate",
     val bloodGroup: String = "",   // A | B | AB | O (optional)
     // Step 3
@@ -79,7 +82,7 @@ class OnboardingViewModel : ViewModel() {
             notes = child.notes ?: "",
             heightCm = child.heightCm?.toString() ?: "",
             weightKg = child.weightKg?.toString() ?: "",
-            sleepHours = child.sleepHours?.toFloat() ?: 14f,
+            sleepHours = child.sleepHours?.toFloat(),
             activityLevel = child.activityLevel,
             bloodGroup = child.bloodGroup ?: "",
             noKnownAllergies = child.noKnownAllergies,
@@ -105,7 +108,7 @@ class OnboardingViewModel : ViewModel() {
         )
     }
 
-    fun updateStep2(height: String, weight: String, sleep: Float, activity: String, bloodGroup: String = "") {
+    fun updateStep2(height: String, weight: String, sleep: Float?, activity: String, bloodGroup: String = "") {
         _uiState.value = _uiState.value.copy(
             heightCm = height, weightKg = weight, sleepHours = sleep, activityLevel = activity, bloodGroup = bloodGroup
         )
@@ -174,7 +177,9 @@ class OnboardingViewModel : ViewModel() {
                         if (combinedNotes.isNotBlank()) put("notes", combinedNotes)
                         state.heightCm.toDoubleOrNull()?.let { put("height_cm", it) }
                         state.weightKg.toDoubleOrNull()?.let { put("weight_kg", it) }
-                        put("sleep_hours", state.sleepHours.toDouble())
+                        // Only when set, exactly like height_cm and weight_kg above. An
+                        // untouched optional field must not write anything.
+                        state.sleepHours?.let { put("sleep_hours", it.toDouble()) }
                         put("activity_level", state.activityLevel)
                         if (state.bloodGroup.isNotBlank()) put("blood_group", state.bloodGroup)
                         if (state.nationality.isNotBlank()) put("nationality", state.nationality)
@@ -195,7 +200,7 @@ class OnboardingViewModel : ViewModel() {
                         notes = combinedNotes.ifBlank { null },
                         heightCm = state.heightCm.toDoubleOrNull(),
                         weightKg = state.weightKg.toDoubleOrNull(),
-                        sleepHours = state.sleepHours.toDouble(),
+                        sleepHours = state.sleepHours?.toDouble(),
                         activityLevel = state.activityLevel,
                         bloodGroup = state.bloodGroup.ifBlank { null },
                         nationality = state.nationality.ifBlank { null },
