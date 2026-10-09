@@ -87,6 +87,7 @@ import com.lullabyai.app.viewmodel.ChildViewModel
 import com.lullabyai.app.viewmodel.OnboardingViewModel
 import com.lullabyai.app.viewmodel.NutritionViewModel
 import com.lullabyai.app.viewmodel.OralHealthViewModel
+import com.lullabyai.app.viewmodel.AccessCapabilities
 import com.lullabyai.app.viewmodel.SettingsViewModel
 import com.lullabyai.app.data.settings.AppLanguage
 
@@ -170,10 +171,10 @@ fun AppNavigation(
     // show a red count badge without each of the 106 screens loading notifications itself (#8).
     val notificationViewModel: com.lullabyai.app.viewmodel.NotificationViewModel = viewModel()
     val importantCount by notificationViewModel.uiState
-        .map { state -> state.all.count { it.category == "warning" && !it.isRead } }
+        .map { state -> state.all.count { com.lullabyai.app.viewmodel.NotificationViewModel.countsOnBell(it) } }
         .distinctUntilChanged()
         .collectAsState(initial = 0)
-    LaunchedEffect(Unit) { notificationViewModel.load() }
+    LaunchedEffect(Unit) { notificationViewModel.startWatching() }
 
     // Connect Realtime WebSocket once the parent shell is up (required before channel.subscribe).
     LaunchedEffect(Unit) { ensureRealtimeConnected() }
@@ -529,6 +530,12 @@ fun AppNavigation(
             }
         }
         composable(Screen.Dashboard.route) {
+            // Which child is this about? Only worth asking when there is more than one. A parent
+            // with a single child should never meet a chooser with one row in it.
+            fun pickChildThen(route: String): String =
+                if (childViewModel.uiState.value.children.size > 1) Screen.ChildPicker.route(route)
+                else route
+
             DashboardScreen(
                 childViewModel = childViewModel,
                 chatViewModel = chatViewModel,
@@ -558,6 +565,24 @@ fun AppNavigation(
                 onNavigateToAddChild = { navController.navigate(Screen.AddChildChoice.route) },
                 onNavigateToMentalHealth = { navController.navigate(Screen.MentalHealthAssessment.route) },
                 onNavigateToQuickLog = { navController.navigate(Screen.QuickLogHub.route) },
+                // The บันทึกด่วน tiles go to the LOG each one is named after, not to a hub above it.
+                onNavigateToMilkLog = { navController.navigate(pickChildThen(Screen.MilkRecord.route)) },
+                onNavigateToWasteLog = { navController.navigate(pickChildThen(Screen.WasteRecord.route)) },
+                onNavigateToAddGrowth = { navController.navigate(pickChildThen(Screen.AddGrowthRecord.route)) },
+                // AddHealthRecord creates the illness record; LogSicknessSymptoms needs one to exist.
+                onNavigateToSickness = { navController.navigate(pickChildThen(Screen.AddHealthRecord.route)) },
+                // การทำงานด่วน, plus the three buttons on ครอบครัวของเรา. Every destination already
+                // existed - ActivitySchedule in particular was reachable only from a tile buried
+                // inside ข้อมูลลูก, despite being exactly the calendar this card asks for.
+                onNavigateToAppointments = { navController.navigate(Screen.RecordAppointment.route) },
+                onNavigateToHealthBook = { navController.navigate(Screen.HealthHistory.route) },
+                onNavigateToMedicationLog = { navController.navigate(pickChildThen(Screen.MedicationHistory.route)) },
+                onNavigateToCalendar = { navController.navigate(Screen.ActivitySchedule.route) },
+                onNavigateToFamilySummary = { navController.navigate(Screen.ChildSummary.route) },
+                onNavigateToTips = { navController.navigate(Screen.ParentTips.route) },
+                // สมาชิกในครอบครัว goes to the permission screen, which is where who-can-see-what
+                // actually lives; Connect is about linking a doctor, a different question.
+                onNavigateToFamilyMembers = { navController.navigate(Screen.PermissionAccess.route) },
                 onNavigateToWidgets = { navController.navigate(Screen.WidgetsIntro.route) },
                 onNavigateHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
                 onNavigateToConnect = { navController.navigate(Screen.MyDoctorsHub.route) { launchSingleTop = true } },
@@ -609,28 +634,42 @@ fun AppNavigation(
             )
         }
         composable(Screen.ChildAiSummary.route) {
-            com.lullabyai.app.ui.screens.child.ChildAiSummaryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.ChildAiSummaryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.WasteRecord.route) {
-            com.lullabyai.app.ui.screens.child.WasteRecordScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_ACTIVITIES) {
+                com.lullabyai.app.ui.screens.child.WasteRecordScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.ProfileHistory.route) {
-            com.lullabyai.app.ui.screens.child.ProfileHistoryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.ProfileHistoryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.ChildDevelopment.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("development") }
-            ChildDevelopmentScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                ChildDevelopmentScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.ChildHealth.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("health") }
-            ChildHealthScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                ChildHealthScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.VaccineBook.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("vaccine") }
-            VaccineBookScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                VaccineBookScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.ChronicRegistry.route) {
-            ChronicRegistryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                ChronicRegistryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         // Legacy disease_risk deep-link → Chronic Registry (#14)
         composable(Screen.DiseaseRisk.route) {
@@ -642,78 +681,89 @@ fun AppNavigation(
             }
         }
         composable(Screen.WeeklyHealthReport.route) {
-            com.lullabyai.app.ui.screens.child.WeeklyHealthReportScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.WeeklyHealthReportScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.Maintenance.route) {
             MaintenanceScreen(navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.QuickLogHub.route) {
-            com.lullabyai.app.ui.screens.stats.QuickLogHubScreen(childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_ACTIVITIES) {
+                com.lullabyai.app.ui.screens.stats.QuickLogHubScreen(childViewModel, chatViewModel, navController)
+            }
         }
         composable(Screen.SmartTrends.route) {
-            com.lullabyai.app.ui.screens.stats.SmartTrendsScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.stats.SmartTrendsScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.StatisticsInsights.route) {
-            com.lullabyai.app.ui.screens.stats.StatisticsInsightsScreen(childViewModel, chatViewModel, onboardingViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.stats.StatisticsInsightsScreen(childViewModel, chatViewModel, onboardingViewModel, navController)
+            }
         }
         composable(Screen.FoodHistory.route) {
-            com.lullabyai.app.ui.screens.nutrition.FoodHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                com.lullabyai.app.ui.screens.nutrition.FoodHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.ExerciseHistory.route) {
-            com.lullabyai.app.ui.screens.exercise.ExerciseHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_ACTIVITIES) {
+                com.lullabyai.app.ui.screens.exercise.ExerciseHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.MedicationHistory.route) {
-            MedicationHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_MEDICATIONS) {
+                MedicationHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.FullMedicationHistory.route) {
-            com.lullabyai.app.ui.screens.child.FullMedicationHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_MEDICATIONS) {
+                com.lullabyai.app.ui.screens.child.FullMedicationHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.HealthHistory.route) {
-            com.lullabyai.app.ui.screens.child.HealthHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.HealthHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.PdfExport.route) {
-            com.lullabyai.app.ui.screens.child.PdfExportScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_DOCUMENTS) {
+                com.lullabyai.app.ui.screens.child.PdfExportScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.SicknessFollowUp.route) {
-            com.lullabyai.app.ui.screens.child.SicknessFollowUpScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SYMPTOMS) {
+                com.lullabyai.app.ui.screens.child.SicknessFollowUpScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.LogSicknessSymptoms.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกอาการป่วย" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SYMPTOMS) {
                 com.lullabyai.app.ui.screens.child.LogSicknessSymptomsScreen(childViewModel, navController) { navController.popBackStack() }
             }
         }
         composable(Screen.AddMedicineSchedule.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนตั้งเวลาเตือนยา" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_MEDICATIONS) {
                 AddMedicineScheduleScreen(childViewModel, navController) { navController.popBackStack() }
             }
         }
         composable(Screen.MedicalDocumentHistory.route) {
-            MedicalDocumentHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_DOCUMENTS) {
+                MedicalDocumentHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.SleepTracker.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("sleep") }
-            SleepTrackerScreen(childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SLEEP) {
+                SleepTrackerScreen(childViewModel, chatViewModel, navController)
+            }
         }
         composable(
             route = Screen.AddSleepTime.route,
             arguments = listOf(navArgument("scheduleId") { nullable = true; defaultValue = null })
         ) { entry ->
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกเวลานอน" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SLEEP) {
                 AddSleepTimeScreen(
                     childViewModel, chatViewModel, navController,
                     scheduleId = entry.arguments?.getString("scheduleId")
@@ -721,28 +771,28 @@ fun AppNavigation(
             }
         }
         composable(Screen.SleepSchedule.route) {
-            SleepScheduleScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SLEEP) {
+                SleepScheduleScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.SleepGuidance.route) {
             SleepGuidanceScreen(childViewModel = childViewModel, navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.GrowthHistory.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("growth") }
-            com.lullabyai.app.ui.screens.growth.GrowthHistoryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.growth.GrowthHistoryScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.AddGrowthRecord.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกการเติบโต" else "Registration Required to Record Growth",
-                message = if (lang == "th") "บัญชีทดลองสามารถดูข้อมูลตัวอย่างได้เท่านั้น กรุณาสมัครสมาชิกเพื่อเริ่มบันทึกส่วนสูงและน้ำหนัก" else "Test account can only view sample data. Please sign up to record growth."
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.EDIT_GROWTH) {
                 com.lullabyai.app.ui.screens.growth.AddGrowthRecordScreen(childViewModel, navController) { navController.popBackStack() }
             }
         }
         composable(Screen.SiblingCompare.route) {
-            com.lullabyai.app.ui.screens.growth.SiblingCompareScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.growth.SiblingCompareScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.CameraScan.route) {
             com.lullabyai.app.ui.components.GuestLockGuard(
@@ -765,28 +815,42 @@ fun AppNavigation(
             }
         }
         composable(Screen.HealthLog.route) {
-            com.lullabyai.app.ui.screens.child.HealthLogScreen(navController, isThai = lang == "th")
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SYMPTOMS) {
+                com.lullabyai.app.ui.screens.child.HealthLogScreen(navController, isThai = lang == "th")
+            }
         }
         composable(Screen.QuickActionSearch.route) {
             com.lullabyai.app.ui.screens.search.QuickActionSearchScreen(navController, isThai = lang == "th") { navController.popBackStack() }
         }
         composable(Screen.WhoWeightForAgeDetail.route) {
-            com.lullabyai.app.ui.screens.growth.WhoWeightForAgeDetailScreen(childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.growth.WhoWeightForAgeDetailScreen(childViewModel, chatViewModel, navController)
+            }
         }
         composable(Screen.WhoHeightForAgeDetail.route) {
-            com.lullabyai.app.ui.screens.growth.WhoHeightForAgeDetailScreen(childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.growth.WhoHeightForAgeDetailScreen(childViewModel, chatViewModel, navController)
+            }
         }
         composable(Screen.NutritionInsights.route) {
-            com.lullabyai.app.ui.screens.stats.NutritionInsightsScreen(nutritionViewModel, childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                com.lullabyai.app.ui.screens.stats.NutritionInsightsScreen(nutritionViewModel, childViewModel, chatViewModel, navController)
+            }
         }
         composable(Screen.SleepActivityInsights.route) {
-            com.lullabyai.app.ui.screens.stats.SleepActivityInsightsScreen(childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SLEEP) {
+                com.lullabyai.app.ui.screens.stats.SleepActivityInsightsScreen(childViewModel, chatViewModel, navController)
+            }
         }
         composable(Screen.HealthEliminationInsights.route) {
-            com.lullabyai.app.ui.screens.stats.HealthEliminationInsightsScreen(childViewModel, chatViewModel, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.stats.HealthEliminationInsightsScreen(childViewModel, chatViewModel, navController)
+            }
         }
         composable(Screen.MonthlyReport.route) {
-            com.lullabyai.app.ui.screens.stats.MonthlyReportScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.stats.MonthlyReportScreen(childViewModel, chatViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.MentalHealthAssessment.route) {
             com.lullabyai.app.ui.components.GuestLockGuard(
@@ -829,12 +893,7 @@ fun AppNavigation(
             EditProfileScreen(authViewModel = authViewModel, navController = navController, onBack = { navController.popBackStack() })
         }
         composable(Screen.MedicalDataVault.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ฟีเจอร์คลังเอกสารสุขภาพ" else "Medical Data Vault"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_DOCUMENTS) {
                 com.lullabyai.app.ui.screens.settings.MedicalDataVaultScreen(
                     childViewModel = childViewModel,
                     navController = navController,
@@ -873,17 +932,21 @@ fun AppNavigation(
             )
         }
         composable(Screen.HealthBook.route) {
-            com.lullabyai.app.ui.screens.child.HealthBookScreen(
-                navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.HealthBookScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.InfoAsk.route) {
-            com.lullabyai.app.ui.screens.child.InfoAskScreen(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.EDIT_PROFILE) {
+                com.lullabyai.app.ui.screens.child.InfoAskScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.PermissionAccess.route) {
             com.lullabyai.app.ui.components.GuestLockGuard(
@@ -899,12 +962,7 @@ fun AppNavigation(
             }
         }
         composable(Screen.ActivityHistory.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ประวัติกิจกรรมของผู้ดูแล" else "Caregiver Activity History"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_ACTIVITIES) {
                 com.lullabyai.app.ui.screens.access.ActivityHistoryScreen(
                     viewModel = viewModel(), navController = navController,
                     onBack = { navController.popBackStack() },
@@ -913,7 +971,10 @@ fun AppNavigation(
                     onReplyToEntry = { peerId, subject ->
                         navController.navigate(Screen.CareChat.route(peerId, subject))
                     },
-                    onOpenHub = { navController.navigate(Screen.CareCircle.route) }
+                    onOpenHub = { navController.navigate(Screen.CareCircle.route) },
+                    onOpenRecord = { kind ->
+                        navController.navigate(com.lullabyai.app.viewmodel.ActivityKindLabels.recordRoute(kind))
+                    }
                 )
             }
         }
@@ -946,9 +1007,11 @@ fun AppNavigation(
             Screen.CareRoutine.route,
             arguments = listOf(navArgument("childId") { type = NavType.StringType })
         ) { entry ->
-            com.lullabyai.app.ui.screens.routine.CareRoutineScreen(
-                childId = entry.arguments?.getString("childId").orEmpty(), navController = navController
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_ACTIVITIES) {
+                com.lullabyai.app.ui.screens.routine.CareRoutineScreen(
+                    childId = entry.arguments?.getString("childId").orEmpty(), navController = navController
+                )
+            }
         }
         composable(
             Screen.CareHandoverChecklist.route,
@@ -997,12 +1060,7 @@ fun AppNavigation(
             )
         }
         composable(Screen.ActivitySchedule.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ฟีเจอร์ปฏิทินและกิจกรรม" else "Activity & Calendar"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_ACTIVITIES) {
                 com.lullabyai.app.ui.screens.schedule.ActivityScheduleScreen(
                     viewModel = viewModel(), navController = navController,
                     onBack = { navController.popBackStack() },
@@ -1011,12 +1069,7 @@ fun AppNavigation(
             }
         }
         composable(Screen.AddActivity.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนเพิ่มกิจกรรม" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_ACTIVITIES) {
                 com.lullabyai.app.ui.screens.schedule.AddActivityScreen(
                     viewModel = viewModel(), navController = navController,
                     onBack = { navController.popBackStack() }
@@ -1100,12 +1153,7 @@ fun AppNavigation(
             )
         }
         composable(Screen.MilkRecord.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกการให้นม" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_FEEDING) {
                 com.lullabyai.app.ui.screens.nutrition.MilkRecordScreen(childViewModel, nutritionViewModel, lang, navController) { navController.popBackStack() }
             }
         }
@@ -1157,12 +1205,7 @@ fun AppNavigation(
             PrivacyPolicyScreen(navController = navController, onBack = { navController.popBackStack() }, isDoctor = true)
         }
         composable(Screen.EditChild.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "แก้ไขข้อมูลเด็ก" else "Edit Child Profile"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.EDIT_PROFILE) {
                 com.lullabyai.app.ui.screens.child.EditChildScreen(
                     childViewModel = childViewModel,
                     navController = navController,
@@ -1171,12 +1214,7 @@ fun AppNavigation(
             }
         }
         composable(Screen.AddHealthRecord.route) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "บันทึกสุขภาพเด็ก" else "Add Health Record"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SYMPTOMS) {
                 com.lullabyai.app.ui.screens.child.AddHealthRecordScreen(
                     childViewModel = childViewModel,
                     navController = navController,
@@ -1185,76 +1223,108 @@ fun AppNavigation(
             }
         }
         composable(Screen.HealthDetail.route) {
-            com.lullabyai.app.ui.screens.child.HealthDetailScreen(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.HealthDetailScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.TaskHistory.route) {
-            com.lullabyai.app.ui.screens.child.TaskHistoryScreen(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_ACTIVITIES) {
+                com.lullabyai.app.ui.screens.child.TaskHistoryScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.DevelopmentHistory.route) {
-            com.lullabyai.app.ui.screens.child.DevelopmentHistoryScreen(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.DevelopmentHistoryScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(Screen.AllergyHistory.route) {
-            com.lullabyai.app.ui.screens.child.AllergyHistoryScreen(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() }
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                com.lullabyai.app.ui.screens.child.AllergyHistoryScreen(
+                    childViewModel = childViewModel,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
 
         // ---- Doctor Appointment Record ("บันทึกการหาหมอ") ----
         composable(Screen.DoctorVisitHistory.route) {
-            com.lullabyai.app.ui.screens.child.DoctorVisitHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_APPOINTMENTS) {
+                com.lullabyai.app.ui.screens.child.DoctorVisitHistoryScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.RecordAppointment.route) {
-            com.lullabyai.app.ui.screens.child.RecordAppointmentScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.BOOK_DOCTOR) {
+                com.lullabyai.app.ui.screens.child.RecordAppointmentScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.RecordDoctorVisit.route) {
-            com.lullabyai.app.ui.screens.child.RecordVisitScreen(childViewModel) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.BOOK_DOCTOR) {
+                com.lullabyai.app.ui.screens.child.RecordVisitScreen(childViewModel) { navController.popBackStack() }
+            }
         }
         composable(Screen.VisitDetails.route) {
-            com.lullabyai.app.ui.screens.child.VisitDetailsScreen(childViewModel, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_APPOINTMENTS) {
+                com.lullabyai.app.ui.screens.child.VisitDetailsScreen(childViewModel, navController) { navController.popBackStack() }
+            }
         }
 
         // ---- Nutrition / Calorie / Exercise feature ----
         composable(Screen.Nutrition.route) {
             androidx.compose.runtime.LaunchedEffect(Unit) { com.lullabyai.app.data.settings.RecentServices.push("nutrition") }
-            NutritionScreen(nutritionViewModel, lang, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                NutritionScreen(nutritionViewModel, lang, navController)
+            }
         }
         composable(Screen.CalorieCalculator.route) {
-            CalorieCalculatorScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                CalorieCalculatorScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.CalorieSummary.route) {
-            CalorieSummaryScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                CalorieSummaryScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.CalorieCheck.route) {
-            com.lullabyai.app.ui.screens.nutrition.CalorieCheckScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                com.lullabyai.app.ui.screens.nutrition.CalorieCheckScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.EditFoodEntries.route) {
-            EditFoodEntriesScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_FEEDING) {
+                EditFoodEntriesScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.RecommendedFood.route) {
-            com.lullabyai.app.ui.screens.nutrition.RecommendedFoodScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_NUTRITION) {
+                com.lullabyai.app.ui.screens.nutrition.RecommendedFoodScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.RefrigeratorScanner.route) {
             com.lullabyai.app.ui.screens.nutrition.RefrigeratorScannerScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
         }
         composable(Screen.Exercise.route) {
-            ExerciseScreen(nutritionViewModel, lang, navController)
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_ACTIVITIES) {
+                ExerciseScreen(nutritionViewModel, lang, navController)
+            }
         }
         composable(Screen.LogExercise.route) {
-            com.lullabyai.app.ui.screens.exercise.LogExerciseScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_ACTIVITIES) {
+                com.lullabyai.app.ui.screens.exercise.LogExerciseScreen(nutritionViewModel, lang, navController) { navController.popBackStack() }
+            }
         }
         composable(Screen.ExerciseInstruction.route) {
             com.lullabyai.app.ui.screens.exercise.ExerciseInstructionScreen(nutritionViewModel, lang) { navController.popBackStack() }
@@ -1509,12 +1579,7 @@ fun AppNavigation(
         // this file (five concurrent writers would have collided), so they declared their route
         // constants locally and the orchestrator registers them here.
         composable(com.lullabyai.app.ui.screens.child.VACCINE_BOOK_SCAN_ROUTE) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนสแกนสมุดวัคซีน" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.UPLOAD_DOCUMENTS) {
                 com.lullabyai.app.ui.screens.child.VaccineBookScanScreen(
                     childViewModel = childViewModel,
                     navController = navController,
@@ -1530,12 +1595,7 @@ fun AppNavigation(
             )
         }
         composable(com.lullabyai.app.ui.screens.sleep.RECORD_SLEEP_HISTORY_ROUTE) {
-            com.lullabyai.app.ui.components.GuestLockGuard(
-                childViewModel = childViewModel,
-                navController = navController,
-                onBack = { navController.popBackStack() },
-                title = if (lang == "th") "ต้องสมัครสมาชิกก่อนบันทึกประวัตินอน" else "Registration Required"
-            ) {
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SLEEP) {
                 com.lullabyai.app.ui.screens.sleep.RecordSleepHistoryScreen(
                     childViewModel = childViewModel,
                     navController = navController,
@@ -1808,17 +1868,21 @@ fun AppNavigation(
 
         // --- Oral Health Pro System ---
         composable(Screen.OralHealth.route) {
-            OralHealthScreen(
-                oralHealthViewModel = oralHealthViewModel,
-                childViewModel = childViewModel,
-                navController = navController
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.VIEW_HEALTH) {
+                OralHealthScreen(
+                    oralHealthViewModel = oralHealthViewModel,
+                    childViewModel = childViewModel,
+                    navController = navController
+                )
+            }
         }
         composable(Screen.RecordOralHealthEvent.route) {
-            RecordOralHealthEventScreen(
-                oralHealthViewModel = oralHealthViewModel,
-                navController = navController
-            )
+            CapGate(childViewModel, navController, AccessCapabilities.LOG_SYMPTOMS) {
+                RecordOralHealthEventScreen(
+                    oralHealthViewModel = oralHealthViewModel,
+                    navController = navController
+                )
+            }
         }
 
         // --- NongRak Parent Community Suite ---
@@ -1834,6 +1898,88 @@ fun AppNavigation(
                 navController = navController,
                 authViewModel = authViewModel,
                 childViewModel = childViewModel
+            )
+        }
+        // The same composer, opened on a chosen tab. The three entry points in the feed
+        // (รูปภาพ/วิดีโอ, ตั้งกระทู้ถามหมอ, โพลสำรวจ) each land on their own kind.
+        composable(
+            route = Screen.CreateCommunityPostOfKind.route,
+            arguments = listOf(androidx.navigation.navArgument("kind") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            com.lullabyai.app.ui.screens.community.CreateCommunityPostScreen(
+                navController = navController,
+                // An unknown value falls back to an ordinary post rather than crashing: the route
+                // carries a plain string, and a bad link should still open something usable.
+                initialKind = com.lullabyai.app.data.model.PostKind.fromWire(
+                    backStackEntry.arguments?.getString("kind")
+                ),
+                authViewModel = authViewModel,
+                childViewModel = childViewModel
+            )
+        }
+        composable(
+            route = Screen.CreateCommunityPostInGroup.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("groupId") { type = androidx.navigation.NavType.StringType },
+                androidx.navigation.navArgument("kind") { type = androidx.navigation.NavType.StringType }
+            )
+        ) { backStackEntry ->
+            com.lullabyai.app.ui.screens.community.CreateCommunityPostScreen(
+                navController = navController,
+                initialKind = com.lullabyai.app.data.model.PostKind.fromWire(
+                    backStackEntry.arguments?.getString("kind")
+                ),
+                groupId = backStackEntry.arguments?.getString("groupId"),
+                authViewModel = authViewModel,
+                childViewModel = childViewModel
+            )
+        }
+        composable(
+            route = Screen.ChildPicker.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("next") {
+                    type = androidx.navigation.NavType.StringType
+                    defaultValue = Screen.Dashboard.route
+                }
+            )
+        ) { backStackEntry ->
+            com.lullabyai.app.ui.screens.child.ChildPickerScreen(
+                navController = navController,
+                nextRoute = backStackEntry.arguments?.getString("next") ?: Screen.Dashboard.route,
+                childViewModel = childViewModel
+            )
+        }
+        composable(Screen.ParentTips.route) {
+            com.lullabyai.app.ui.screens.child.ParentTipsScreen(
+                navController = navController,
+                childViewModel = childViewModel
+            )
+        }
+        composable(Screen.CommunityGroups.route) {
+            com.lullabyai.app.ui.screens.community.CommunityGroupsScreen(navController = navController)
+        }
+        composable(
+            route = Screen.CommunityGroupDetail.route,
+            arguments = listOf(androidx.navigation.navArgument("groupId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            com.lullabyai.app.ui.screens.community.CommunityGroupDetailScreen(
+                navController = navController,
+                groupId = backStackEntry.arguments?.getString("groupId").orEmpty()
+            )
+        }
+        composable(Screen.CommunityFriendRequests.route) {
+            com.lullabyai.app.ui.screens.community.FriendRequestsScreen(navController = navController)
+        }
+        composable(Screen.CommunityDoctorArticles.route) {
+            com.lullabyai.app.ui.screens.community.CommunityDoctorArticlesScreen(navController = navController)
+        }
+        composable(
+            route = Screen.CommunityPostDetail.route,
+            arguments = listOf(androidx.navigation.navArgument("postId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            com.lullabyai.app.ui.screens.community.CommunityPostDetailScreen(
+                postId = backStackEntry.arguments?.getString("postId") ?: "",
+                navController = navController
             )
         }
         composable(
@@ -1898,4 +2044,22 @@ fun AppNavigation(
     }
     }
     }
+}
+
+@Composable
+private fun CapGate(
+    childViewModel: ChildViewModel,
+    navController: NavHostController,
+    cap: String,
+    title: String? = null,
+    content: @Composable () -> Unit
+) {
+    com.lullabyai.app.ui.screens.access.PermissionAccessGuard(
+        childViewModel = childViewModel,
+        navController = navController,
+        onBack = { navController.popBackStack() },
+        capability = cap,
+        screenTitle = title,
+        content = content
+    )
 }

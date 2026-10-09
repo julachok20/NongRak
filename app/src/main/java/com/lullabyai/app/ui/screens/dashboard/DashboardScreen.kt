@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -96,6 +97,8 @@ fun DashboardScreen(
     onNavigateToTimetable: () -> Unit = onNavigateToCalendar,
     onNavigateToFamilySummary: () -> Unit = onNavigateToChild,
     onNavigateToTips: () -> Unit = {},
+    /** สมาชิกในครอบครัว opens the permission screen - that is where access actually lives. */
+    onNavigateToFamilyMembers: () -> Unit = onNavigateToConnect,
     /**
      * ลูกไม่สบาย. Opens AddHealthRecord, which CREATES the illness record.
      *
@@ -395,114 +398,6 @@ fun DashboardScreen(
                         )
                     }
 
-                    // Home only says that answers are owed and where to give them; the questions
-                    // themselves are asked on Child Info, so there is one place to answer rather
-                    // than two forms that can disagree.
-                    if (hasActiveChild && childState.infoAsks.isNotEmpty()) {
-                        HomeQuestionNoticeBanner(
-                            isThai = isThai,
-                            questionCount = childState.infoAsks.size,
-                            subjectName = com.lullabyai.app.data.infoask.InfoAskCatalog.bannerSubjectName(
-                                childState.infoAsks, child?.name.orEmpty(), isThai
-                            ),
-                            onOpenChildInfo = onNavigateToChild,
-                            onRecordNow = childState.infoAsks.firstNotNullOfOrNull {
-                                com.lullabyai.app.data.infoask.InfoAskCatalog.recordRoute(it.fieldId)
-                            }?.let { route -> { onNavigateToRoute(route) } }
-                        )
-                    }
-
-                    // Pending sync requests
-                    ownedSyncRequests.forEach { req ->
-                        val childName = childState.children.find { it.id == req.childId }?.name ?: return@forEach
-                        com.lullabyai.app.ui.components.SyncRequestCard(
-                            childName = childName,
-                            onApprove = { childViewModel.confirmSyncRequest(context, req.id, true) },
-                            onReject = { childViewModel.confirmSyncRequest(context, req.id, false) }
-                        )
-                    }
-
-                    // Answering a request now hides its card for good, so a refusal by the server
-                    // has to be said out loud here - otherwise the owner walks away believing they
-                    // denied access that is in fact still pending.
-                    childState.syncError?.let { key ->
-                        val message = com.lullabyai.app.viewmodel.AccessRequestStrings.error(key, isThai)
-                        if (message != null) {
-                            Card(
-                                shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = DashErrBg)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.ErrorOutline,
-                                        contentDescription = null,
-                                        tint = DashErrIcon,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Text(
-                                        text = message,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = DashErrText,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TextButton(onClick = { childViewModel.clearSyncError() }) {
-                                        Text(if (isThai) "ปิด" else "Dismiss")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Missing child info nudge
-                    if (hasActiveChild) missingByChild.forEach { (c, missing) ->
-                        Card(
-                            onClick = {
-                                com.lullabyai.app.data.settings.ChildSelection.set(c.id)
-                                childViewModel.selectChild(c.id)
-                                onNavigateToChild()
-                            },
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = DashCard),
-                            border = BorderStroke(1.dp, DashBorder),
-                            elevation = CardDefaults.cardElevation(0.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(Primary.copy(0.12f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        text = if (isThai) "ข้อมูลของ ${c.name} ยังไม่ครบ" else "${c.name}'s info is incomplete",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = DashTitle
-                                    )
-                                    Text(
-                                        text = (if (isThai) "กรอกเพิ่มเติม: " else "Fill in: ") + missing.joinToString(", "),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = DashSubtle,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                                Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-
                     // HERO: น้องรัก AI. Not a banner that opens a chat - the assistant IS how
                     // this app is meant to be used, so the input belongs here.
                     NongRakAiCard(
@@ -521,7 +416,6 @@ fun DashboardScreen(
                         YourChildrenCard(
                             isThai = isThai,
                             children = childState.children,
-                            activeChildId = child?.id,
                             onSelect = { id ->
                                 // Select first, then open: Child Info reads the ACTIVE child, so
                                 // navigating before the switch would show the previous child for a
@@ -558,7 +452,7 @@ fun DashboardScreen(
                             isThai = isThai,
                             familyName = resolvedFamilyName,
                             members = familyMembers,
-                            onManage = onNavigateToConnect
+                            onManage = onNavigateToFamilyMembers
                         )
                     }
 
@@ -918,92 +812,6 @@ private fun MonthlyMentalHealthBanner(
 }
 
 /**
- * Home's notice that questions are waiting — the form lives on Child Info, this only points there.
- */
-@Composable
-private fun HomeQuestionNoticeBanner(
-    isThai: Boolean,
-    questionCount: Int,
-    subjectName: String,
-    onOpenChildInfo: () -> Unit,
-    onRecordNow: (() -> Unit)? = null
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = DashCard),
-        border = BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            modifier = Modifier.clickable(onClick = onOpenChildInfo),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(Primary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.QuestionAnswer,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (isThai) "มีคำถาม $questionCount ข้อเกี่ยวกับ$subjectName รอคุณตอบ"
-                    else "$questionCount question${if (questionCount == 1) "" else "s"} about $subjectName waiting",
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    ),
-                    color = DashTitle
-                )
-                Text(
-                    text = if (isThai) "แตะเพื่อไปตอบในหน้าข้อมูลลูก"
-                    else "Tap to answer them on the Child Info page",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = DashSubtle
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFE11D48))
-            )
-            Icon(
-                Icons.Filled.ChevronRight,
-                contentDescription = null,
-                tint = DashSubtle,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        if (onRecordNow != null) {
-            Button(
-                onClick = onRecordNow,
-                modifier = Modifier.fillMaxWidth().height(40.dp),
-                shape = RoundedCornerShape(100.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
-            ) {
-                Text(
-                    if (isThai) "บันทึกเลย" else "Record now",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-            }
-        }
-        }
-    }
-}
-
-/**
  * น้องรัก AI — the assistant, as the first thing on the home screen.
  *
  * This is an INPUT, not a banner. The owner's reason for putting the assistant above everything
@@ -1025,6 +833,41 @@ private fun NongRakAiCard(
 ) {
     var draft by remember { mutableStateOf("") }
 
+    // The buddy. It breathes on a slow loop, changes pose every few seconds, and switches to the
+    // thinking pose the moment the parent starts typing. A companion that reacts reads as present
+    // in a way a static picture never does, which is the whole point of putting one here.
+    val idlePoses = remember {
+        listOf(
+            com.lullabyai.app.R.drawable.buddy_wave,
+            com.lullabyai.app.R.drawable.buddy_calm,
+            com.lullabyai.app.R.drawable.buddy_thumbsup,
+            com.lullabyai.app.R.drawable.buddy_love
+        )
+    }
+    var poseIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(4500)
+            poseIndex = (poseIndex + 1) % idlePoses.size
+        }
+    }
+    val pose = if (draft.isNotBlank()) com.lullabyai.app.R.drawable.buddy_thinking
+               else idlePoses[poseIndex]
+
+    val bob by androidx.compose.animation.core.rememberInfiniteTransition(label = "buddyBob")
+        .animateFloat(
+            initialValue = 0f,
+            targetValue = -3f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                androidx.compose.animation.core.tween(
+                    1600,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                ),
+                androidx.compose.animation.core.RepeatMode.Reverse
+            ),
+            label = "buddyBobValue"
+        )
+
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = DashCard),
@@ -1039,18 +882,24 @@ private fun NongRakAiCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .size(58.dp)
+                        .clip(RoundedCornerShape(16.dp))
                         .background(Primary.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(
-                            com.lullabyai.app.R.drawable.mascot_wave
-                        ),
-                        contentDescription = null,
-                        modifier = Modifier.size(38.dp)
-                    )
+                    androidx.compose.animation.Crossfade(
+                        targetState = pose,
+                        animationSpec = androidx.compose.animation.core.tween(600),
+                        label = "buddyPose"
+                    ) { p ->
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(p),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .offset(y = bob.dp)
+                        )
+                    }
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -1288,7 +1137,6 @@ private fun todayLine(item: com.lullabyai.app.util.TodayItem, isThai: Boolean): 
 private fun YourChildrenCard(
     isThai: Boolean,
     children: List<com.lullabyai.app.data.model.Child>,
-    activeChildId: String?,
     onSelect: (String) -> Unit,
     onAdd: () -> Unit
 ) {
@@ -1323,13 +1171,16 @@ private fun YourChildrenCard(
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // No selected state, on purpose. This row is a way INTO Child Info, not a
+                // setting: tapping a face opens that child rather than marking one as current, so
+                // highlighting one would promise a mode the row does not have.
                 children.forEach { c ->
                     PersonChip(
                         label = c.name,
                         caption = ageCaption(c.birthdate, isThai),
                         avatarUrl = c.avatarUrl,
                         fallbackIcon = Icons.Filled.ChildCare,
-                        selected = c.id == activeChildId,
+                        selected = false,
                         onClick = { onSelect(c.id) }
                     )
                 }
@@ -1588,11 +1439,18 @@ private fun FamilyTodayCard(
 ) {
     // The child name is only worth the space when more than one child has something on the card.
     val showNames = items.map { it.childId }.distinct().size > 1
+    // Urgent means a warning the app raised, or a dose whose time has passed. The card then reads
+    // as a notification rather than a summary: red border, red heading, and the line itself set
+    // large. Everything else stays quiet, because a card that always shouts is never heard.
+    val urgent = warnings.isNotEmpty() ||
+        items.any { it.kind == com.lullabyai.app.util.TodayKind.MEDICINE_OVERDUE }
     Card(
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = DashCard),
+        colors = CardDefaults.cardColors(
+            containerColor = if (urgent) DashOverdue.copy(alpha = 0.07f) else DashCard
+        ),
         elevation = CardDefaults.cardElevation(0.dp),
-        border = BorderStroke(1.dp, DashBorder),
+        border = BorderStroke(if (urgent) 1.5.dp else 1.dp, if (urgent) DashOverdue else DashBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -1604,17 +1462,22 @@ private fun FamilyTodayCard(
                     Modifier
                         .size(30.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Primary.copy(alpha = 0.12f)),
+                        .background((if (urgent) DashOverdue else Primary).copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.CalendarMonth, null, tint = Primary, modifier = Modifier.size(17.dp))
+                    Icon(
+                        if (urgent) Icons.Filled.NotificationsActive else Icons.Filled.CalendarMonth,
+                        null,
+                        tint = if (urgent) DashOverdue else Primary,
+                        modifier = Modifier.size(17.dp)
+                    )
                 }
                 Spacer(Modifier.width(10.dp))
                 Text(
                     if (isThai) "สถานะครอบครัววันนี้" else "Family today",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = DashTitle
+                    color = if (urgent) DashOverdue else DashTitle
                 )
             }
 
@@ -1750,7 +1613,9 @@ private fun TodayRow(
         Icon(icon, null, tint = accent, modifier = Modifier.size(17.dp))
         Text(
             text = if (showName) item.childName + " · " + text else text,
-            style = MaterialTheme.typography.bodySmall,
+            // An overdue dose is the one line on this screen a parent must not scroll past.
+            style = if (overdue) MaterialTheme.typography.titleMedium
+                    else MaterialTheme.typography.bodySmall,
             fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal,
             color = if (overdue) accent else if (done) DashSubtle else DashLabel,
             modifier = Modifier.weight(1f)
