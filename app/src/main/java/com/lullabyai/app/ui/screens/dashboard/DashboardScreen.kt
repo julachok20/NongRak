@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -502,6 +503,19 @@ fun DashboardScreen(
                         }
                     }
 
+                    // HERO: น้องรัก AI. Not a banner that opens a chat - the assistant IS how
+                    // this app is meant to be used, so the input belongs here.
+                    NongRakAiCard(
+                        isThai = isThai,
+                        child = child,
+                        items = todayItems,
+                        onSend = { text ->
+                            chatViewModel.sendMessage(text, child, isThai = isThai)
+                            onNavigateToChat()
+                        },
+                        onOpenChat = onNavigateToChat
+                    )
+
                     // SECTION: ลูกของคุณ — the children, doubling as the switcher.
                     if (childState.children.isNotEmpty()) {
                         YourChildrenCard(
@@ -526,7 +540,6 @@ fun DashboardScreen(
                         warnings = urgentNotifications,
                         onWarning = onNavigateToNotifications,
                         onCalendar = onNavigateToCalendar,
-                        onTimetable = onNavigateToTimetable,
                         onSummary = onNavigateToFamilySummary,
                         onItem = { item ->
                             when (item.kind) {
@@ -548,12 +561,6 @@ fun DashboardScreen(
                             onManage = onNavigateToConnect
                         )
                     }
-
-                    // HERO CARD: คุยกับ AI ผู้ช่วย (Chat with AI Assistant Banner)
-                    HeroAiChatBannerCard(
-                        isThai = isThai,
-                        onClick = onNavigateToChat
-                    )
 
                     // SECTION: การทำงานด่วน (Quick Action)
                     QuickActionSection(
@@ -997,86 +1004,261 @@ private fun HomeQuestionNoticeBanner(
 }
 
 /**
- * Hero Card: คุยกับ AI ผู้ช่วย (Chat with AI Assistant Banner)
+ * น้องรัก AI — the assistant, as the first thing on the home screen.
+ *
+ * This is an INPUT, not a banner. The owner's reason for putting the assistant above everything
+ * else is that it records for the parent: saying "ลูกเพิ่งหลับ" writes the nap, so talking to it is
+ * the logging path rather than a detour from it. A card that merely opened a chat screen would put
+ * a tap in front of the thing the whole layout is built around.
+ *
+ * The tinted box states FACTS from TodayPlan and nothing else. No generated cheerfulness and no
+ * "doing great today" badge: the app can say a dose is due because a row says so, and it cannot
+ * say a child is thriving, however warm that would read.
  */
 @Composable
-private fun HeroAiChatBannerCard(
+private fun NongRakAiCard(
     isThai: Boolean,
-    onClick: () -> Unit
+    child: com.lullabyai.app.data.model.Child?,
+    items: List<com.lullabyai.app.util.TodayItem>,
+    onSend: (String) -> Unit,
+    onOpenChat: () -> Unit
 ) {
+    var draft by remember { mutableStateOf("") }
+
     Card(
-        onClick = onClick,
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        colors = CardDefaults.cardColors(containerColor = DashCard),
         elevation = CardDefaults.cardElevation(0.dp),
+        border = BorderStroke(1.dp, DashBorderSoft),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            Color(0xFF173DB8),
-                            Color(0xFF2563EB),
-                            Color(0xFF4338CA)
-                        )
-                    )
-                )
-                .padding(horizontal = 18.dp, vertical = 14.dp)
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.weight(1f)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(
+                            com.lullabyai.app.R.drawable.mascot_wave
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier.size(38.dp)
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (isThai) "น้องรัก AI" else "NongRak AI",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = DashTitle
+                    )
+                    Text(
+                        if (isThai) "เพื่อนคู่ใจคุณพ่อคุณแม่ พร้อมดูแลเรื่องลูก"
+                        else "Here to help with your child, any time",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DashBody
+                    )
+                }
+            }
+
+            // Which child the assistant is answering about. Without it, a two-child family cannot
+            // tell whose nap a reply is describing.
+            child?.let { c ->
+                Surface(
+                    onClick = onOpenChat,
+                    shape = RoundedCornerShape(100.dp),
+                    color = Primary.copy(alpha = 0.10f)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = if (isThai) "คุยกับ AI ผู้ช่วย" else "Chat with AI Assistant",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            ),
-                            color = Color.White
+                            Icons.Filled.ChildCare, null,
+                            tint = Primary, modifier = Modifier.size(15.dp)
                         )
                         Text(
-                            text = if (isThai) "ถามได้ทุกเรื่องเกี่ยวกับการเลี้ยงลูก ตลอด 24 ชั่วโมง" else "Ask any parenting questions 24/7",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = Color.White.copy(alpha = 0.88f)
+                            if (isThai) "ดูแลลูก: " + c.name else "Caring for " + c.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Primary,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
-
-                Icon(
-                    Icons.Filled.ChevronRight,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
             }
+
+            // Today, as facts. Empty means nothing is outstanding - said plainly, never dressed up
+            // as a verdict on how the child is doing.
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Primary.copy(alpha = 0.07f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (items.isEmpty()) {
+                        Text(
+                            if (isThai) "วันนี้ยังไม่มีบันทึกค่ะ บอกน้องรักได้เลยว่าลูกเป็นยังไงบ้าง"
+                            else "Nothing recorded today. Tell me how your child is doing.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DashBody
+                        )
+                    } else {
+                        items.take(3).forEach { item ->
+                            Text(
+                                todayLine(item, isThai),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = DashBody
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Four topics, each sending a real question rather than opening a submenu.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AiTopicChip(if (isThai) "โภชนาการ" else "Feeding", Icons.Filled.Restaurant, Color(0xFFF59E0B)) {
+                    onSend(if (isThai) "ขอคำแนะนำเรื่องโภชนาการของลูกหน่อยค่ะ" else "Advice on my child nutrition?")
+                }
+                AiTopicChip(if (isThai) "การนอน" else "Sleep", Icons.Filled.Bedtime, Color(0xFF6366F1)) {
+                    onSend(if (isThai) "ขอคำแนะนำเรื่องการนอนของลูกหน่อยค่ะ" else "Advice on my child sleep?")
+                }
+                AiTopicChip(if (isThai) "พัฒนาการ" else "Milestones", Icons.Filled.Extension, Color(0xFF22A45D)) {
+                    onSend(if (isThai) "ลูกวัยนี้ควรทำอะไรได้บ้างคะ" else "What should my child be doing at this age?")
+                }
+                AiTopicChip(if (isThai) "สุขภาพ" else "Health", Icons.Filled.Favorite, Color(0xFFE11D48)) {
+                    onSend(if (isThai) "อยากปรึกษาเรื่องสุขภาพของลูกค่ะ" else "I want to ask about my child health.")
+                }
+            }
+
+            // The input. Sending from here goes straight through ChatViewModel, so a record like
+            // "ลูกเพิ่งหลับ" is written without the parent opening another screen first.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(100.dp))
+                    .border(1.dp, DashBorder, RoundedCornerShape(100.dp))
+                    .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Filled.AutoAwesome, null,
+                    tint = Primary, modifier = Modifier.size(17.dp)
+                )
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = DashTitle),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        if (draft.isEmpty()) {
+                            Text(
+                                if (isThai) "ถามอะไรก็ได้เกี่ยวกับการเลี้ยงลูก..."
+                                else "Ask anything about raising your child...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = DashSubtle,
+                                maxLines = 1
+                            )
+                        }
+                        inner()
+                    }
+                )
+                val ready = draft.isNotBlank()
+                Surface(
+                    onClick = {
+                        if (ready) {
+                            onSend(draft.trim())
+                            draft = ""
+                        }
+                    },
+                    enabled = ready,
+                    shape = CircleShape,
+                    color = if (ready) Primary else DashBorder,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.ArrowUpward,
+                            contentDescription = if (isThai) "ส่ง" else "Send",
+                            tint = if (ready) Color.White else DashSubtle,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Text(
+                if (isThai) "น้องรัก AI เป็นผู้ช่วย ไม่ใช่แพทย์ หากลูกมีอาการรุนแรง โทร 1669"
+                else "NongRak AI is an assistant, not a doctor. In an emergency call 1669.",
+                style = MaterialTheme.typography.labelSmall,
+                color = DashSubtle
+            )
         }
     }
 }
+
+@Composable
+private fun AiTopicChip(
+    label: String,
+    icon: ImageVector,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(accent.copy(alpha = 0.10f))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(icon, null, tint = accent, modifier = Modifier.size(16.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = accent,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+    }
+}
+
+/** One line of today for the assistant card. Facts only - the same source the status card uses. */
+private fun todayLine(item: com.lullabyai.app.util.TodayItem, isThai: Boolean): String =
+    when (item.kind) {
+        com.lullabyai.app.util.TodayKind.MEDICINE_OVERDUE ->
+            if (isThai) "ยามื้อ " + item.time + " ยังไม่ได้ให้" else "Dose at " + item.time + " not given"
+        com.lullabyai.app.util.TodayKind.MEDICINE_DUE ->
+            if (isThai) "ยามื้อถัดไป " + item.time else "Next dose at " + item.time
+        com.lullabyai.app.util.TodayKind.DONE_MEDICINE ->
+            if (isThai) "ให้ยามื้อ " + item.time + " แล้ว" else "Dose at " + item.time + " given"
+        com.lullabyai.app.util.TodayKind.SYMPTOM_LOG ->
+            if (isThai) "ยังไม่ได้บันทึกอาการวันนี้" else "Today symptoms not logged yet"
+        com.lullabyai.app.util.TodayKind.VACCINE -> {
+            val on = com.lullabyai.app.util.TimeUtils.localDayMonth(item.date) ?: item.date.orEmpty()
+            if (isThai) "วัคซีนเข็มถัดไป " + on else "Next vaccine " + on
+        }
+    }
 
 /**
  * Section: บันทึกด่วน (Quick Action) with 4 Pastel Tiles
@@ -1122,10 +1304,16 @@ private fun YourChildrenCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                if (isThai) "ลูกของคุณ" else "Your children",
+                if (isThai) "เลือกลูกที่ต้องการดูข้อมูล" else "Choose a child",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = DashTitle,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Text(
+                if (isThai) "แตะที่รูปเพื่อสลับ" else "Tap a photo to switch",
+                style = MaterialTheme.typography.labelSmall,
+                color = DashSubtle,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
             Row(
@@ -1217,7 +1405,7 @@ private fun FamilyMembersCard(
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 Text(
-                    if (isThai) "จัดการ" else "Manage",
+                    if (isThai) "+ เพิ่มผู้ดูแล" else "+ Add carer",
                     style = MaterialTheme.typography.labelMedium,
                     color = Primary,
                     modifier = Modifier
@@ -1395,7 +1583,6 @@ private fun FamilyTodayCard(
     warnings: List<AppNotification>,
     onWarning: () -> Unit,
     onCalendar: () -> Unit,
-    onTimetable: () -> Unit,
     onSummary: () -> Unit,
     onItem: (com.lullabyai.app.util.TodayItem) -> Unit
 ) {
@@ -1424,7 +1611,7 @@ private fun FamilyTodayCard(
                 }
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    if (isThai) "ครอบครัวของเรา" else "Our family",
+                    if (isThai) "สถานะครอบครัววันนี้" else "Family today",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = DashTitle
@@ -1470,8 +1657,10 @@ private fun FamilyTodayCard(
             }
 
             if (items.isEmpty() && warnings.isEmpty()) {
+                // Deliberately about the RECORDS, not about health. The app knows nothing was
+                // logged; it does not know the child is well, and must not say so.
                 Text(
-                    if (isThai) "วันนี้ยังไม่มีอะไรต้องทำค่ะ" else "Nothing needs doing today.",
+                    if (isThai) "วันนี้ยังไม่มีเรื่องต้องทำค่ะ" else "Nothing needs doing today.",
                     style = MaterialTheme.typography.bodySmall,
                     color = DashBody
                 )
@@ -1479,17 +1668,15 @@ private fun FamilyTodayCard(
                 items.forEach { item -> TodayRow(item, isThai, showNames) { onItem(item) } }
             }
 
+            // Two buttons, per the design. ตารางเวลา is gone: it opened the calendar anyway,
+            // so it was a label that did not match where it went.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TodayCardButton(
-                    if (isThai) "ปฏิทิน" else "Calendar",
+                    if (isThai) "ปฏิทินสุขภาพ" else "Health calendar",
                     Icons.Filled.CalendarMonth, Modifier.weight(1f), onCalendar
                 )
                 TodayCardButton(
-                    if (isThai) "ตารางเวลา" else "Timetable",
-                    Icons.Filled.ViewAgenda, Modifier.weight(1f), onTimetable
-                )
-                TodayCardButton(
-                    if (isThai) "สรุป" else "Summary",
+                    if (isThai) "ดูสรุปบันทึก" else "View summary",
                     Icons.Filled.Description, Modifier.weight(1f), onSummary
                 )
             }
@@ -1621,7 +1808,7 @@ private fun QuickActionSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isThai) "การทำงานด่วน" else "Quick actions",
+                    text = if (isThai) "เมนูลัดใช้งานบ่อย" else "Frequently used",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
@@ -1629,7 +1816,7 @@ private fun QuickActionSection(
                     color = DashTitle
                 )
                 Text(
-                    text = if (isThai) "ดูทั้งหมด" else "See all",
+                    text = if (isThai) "แตะเพื่อบันทึก" else "Tap to record",
                     style = MaterialTheme.typography.labelMedium,
                     color = Primary,
                     modifier = Modifier
@@ -1647,7 +1834,7 @@ private fun QuickActionSection(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickActionTile(
-                    label = if (isThai) "นัดหมาย" else "Appointments",
+                    label = if (isThai) "นัดหมายหมอ" else "Appointments",
                     icon = Icons.Filled.EventNote,
                     bgColor = Color(0xFFEDF4FF),
                     iconColor = Color(0xFF3B82F6),
@@ -1685,7 +1872,7 @@ private fun QuickActionSection(
                     onClick = onSickness
                 )
                 QuickActionTile(
-                    label = if (isThai) "โภชนาการ" else "Nutrition",
+                    label = if (isThai) "การกิน / นม" else "Feeding",
                     icon = Icons.Filled.Restaurant,
                     bgColor = Color(0xFFFFF9E6),
                     iconColor = Color(0xFFF59E0B),
@@ -1693,7 +1880,7 @@ private fun QuickActionSection(
                     onClick = onNutrition
                 )
                 QuickActionTile(
-                    label = if (isThai) "บันทึกการทานยา" else "Medication",
+                    label = if (isThai) "บันทึกทานยา" else "Medication",
                     icon = Icons.Filled.Medication,
                     bgColor = Color(0xFFEDFCF2),
                     iconColor = Color(0xFF16A394),
