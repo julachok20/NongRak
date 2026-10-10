@@ -48,9 +48,6 @@ fun AiGuidanceScreen(childViewModel: ChildViewModel, navController: NavControlle
     LaunchedEffect(child?.id) { if (child != null) childViewModel.loadAiGuidance(isThai) }
 
     val guidance = state.aiGuidance
-    val devPercent = remember(state.milestones) {
-        if (state.milestones.isEmpty()) 0 else state.milestones.count { it.isAchieved } * 100 / state.milestones.size
-    }
     val ageMonths = childViewModel.getAgeMonths()
     val sleepHours = remember(state.sleepLogs) { childViewModel.avgSleepHours() }
     val weightStatus = com.lullabyai.app.util.GrowthReference.current(child, state.growthRecords).first
@@ -108,18 +105,24 @@ fun AiGuidanceScreen(childViewModel: ChildViewModel, navController: NavControlle
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(76.dp)) {
-                            CircularProgressIndicator(
-                                progress = { devPercent / 100f },
-                                modifier = Modifier.fillMaxSize(),
-                                color = Primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                strokeWidth = 7.dp
+                        // The ring here was the share of milestone boxes the PARENT had ticked,
+                        // labelled "พัฒนาการ" - so an unused checklist read as a child behind on
+                        // their development. Removed for the same reason it went from the Child
+                        // Info card, which is where this screen is opened from.
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Primary.copy(alpha = 0.10f))
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(
+                                    com.lullabyai.app.R.drawable.buddy_search
+                                ),
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp)
                             )
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("$devPercent%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Primary)
-                                Text(if (isThai) "พัฒนาการ" else "Progress", style = MaterialTheme.typography.labelSmall, color = Outline, fontSize = 9.sp)
-                            }
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
@@ -129,7 +132,9 @@ fun AiGuidanceScreen(childViewModel: ChildViewModel, navController: NavControlle
                             )
                             Surface(shape = RoundedCornerShape(100.dp), color = Primary.copy(0.1f)) {
                                 Text(
-                                    devHeadline(devPercent, isThai),
+                                    // What this screen IS, rather than a verdict on the child.
+                                    if (isThai) "น้องรักสรุปให้จากข้อมูลที่บันทึกไว้"
+                                    else "Based on what you have recorded",
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Primary,
@@ -167,14 +172,13 @@ fun AiGuidanceScreen(childViewModel: ChildViewModel, navController: NavControlle
                     Modifier.weight(1f)
                 )
                 MetricTile(
-                    Icons.Filled.DirectionsRun,
-                    if (isThai) "กิจกรรม" else "Activity",
-                    when {
-                        state.milestones.isEmpty() -> "-"
-                        devPercent >= 70 -> if (isThai) "สูง" else "High"
-                        devPercent >= 40 -> if (isThai) "ปกติ" else "Steady"
-                        else -> if (isThai) "ต้องเสริม" else "Low"
-                    },
+                    Icons.Filled.EmojiEvents,
+                    if (isThai) "พัฒนาการที่ติ๊กแล้ว" else "Milestones ticked",
+                    // A plain count of what the parent has ticked. The old tile turned the same
+                    // number into "สูง / ปกติ / ต้องเสริม", which reads as a verdict on the child
+                    // when it only ever described how much of the checklist had been filled in.
+                    if (state.milestones.isEmpty()) "-"
+                    else "" + state.milestones.count { it.isAchieved } + "/" + state.milestones.size,
                     Modifier.weight(1f)
                 )
             }

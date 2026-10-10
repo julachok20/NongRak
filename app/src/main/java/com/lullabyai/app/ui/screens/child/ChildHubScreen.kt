@@ -103,7 +103,6 @@ fun ChildHubScreen(
     val tourPreview = isTourMode && !childState.isLoading && childState.children.isEmpty()
     val child: Child? = if (tourPreview) TourSampleData.child else childState.child
     val milestones = if (tourPreview) TourSampleData.sampleMilestones else childState.milestones
-    val devPercent = if (milestones.isNotEmpty()) milestones.count { it.isAchieved } * 100 / milestones.size else 0
     val displayName = if (tourPreview) TourSampleData.displayName(th) else child?.name ?: (if (th) "ลูกของคุณ" else "Your child")
     val context = LocalContext.current
 
@@ -208,7 +207,10 @@ fun ChildHubScreen(
                     onHealthBook = { navController.navigate(Screen.HealthBook.route) }
                 )
 
-                if (!tourPreview) ChildHubQuestionCard(childViewModel, displayName, th)
+                if (!tourPreview) ChildHubQuestionCard(
+                    childViewModel, displayName, th,
+                    onRecordNow = { route -> navController.navigate(route) }
+                )
 
                 // Parent: history + handover. Caregiver: quick log + care schedule.
                 HubActivityCard(
@@ -244,7 +246,6 @@ fun ChildHubScreen(
 
                 HubAiCard(
                     isThai = th,
-                    percent = devPercent,
                     summary = chatState.childInfoCardSummary,
                     onRelearn = { if (!tourPreview) child?.let { chatViewModel.refreshChildInfoCardSummary(it, th) } },
                     onFull = { navController.navigate(AI_GUIDANCE_ROUTE) }
@@ -279,7 +280,7 @@ fun ChildHubScreen(
                     if (tourPreview) null else ChildHubSuggestions.suggest(hubSignals(childState, childViewModel.getAgeMonths()))
                 }
                 if (suggestion != null) {
-                    HubUpdateCta(suggestion, th) { navController.navigate(hubSuggestionRoute(suggestion.kind)) }
+                    HubUpdateCta(suggestion, th) { navController.navigate(AI_GUIDANCE_ROUTE) }
                 }
 
                 HubServicesSection(
@@ -797,16 +798,16 @@ private fun HubGrowthSection(
         HubMetricCard(
             icon = Icons.Filled.MonitorWeight,
             label = if (isThai) "น้ำหนัก" else "Weight",
-            value = weightKg?.let { "%.1f".format(it) } ?: "-",
-            unit = if (isThai) "กก." else "kg",
+            value = com.lullabyai.app.util.VitalsFormat.amount(weightKg, isThai),
+            unit = if (weightKg == null) "" else if (isThai) "กก." else "kg",
             status = weightStatus, isThai = isThai,
             modifier = Modifier.weight(1f).fillMaxHeight(), onClick = onCard
         )
         HubMetricCard(
             icon = Icons.Filled.Straighten,
             label = if (isThai) "ส่วนสูง" else "Height",
-            value = heightCm?.let { "%.1f".format(it) } ?: "-",
-            unit = if (isThai) "ซม." else "cm",
+            value = com.lullabyai.app.util.VitalsFormat.amount(heightCm, isThai),
+            unit = if (heightCm == null) "" else if (isThai) "ซม." else "cm",
             status = heightStatus, isThai = isThai,
             modifier = Modifier.weight(1f).fillMaxHeight(), onClick = onCard
         )
@@ -867,7 +868,7 @@ private fun HubMetricCard(
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun HubAiCard(isThai: Boolean, percent: Int, summary: String?, onRelearn: () -> Unit, onFull: () -> Unit) {
+private fun HubAiCard(isThai: Boolean, summary: String?, onRelearn: () -> Unit, onFull: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Column(
         Modifier.fillMaxWidth().hubSoftShadow(shape).clip(shape).background(cardColor()).border(1.dp, hairline(), shape).padding(16.dp)
@@ -875,35 +876,38 @@ private fun HubAiCard(isThai: Boolean, percent: Int, summary: String?, onRelearn
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("✨", fontSize = 18.sp)
-                Text(if (isThai) "การวิเคราะห์จาก AI" else "AI analysis", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ink())
+                Text(if (isThai) "น้องรักดูข้อมูลให้แล้ว" else "What NongRak noticed", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ink())
             }
             Text(
-                if (isThai) "เรียนรู้ใหม่" else "Re-analyse",
+                if (isThai) "ดูใหม่อีกครั้ง" else "Look again",
                 fontSize = 11.sp, fontWeight = FontWeight.Medium, color = HubPalette.blue,
                 modifier = Modifier.clip(CircleShape).background(if (isDark()) HubPalette.blue.copy(alpha = 0.18f) else HubPalette.blue50)
                     .clickable(onClick = onRelearn).padding(horizontal = 10.dp, vertical = 3.dp)
             )
         }
         HorizontalDivider(Modifier.padding(vertical = 12.dp), color = hairline())
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(
-                    progress = { percent / 100f },
-                    modifier = Modifier.fillMaxSize(),
-                    color = HubPalette.blue,
-                    trackColor = if (isDark()) MaterialTheme.colorScheme.surfaceVariant else Color(0xFFE2E8F0),
-                    strokeWidth = 8.dp
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(
+                Modifier.size(64.dp).clip(RoundedCornerShape(16.dp))
+                    .background(HubPalette.blue.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(
+                        com.lullabyai.app.R.drawable.buddy_search
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(54.dp)
                 )
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("$percent%", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ink())
-                    Text(if (isThai) "คะแนน" else "score", fontSize = 9.sp, color = inkFaint())
-                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(devHeadline(percent, isThai), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = ink())
                 if (summary != null) {
-                    Text(summary, fontSize = 11.sp, lineHeight = 17.sp, color = inkSoft())
+                    Text(summary, fontSize = 12.sp, lineHeight = 18.sp, color = inkSoft())
                 } else {
+                    Text(
+                        if (isThai) "กำลังอ่านข้อมูลของลูกอยู่นะคะ" else "Reading your child records...",
+                        fontSize = 12.sp, color = inkSoft()
+                    )
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp), color = HubPalette.blue)
                 }
             }
@@ -928,7 +932,7 @@ private fun HubAiCard(isThai: Boolean, percent: Int, summary: String?, onRelearn
                 Icon(Icons.Filled.Article, null, tint = HubPalette.blue, modifier = Modifier.size(14.dp))
             }
             Text(
-                if (isThai) "ดูผลการวิเคราะห์ฉบับเต็มและคำแนะนำ" else "See the full analysis and advice",
+                if (isThai) "ดูทั้งหมดที่น้องรักสรุปให้" else "See everything NongRak found",
                 fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = HubPalette.blue, modifier = Modifier.weight(1f)
             )
             Icon(Icons.Filled.ChevronRight, null, tint = HubPalette.blue, modifier = Modifier.size(16.dp))
@@ -993,7 +997,7 @@ private fun HubHealthQuickCard(
 }
 
 // ---------------------------------------------------------------------------------------------
-// แนะนำ — the daily update CTA, chosen from this child's own records
+// The way into the น้องรัก analysis, with one real thing it noticed as the subtitle
 // ---------------------------------------------------------------------------------------------
 
 @Composable
@@ -1006,28 +1010,21 @@ private fun HubUpdateCta(suggestion: ChildHubSuggestions.Suggestion, isThai: Boo
         k.MILESTONE -> Icons.Filled.EmojiEvents
         k.SLEEP_TODAY -> Icons.Filled.Bedtime
     }
-    val title = when (suggestion.kind) {
-        k.VACCINE_OVERDUE -> if (isThai) "แนะนำ: วัคซีนเลยกำหนดมาแล้ว $n วัน" else "Tip: a vaccine is $n days overdue"
-        k.VACCINE_SOON -> if (isThai) "แนะนำ: วัคซีนครบกำหนดในอีก $n วัน" else "Tip: a vaccine is due in $n days"
-        k.ILLNESS_FOLLOW_UP -> if (isThai) "แนะนำ: ติดตามอาการของลูกวันนี้" else "Tip: follow up on today's symptoms"
-        k.GROWTH_NEVER -> if (isThai) "แนะนำ: บันทึกน้ำหนักและส่วนสูงครั้งแรก" else "Tip: record the first weight & height"
-        k.GROWTH_STALE -> if (isThai) "แนะนำ: อัปเดตน้ำหนักและส่วนสูงวันนี้" else "Tip: update weight & height today"
-        k.MILESTONE -> if (isThai) "แนะนำ: เช็กพัฒนาการที่ยังไม่ผ่าน $n ข้อ" else "Tip: $n milestones still to tick"
-        k.SLEEP_TODAY -> if (isThai) "แนะนำ: บันทึกการนอนของวันนี้" else "Tip: log today's sleep"
-    }
+    // The card opens the analysis now, so the heading is the same whatever is pending. The
+    // subtitle still carries the one real thing noticed in this child records, which is what makes
+    // it worth tapping - and it is a FACT, so it sits under a heading about the assistant without
+    // the label promising something the tap does not do.
+    val title = if (isThai) "น้องรักดูข้อมูลของลูกให้แล้ว" else "NongRak looked through the records"
     val detail = when (suggestion.kind) {
-        k.VACCINE_OVERDUE -> if (isThai) "เปิดสมุดวัคซีนเพื่อนัดหมายให้เรียบร้อย" else "Open the vaccine book and book it"
-        k.VACCINE_SOON -> if (isThai) "นัดล่วงหน้าไว้ จะได้ไม่พลาดเข็มนี้" else "Book ahead so this dose is not missed"
+        k.VACCINE_OVERDUE -> if (isThai) "วัคซีนเลยกำหนดมา $n วันแล้วนะคะ" else "A vaccine is $n days overdue"
+        k.VACCINE_SOON -> if (isThai) "อีก $n วันถึงคิววัคซีนเข็มถัดไปค่ะ" else "A vaccine is due in $n days"
         k.ILLNESS_FOLLOW_UP -> if (isThai) "บันทึกอาการล่าสุดเมื่อ $n วันก่อน" else "Last symptom entry was $n days ago"
-        k.GROWTH_NEVER -> if (isThai) "เพื่อเริ่มกราฟการเติบโตของลูก" else "To start this child's growth chart"
-        k.GROWTH_STALE -> if (isThai) "เพื่อติดตามพัฒนาการที่แม่นยำ" else "For accurate development tracking"
-        k.MILESTONE -> if (isThai) "ติ๊กเมื่อลูกทำได้ เพื่อให้คำแนะนำแม่นขึ้น" else "Tick them off for sharper advice"
-        k.SLEEP_TODAY -> if (isThai) "ช่วยให้คำแนะนำการนอนแม่นยำขึ้น" else "It makes the sleep advice more accurate"
+        k.GROWTH_NEVER -> if (isThai) "ยังไม่มีน้ำหนักและส่วนสูงของลูกเลยค่ะ" else "No weight or height recorded yet"
+        k.GROWTH_STALE -> if (isThai) "น้ำหนักและส่วนสูงยังไม่ได้อัปเดตสักพักแล้ว" else "Weight and height are out of date"
+        k.MILESTONE -> if (isThai) "มีพัฒนาการ $n ข้อที่ยังไม่ได้ติ๊กค่ะ" else "$n milestones are still unticked"
+        k.SLEEP_TODAY -> if (isThai) "วันนี้ยังไม่ได้บันทึกการนอนค่ะ" else "Today sleep has not been logged"
     }
-    val action = when (suggestion.kind) {
-        k.VACCINE_OVERDUE, k.VACCINE_SOON, k.MILESTONE -> if (isThai) "เปิดดู" else "Open"
-        else -> if (isThai) "+ บันทึก" else "+ Record"
-    }
+    val action = if (isThai) "ดูเลย" else "See"
     val shape = RoundedCornerShape(16.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape)
@@ -1126,7 +1123,7 @@ private fun HubServicesSection(
             Icons.Filled.MedicalServices, Color.White, Color(0xFFECFDF5).copy(alpha = 0.7f), Color(0xFFD1FAE5).copy(alpha = 0.8f),
             iconGradient = listOf(Color(0xFF34D399), Color(0xFF10B981))),
         // WHO comparison lives on the growth history screen, not the general stats screen.
-        HubService(if (isThai) "กราฟพัฒนาการ" else "Growth charts", if (isThai) "เทียบเกณฑ์ WHO" else "Against WHO standards", Screen.GrowthHistory.route,
+        HubService(if (isThai) "กราฟพัฒนาการ" else "Growth charts", if (isThai) "เทียบเกณฑ์ WHO" else "Against WHO standards", Screen.StatisticsInsights.route,
             Icons.Filled.BarChart, Color.White, HubPalette.blue50.copy(alpha = 0.6f), HubPalette.blue100.copy(alpha = 0.8f),
             iconGradient = listOf(Color(0xFF3B82F6), HubPalette.blue)),
         HubService(if (isThai) "บันทึกอาการ" else "Symptoms", if (isThai) "ยา & อาการป่วย" else "Illness & medicine", Screen.HealthLog.route,
@@ -1461,14 +1458,6 @@ private fun hubSignals(state: com.lullabyai.app.viewmodel.ChildUiState, ageMonth
         pendingMilestones = state.milestones.count { !it.isAchieved },
         ageMonths = ageMonths
     )
-}
-
-private fun hubSuggestionRoute(kind: ChildHubSuggestions.Kind): String = when (kind) {
-    ChildHubSuggestions.Kind.VACCINE_OVERDUE, ChildHubSuggestions.Kind.VACCINE_SOON -> Screen.VaccineBook.route
-    ChildHubSuggestions.Kind.ILLNESS_FOLLOW_UP -> Screen.HealthLog.route
-    ChildHubSuggestions.Kind.GROWTH_NEVER, ChildHubSuggestions.Kind.GROWTH_STALE -> Screen.AddGrowthRecord.route
-    ChildHubSuggestions.Kind.MILESTONE -> Screen.ChildDevelopment.route
-    ChildHubSuggestions.Kind.SLEEP_TODAY -> Screen.SleepTracker.route
 }
 
 /**
