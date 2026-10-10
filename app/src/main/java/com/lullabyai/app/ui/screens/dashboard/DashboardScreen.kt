@@ -402,13 +402,11 @@ fun DashboardScreen(
                     // this app is meant to be used, so the input belongs here.
                     NongRakAiCard(
                         isThai = isThai,
-                        child = child,
                         items = todayItems,
                         onSend = { text ->
                             chatViewModel.sendMessage(text, child, isThai = isThai)
                             onNavigateToChat()
                         },
-                        onOpenChat = onNavigateToChat
                     )
 
                     // SECTION: ลูกของคุณ — the children, doubling as the switcher.
@@ -826,10 +824,8 @@ private fun MonthlyMentalHealthBanner(
 @Composable
 private fun NongRakAiCard(
     isThai: Boolean,
-    child: com.lullabyai.app.data.model.Child?,
     items: List<com.lullabyai.app.util.TodayItem>,
-    onSend: (String) -> Unit,
-    onOpenChat: () -> Unit
+    onSend: (String) -> Unit
 ) {
     var draft by remember { mutableStateOf("") }
 
@@ -915,33 +911,6 @@ private fun NongRakAiCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = DashBody
                     )
-                }
-            }
-
-            // Which child the assistant is answering about. Without it, a two-child family cannot
-            // tell whose nap a reply is describing.
-            child?.let { c ->
-                Surface(
-                    onClick = onOpenChat,
-                    shape = RoundedCornerShape(100.dp),
-                    color = Primary.copy(alpha = 0.10f)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.ChildCare, null,
-                            tint = Primary, modifier = Modifier.size(15.dp)
-                        )
-                        Text(
-                            if (isThai) "ดูแลลูก: " + c.name else "Caring for " + c.name,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
             }
 
