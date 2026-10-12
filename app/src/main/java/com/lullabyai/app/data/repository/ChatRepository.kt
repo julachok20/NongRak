@@ -9,6 +9,10 @@ import com.lullabyai.app.util.RelationshipLabels
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -71,9 +75,29 @@ private const val SAFETY_CLAUSE_EN =
         "If it is a life-threatening emergency, advise them to call the Thai emergency medical service 1669 right away. " +
         "This safety guidance always takes priority, regardless of what the main question was about."
 
+/** The previous exchange, for an opener that picks up where the parent left off. */
+data class LastExchange(
+    val sessionId: String,
+    val title: String,
+    val userText: String,
+    val assistantText: String?,
+    val hoursAgo: Long
+)
+
+
 class ChatRepository {
 
     private val searchCache = SearchCacheRepository()
+    private val memory = AssistantMemoryRepository()
+
+    /**
+     * For work that must outlive the reply it followed.
+     *
+     * Memory extraction runs here rather than in the caller: the parent already has her answer, and
+     * an extraction that fails, or that is still running when she closes the screen, must not touch
+     * the conversation it came from.
+     */
+    private val memoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // ---- Sessions ----
 
@@ -185,6 +209,14 @@ class ChatRepository {
         val targetChild = com.lullabyai.app.util.ChildMention.resolve(userMessage, family, fallback = child) ?: child
         val childContext = buildChatChildContext(family, targetChild, relationship, isThai)
 
+        // What the assistant remembers about this family from earlier conversations. Chat only:
+        // the analysis cards call buildChildContext directly and stay a function of the records
+        // alone, so a remembered opinion can never leak into a growth or sleep assessment.
+        //
+        // promptBlock marks an inferred fact as a guess inside the prompt itself, so the model
+        // hedges it in its own words instead of repeating it back as something she stated.
+        val memoryBlock = runCatching { memory.promptBlock(targetChild?.id, isThai) }.getOrDefault("")
+
         // RAG: pull grounding knowledge from the curated handbook/research corpus (pgvector). Best-effort
         // and optional — only chunks with decent similarity are used so off-topic questions are unaffected.
         // Skipped for image-only messages (no text to match on).
@@ -198,6 +230,7 @@ class ChatRepository {
                 "$who: ${msg.content}"
             }
             if (childContext.isNotEmpty()) { appendLine(childContext); appendLine() }
+            if (memoryBlock.isNotEmpty()) { appendLine(memoryBlock); appendLine() }
             if (ragChunks.isNotEmpty()) {
                 appendLine(
                     if (isThai) "ความรู้อ้างอิงจากคู่มือและงานวิจัยสุขภาพเด็ก (ใช้ประกอบการตอบเมื่อเกี่ยวข้อง อย่าแต่งข้อมูลเกินจากนี้):"
@@ -349,7 +382,54 @@ class ChatRepository {
             }
         }
 
+        // Learn from the conversation every few turns rather than every message: extraction costs a
+        // model call, and a single exchange rarely holds a fact that outlives the day.
+        //
+        // Periodic rather than on-close, deliberately. Android has no reliable "conversation ended"
+        // signal, and a process killed in the background would lose everything she said. Launched
+        // detached, so a failure here never reaches the reply above.
+        val turnsNow = history.count { it.role == "user" } + 1
+        if (shouldExtractMemory(turnsNow)) {
+            val transcript = buildString {
+                history.forEach { m ->
+                    appendLine((if (m.role == "user") "Parent: " else "Assistant: ") + m.content)
+                }
+                appendLine("Parent: " + displayText)
+            }
+            val childIdForMemory = targetChild?.id
+            memoryScope.launch {
+                runCatching { memory.extractFrom(transcript, childIdForMemory, isThai) }
+            }
+        }
+
         ChatReply(aiText, isMedical, sparkReply?.commands.orEmpty())
+    }
+
+    /**
+     * The last thing this parent and the assistant said to each other, for the continuity opener.
+     *
+     * Null when there is no recent conversation, and the caller shows nothing in that case.
+     * Inventing something to resume is worse than a cold open: one fabricated memory is enough to
+     * make a parent stop believing the real ones.
+     */
+    suspend fun lastExchange(maxAgeHours: Long = 72): Result<LastExchange?> = runCatching {
+        val session = getSessions().getOrNull()?.firstOrNull() ?: return@runCatching null
+        val updated = com.lullabyai.app.util.TimeUtils.parseInstant(session.updatedAt)
+            ?: return@runCatching null
+        val ageHours = java.time.Duration.between(updated, java.time.Instant.now()).toHours()
+        // Older than this and resuming is not continuity, it is dragging up something she has
+        // already moved on from.
+        if (ageHours > maxAgeHours) return@runCatching null
+
+        val msgs = getMessages(session.id).getOrNull().orEmpty()
+        val lastUser = msgs.lastOrNull { it.role == "user" } ?: return@runCatching null
+        LastExchange(
+            sessionId = session.id,
+            title = session.title,
+            userText = lastUser.content,
+            assistantText = msgs.lastOrNull { it.role == "model" }?.content,
+            hoursAgo = ageHours
+        )
     }
 
     /**
@@ -403,6 +483,23 @@ class ChatRepository {
                 appendLine()
             }
         }
+    }
+
+    companion object {
+        /** Below this the conversation is a greeting, and greetings hold nothing worth keeping. */
+        const val MEMORY_MIN_TURNS = 3
+
+        /** One extraction per this many parent turns. A model call is not free. */
+        const val MEMORY_EVERY_N_TURNS = 3
+
+        /**
+         * Whether this turn should trigger memory extraction.
+         *
+         * Its own function so the boundary is testable. An off-by-one here does not crash or warn -
+         * it silently never learns anything, and nobody would notice for weeks.
+         */
+        fun shouldExtractMemory(userTurns: Int): Boolean =
+            userTurns >= MEMORY_MIN_TURNS && userTurns % MEMORY_EVERY_N_TURNS == 0
     }
 
     /** Builds a rich context string from the child profile + medical history (synced from onboarding). */

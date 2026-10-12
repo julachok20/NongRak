@@ -302,6 +302,13 @@ fun SettingsScreen(
                         )
                         RowDivider(start = 68.dp)
                         IconNavRow(
+                            icon = Icons.Outlined.Psychology,
+                            title = if (isThai) "สิ่งที่น้องรักจำได้ (What NongRak remembers)" else "What NongRak remembers",
+                            subtitle = if (isThai) "ดูและลบสิ่งที่ AI จำเกี่ยวกับครอบครัว" else "See and delete what it has learned",
+                            onClick = { navController.navigate(Screen.AssistantMemory.route) }
+                        )
+                        RowDivider(start = 68.dp)
+                        IconNavRow(
                             icon = Icons.Outlined.ManageAccounts,
                             title = if (isThai) "ข้อมูลที่ NongRak รู้จักคุณ (Data NongRak knows)" else "What NongRak knows about you",
                             subtitle = if (isThai) "จัดการบริบทส่วนบุคคลเพื่อความแม่นยำของคำตอบ" else "Manage the context that shapes its answers",

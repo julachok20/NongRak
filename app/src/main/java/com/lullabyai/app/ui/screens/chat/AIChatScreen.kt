@@ -323,7 +323,8 @@ fun AIChatScreen(
                                 voiceEnabled = !voiceEnabled
                                 if (!voiceEnabled) tts.stop()
                             },
-                            onHistory = { scope.launch { drawerState.open() } }
+                            onHistory = { scope.launch { drawerState.open() } },
+                            onMemory = { onNavigate(Screen.AssistantMemory.route) }
                         )
                     },
                     bottomBar = {
@@ -560,6 +561,27 @@ fun AIChatScreen(
                                         brief.detail
                                     }
                                     CompanionBubble(mascot = mascot, text = opening)
+
+                                    // Pick up where she left off. Shown only when there IS a recent
+                                    // exchange - lastExchange is null otherwise, and an invented
+                                    // thread to resume would be worse than a cold open.
+                                    chatState.lastExchange?.let { last ->
+                                        val trimmed = last.userText.trim()
+                                        val resume = trimmed.take(60) + if (trimmed.length > 60) "…" else ""
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(start = 44.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            SuggestionChip(Icons.Filled.History, resume) {
+                                                chatViewModel.sendMessage(
+                                                    if (isThai) "ขอคุยเรื่องเดิมต่อ: " + resume
+                                                    else "Let us continue: " + resume,
+                                                    childState.child,
+                                                    family = childState.children
+                                                )
+                                            }
+                                        }
+                                    }
                                     Row(
                                         Modifier.fillMaxWidth().padding(start = 44.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -773,6 +795,8 @@ private fun CompanionTopBar(
     voiceEnabled: Boolean,
     onToggleVoice: () -> Unit,
     onHistory: () -> Unit,
+    /** Opens สิ่งที่น้องรักจำได้. Here, not only in Settings: this is where she talks to it. */
+    onMemory: () -> Unit,
     onSwitchMascot: () -> Unit,
     onCloset: () -> Unit
 ) {
@@ -842,6 +866,11 @@ private fun CompanionTopBar(
                 }
                 IconButton(onClick = onHistory) {
                     Icon(Icons.Filled.History, "ประวัติการแชท", tint = chatColors.inkSoft)
+                }
+                // What it remembers, reachable from the conversation that taught it. Burying this
+                // in Settings alone would mean she finds it only after something is already wrong.
+                IconButton(onClick = onMemory) {
+                    Icon(Icons.Filled.Psychology, "สิ่งที่น้องรักจำได้", tint = chatColors.inkSoft)
                 }
             }
             HorizontalDivider(color = chatColors.hairline)

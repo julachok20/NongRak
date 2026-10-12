@@ -1949,6 +1949,12 @@ fun AppNavigation(
                 childViewModel = childViewModel
             )
         }
+        composable(Screen.AssistantMemory.route) {
+            com.lullabyai.app.ui.screens.settings.AssistantMemoryScreen(
+                navController = navController,
+                childViewModel = childViewModel
+            )
+        }
         composable(Screen.ParentTips.route) {
             com.lullabyai.app.ui.screens.child.ParentTipsScreen(
                 navController = navController,

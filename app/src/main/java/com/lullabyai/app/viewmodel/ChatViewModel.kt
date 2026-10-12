@@ -31,6 +31,14 @@ data class ChatUiState(
     val error: String? = null,
     /** Set for one feed, so the companion's "อิ่มแล้ว" banner shows once and then clears. */
     val bondFeed: com.lullabyai.app.data.repository.BondFeed? = null,
+    /**
+     * What she and the assistant were last talking about, when that was recent.
+     *
+     * Null means there is nothing to resume, and the screen then shows nothing at all rather than
+     * inventing a thread to pick up. One fabricated memory is enough to make a parent stop
+     * trusting the real ones.
+     */
+    val lastExchange: com.lullabyai.app.data.repository.LastExchange? = null,
     val dashboardSummary: String? = null,
     val childInfoSummary: String? = null,
     val childInfoCardSummary: String? = null,
@@ -92,6 +100,12 @@ class ChatViewModel : ViewModel() {
                     parentName = name ?: _uiState.value.parentName
                 )
             }
+            // Best-effort: continuity is a nicety, and failing to load it must never stop the chat
+            // from opening.
+            runCatching { repo.lastExchange().getOrNull() }.getOrNull()?.let { last ->
+                _uiState.value = _uiState.value.copy(lastExchange = last)
+            }
+
             repo.getSessions().onSuccess { sessions ->
                 _uiState.value = _uiState.value.copy(sessions = sessions)
                 // Auto-open most recent, or create a new one if none

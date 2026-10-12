@@ -280,4 +280,81 @@ sealed class Screen(val route: String) {
     object CommunityUserProfile : Screen("community_user_profile/{authorName}") {
         fun route(authorName: String) = "community_user_profile/" + java.net.URLEncoder.encode(authorName, "UTF-8")
     }
+
+    /**
+     * One post, its comments, and the poll if it has one. This is where a shared link lands, so
+     * the route takes the post id alone and the screen must be able to open cold - it cannot
+     * assume the feed has already been loaded.
+     */
+    object CommunityPostDetail : Screen("community_post_detail/{postId}") {
+        fun route(postId: String) = "community_post_detail/$postId"
+    }
+
+    /**
+     * The composer, opened on one of its three tabs. The kind is in the route so the three entry
+     * points in the feed (รูปภาพ/วิดีโอ, ตั้งกระทู้ถามหมอ, โพลสำรวจ) each land on their own tab.
+     * The bare CreateCommunityPost route still exists and opens on the first tab.
+     */
+    object CreateCommunityPostOfKind : Screen("create_community_post/{kind}") {
+        fun route(kind: String) = "create_community_post/$kind"
+    }
+
+    /** คำขอเป็นเพื่อนใหม่ — the requests waiting on this parent to answer. */
+    object CommunityFriendRequests : Screen("community_friend_requests")
+
+    /**
+     * หมอเด็กตอบ — the doctor/AI article list.
+     *
+     * These articles used to be listed inline on the community feed. The Stitch redesign has no
+     * such section, so rather than delete the feature along with the section, the list moved here
+     * and is reached from the story rail.
+     */
+    object CommunityDoctorArticles : Screen("community_doctor_articles")
+
+    /**
+     * เลือกลูกน้อยเพื่อดำเนินการต่อ — which child a quick action is about.
+     *
+     * The destination travels in the route so it survives process death: a picker that forgot where
+     * it was heading would drop the parent back on the home screen after she had already chosen.
+     * Only reached when the family has more than one child; one child skips straight through.
+     */
+    /**
+     * สิ่งที่น้องรักจำได้ — the assistant memory, with delete.
+     *
+     * Reachable from Settings and from the chat itself. A memory a parent cannot inspect is one she
+     * cannot correct, so this screen is part of the feature rather than a setting bolted on later.
+     */
+    object AssistantMemory : Screen("assistant_memory")
+
+    /** เคล็ดลับคุณแม่ — the tips list, opened from the card near the bottom of the home screen. */
+    object ParentTips : Screen("parent_tips")
+
+    object ChildPicker : Screen("child_picker?next={next}") {
+        fun route(next: String) = "child_picker?next=" + android.net.Uri.encode(next)
+    }
+
+    /** กลุ่มคุณแม่ — the group directory, the Group tab of the community footer (mockups 70-71). */
+    object CommunityGroups : Screen("community_groups")
+
+    /**
+     * One group page (mockups 66-69).
+     *
+     * The id is in the route rather than a handed-over object: a group opened from a shared link
+     * has to load cold, and a private group must be refused by the server on that read, not by
+     * whatever a caller happened to pass in.
+     */
+    object CommunityGroupDetail : Screen("community_group/{groupId}") {
+        fun route(groupId: String) = "community_group/$groupId"
+    }
+
+    /**
+     * The composer, posting into a group rather than the open feed.
+     *
+     * A separate route because the destination of the post is what differs, and it has to survive
+     * process death the way the rest of the back stack does - a composer that forgot which group
+     * it was opened from would quietly publish into the open feed instead.
+     */
+    object CreateCommunityPostInGroup : Screen("community_group/{groupId}/compose/{kind}") {
+        fun route(groupId: String, kind: String) = "community_group/$groupId/compose/$kind"
+    }
 }
