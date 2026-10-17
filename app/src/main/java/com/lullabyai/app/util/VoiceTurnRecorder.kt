@@ -149,6 +149,66 @@ class VoiceTurnRecorder {
         }
     }
 
+    /**
+     * Streams continuous 16kHz PCM audio chunks to [onChunk] for live WebSocket models (Gemini Live).
+     * Automatically filters long dead air using energy thresholds.
+     */
+    @SuppressLint("MissingPermission")
+    fun streamPcm(shouldStop: () -> Boolean = { false }, onChunk: (ByteArray) -> Unit) {
+        val minBuffer = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(FRAME_SAMPLES * 4)
+
+        val recorder = runCatching {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuffer
+            )
+        }.getOrNull() ?: return
+
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            return
+        }
+
+        record = recorder
+        isRecording = true
+        val frame = ShortArray(FRAME_SAMPLES)
+        val byteBuf = ByteArray(FRAME_SAMPLES * 2)
+
+        try {
+            recorder.startRecording()
+            while (!shouldStop()) {
+                val read = recorder.read(frame, 0, frame.size)
+                if (read <= 0) break
+
+                val level = rms(frame, read)
+                val speaking = level > maxOf(noiseFloor * SPEECH_MARGIN, ABSOLUTE_FLOOR)
+                isSpeaking = speaking
+                if (!speaking) noiseFloor = noiseFloor * 0.95f + level * 0.05f
+
+                // Convert short array to little-endian bytes for PCM stream
+                for (i in 0 until read) {
+                    val sample = frame[i].toInt()
+                    byteBuf[i * 2] = (sample and 0xFF).toByte()
+                    byteBuf[i * 2 + 1] = ((sample shr 8) and 0xFF).toByte()
+                }
+                onChunk(byteBuf.copyOf(read * 2))
+            }
+        } finally {
+            isRecording = false
+            isSpeaking = false
+            runCatching {
+                recorder.stop()
+                recorder.release()
+            }
+            record = null
+        }
+    }
+
     /** Ends the current turn early — used when the parent hangs up or mutes. */
     fun stop() {
         runCatching { record?.stop() }

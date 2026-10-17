@@ -370,7 +370,9 @@ fun ChildSummaryScreen(
                     questionCount = prompts.size,
                     preview = prompts.take(2).joinToString("\n") { "• ${it.question(s.isThai)}" },
                     onClick = { navController.navigate(Screen.InfoAsk.route) },
-                    onDismiss = { childViewModel.dismissInfoAsk(context) }
+                    onDismiss = { childViewModel.dismissInfoAsk(context) },
+                    onRecordNow = prompts.firstNotNullOfOrNull { com.lullabyai.app.data.infoask.InfoAskCatalog.recordRoute(it.fieldId) }
+                        ?.let { route -> { navController.navigate(route) } }
                 )
             }
 
@@ -461,12 +463,14 @@ fun ChildSummaryScreen(
                     if (tourPreview) com.lullabyai.app.util.GrowthReference.monthsToDays(com.lullabyai.app.ui.screens.onboarding.TourSampleData.ageMonths()) else null
                 )
                 GrowthStatCard(
-                    if (s.isThai) "น้ำหนัก" else "Weight", "${child?.weightKg ?: "-"} " + (if (s.isThai) "กก." else "kg"),
+                    if (s.isThai) "น้ำหนัก" else "Weight",
+                    com.lullabyai.app.util.VitalsFormat.amountWithUnit(child?.weightKg, s.isThai, "กก.", "kg"),
                     (if (s.isThai) weightStatus?.labelTh else weightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
                     Modifier.weight(1f), statusColor = weightStatus?.color ?: Outline, icon = Icons.Filled.MonitorWeight
                 ) { navController.navigate(Screen.GrowthHistory.route) }
                 GrowthStatCard(
-                    if (s.isThai) "ส่วนสูง" else "Height", "${child?.heightCm ?: "-"} " + (if (s.isThai) "ซม." else "cm"),
+                    if (s.isThai) "ส่วนสูง" else "Height",
+                    com.lullabyai.app.util.VitalsFormat.amountWithUnit(child?.heightCm, s.isThai, "ซม.", "cm"),
                     (if (s.isThai) heightStatus?.labelTh else heightStatus?.labelEn) ?: (if (s.isThai) "ยังไม่มีข้อมูล" else "No data"),
                     Modifier.weight(1f), statusColor = heightStatus?.color ?: Outline, icon = Icons.Filled.Straighten
                 ) { navController.navigate(Screen.GrowthHistory.route) }

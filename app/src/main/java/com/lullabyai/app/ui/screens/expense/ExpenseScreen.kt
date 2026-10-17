@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.lullabyai.app.ui.screens.expense
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -184,6 +185,16 @@ fun ExpenseScreen(
                     onDismissMenu = { showMonthMenu = false },
                     onPickMonthValue = { showMonthMenu = false; viewModel.setMonth(it) }
                 )
+            }
+
+            if (state.expiringProducts.isNotEmpty()) {
+                item {
+                    ExpiringProductsAlertCard(
+                        products = state.expiringProducts,
+                        isThai = isThai,
+                        onToggleUsed = { e -> viewModel.toggleUsed(e) }
+                    )
+                }
             }
 
             item {
@@ -800,11 +811,16 @@ internal fun ExpenseRow(
                     add(Triple(Icons.Filled.VerifiedUser, warrantyChipText(e, isThai), e.warrantyExpiringSoon))
                 }
                 if (e.hasExpiration && !e.expiresOn.isNullOrBlank()) {
+                    val expired = e.productExpired
+                    val label = when {
+                        expired -> (if (isThai) "หมดอายุแล้ว " else "Expired ") + thaiDate(e.expiresOn, isThai)
+                        else -> (if (isThai) "หมดอายุ " else "Expires ") + thaiDate(e.expiresOn, isThai)
+                    }
                     add(
                         Triple(
                             Icons.Filled.Warning,
-                            (if (isThai) "หมดอายุ " else "Expires ") + thaiDate(e.expiresOn, isThai),
-                            e.productExpiringSoon
+                            label,
+                            e.productExpiringSoon || expired
                         )
                     )
                 }
@@ -1048,9 +1064,159 @@ private val ChildExpense.warrantyExpiringSoon: Boolean
 private val ChildExpense.productExpiringSoon: Boolean
     get() = daysUntil(expiresOn)?.let { it in 0..7 } == true
 
+private val ChildExpense.productExpired: Boolean
+    get() = daysUntil(expiresOn)?.let { it < 0 } == true
+
 private fun daysUntil(iso: String?): Long? {
     val d = runCatching { LocalDate.parse(iso.orEmpty().take(10)) }.getOrNull() ?: return null
     return java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), d)
+}
+
+/**
+ * Alert card for nearly expired or expired products in the cost record.
+ * Displays items with expiration status, days left, and a one-tap "Mark as used" button.
+ */
+@Composable
+private fun ExpiringProductsAlertCard(
+    products: List<ChildExpense>,
+    isThai: Boolean,
+    onToggleUsed: (ChildExpense) -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF4ED)),
+        border = BorderStroke(1.dp, Color(0xFFFFD8C2)),
+        elevation = CardDefaults.cardElevation(2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(Color(0xFFFFE0CC), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFD9531E),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isThai) "แจ้งเตือน: สินค้าใกล้หมดอายุ (${products.size} รายการ)"
+                        else "Alert: Products Expiring Soon (${products.size})",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color(0xFF942F00)
+                    )
+                    Text(
+                        text = if (isThai) "ตรวจสอบก่อนนำไปใช้งาน หรือแตะเมื่อใช้แล้ว"
+                        else "Check before use, or mark as used when opened",
+                        fontSize = 11.sp,
+                        color = Color(0xFFB54710)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFFFE4D6), thickness = 1.dp)
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                products.take(5).forEach { product ->
+                    val days = daysUntil(product.expiresOn)
+                    val isExpired = days != null && days < 0
+                    val isToday = days != null && days == 0L
+                    val badgeText = when {
+                        isExpired -> if (isThai) "หมดอายุแล้ว" else "Expired"
+                        isToday -> if (isThai) "หมดอายุวันนี้" else "Expires today"
+                        days != null -> if (isThai) "อีก $days วัน" else "In $days days"
+                        else -> if (isThai) "ใกล้หมดอายุ" else "Expiring"
+                    }
+                    val badgeColor = if (isExpired || isToday) ScError else Color(0xFFD9531E)
+                    val badgeBg = if (isExpired || isToday) ScErrorContainer else Color(0xFFFFE0CC)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White, RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0xFFFFE4D6), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = product.name?.takeIf { it.isNotBlank() }
+                                    ?: product.note?.takeIf { it.isNotBlank() }
+                                    ?: (if (isThai) "สินค้า" else "Product"),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = ScOnSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = (if (isThai) "หมดอายุ: " else "Expires: ") + thaiDate(product.expiresOn, isThai),
+                                    fontSize = 11.sp,
+                                    color = ScOnSurfaceVariant
+                                )
+                                Text(
+                                    text = "•",
+                                    fontSize = 11.sp,
+                                    color = ScOutlineVariant
+                                )
+                                Text(
+                                    text = "${baht(product.amountSatang)} ฿",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = ScOnSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Badge
+                        Text(
+                            text = badgeText,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeColor,
+                            modifier = Modifier
+                                .background(badgeBg, CircleShape)
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+
+                        // Quick action button: "ใช้แล้ว" (Mark as used)
+                        OutlinedButton(
+                            onClick = { onToggleUsed(product) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, ScSecondary),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text(
+                                text = if (isThai) "ใช้แล้ว" else "Used",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = ScSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**

@@ -7,6 +7,17 @@ import com.lullabyai.app.data.model.CommunityCommentLikeDto
 import com.lullabyai.app.data.model.CommunityPost
 import com.lullabyai.app.data.model.CommunityPostDto
 import com.lullabyai.app.data.model.CommunityPostLikeDto
+import com.lullabyai.app.data.model.CommunityPoll
+import com.lullabyai.app.data.model.CommunityPollDto
+import com.lullabyai.app.data.model.CommunityPollOption
+import com.lullabyai.app.data.model.CommunityPollOptionDto
+import com.lullabyai.app.data.model.CommunityPollVoteDto
+import com.lullabyai.app.data.model.CommunityReportDto
+import com.lullabyai.app.data.model.PostKind
+import com.lullabyai.app.data.model.Reaction
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import com.lullabyai.app.data.model.ReportReason
 import com.lullabyai.app.data.model.ProfessionalAdviceBlog
 import com.lullabyai.app.data.model.formatRelativeTime
 import com.lullabyai.app.data.model.parseIsoToEpochMillis
@@ -303,24 +314,78 @@ class CommunityRepository(
      * Fetches community posts, their comments, and current user's likes from Supabase.
      * Maps them into [CommunityPost] objects and saves them into [OfflineCache].
      */
-    suspend fun fetchPosts(): Result<List<CommunityPost>> = withContext(Dispatchers.IO) {
+    /** The feed. Replaces [posts] and the offline cache. */
+    /**
+     * The open feed - posts with no group.
+     *
+     * Group posts are excluded here on purpose. A parent who joined ชมรมอาหารเสริม did not ask for
+     * its posts in the main feed, and a post inside a group is read in that group.
+     */
+    suspend fun fetchPosts(): Result<List<CommunityPost>> = loadPosts(onlyPostId = null, groupId = null)
+
+    /**
+     * One group page, pinned posts first.
+     *
+     * Does NOT touch [posts]: the hub feed and a group feed are two different lists, and loading a
+     * group used to be able to replace what the hub was showing behind the user.
+     */
+    suspend fun fetchGroupPosts(groupId: String): Result<List<CommunityPost>> =
+        loadPosts(onlyPostId = null, groupId = groupId)
+
+    /**
+     * One post by id, for a shared link opening cold.
+     *
+     * Deliberately NOT "find it in [posts]": the feed holds the newest hundred, and a link shared
+     * a month ago points at something that fell off the end long ago. Returns null when the post
+     * does not exist, or was removed and the reader is not its author.
+     */
+    suspend fun fetchPostById(postId: String): Result<CommunityPost?> =
+        loadPosts(onlyPostId = postId, groupId = null).map { it.firstOrNull() }
+
+    private suspend fun loadPosts(
+        onlyPostId: String?,
+        groupId: String?
+    ): Result<List<CommunityPost>> = withContext(Dispatchers.IO) {
         runCatching {
             val currentUserId = runCatching { supabase.auth.currentUserOrNull()?.id }.getOrNull()
 
-            // 1. Fetch remote posts
-            val postDtos = supabase.from("community_posts")
+            // Only a plain full read of the open feed owns [_posts] and the offline cache. A single
+            // post is a detail view, and a group is its own list.
+            val isOpenFeed = onlyPostId == null && groupId == null
+
+            // 1. Fetch remote posts.
+            //
+            // community_posts_public, not community_posts: the view nulls user_id on anonymous
+            // threads, so the link between a ไม่ระบุตัวตน post and an account never reaches this
+            // process at all. Reading the table directly here would quietly undo that.
+            val postDtos = supabase.from("community_posts_public")
                 .select {
+                    filter {
+                        if (onlyPostId != null) eq("id", onlyPostId)
+                        // A detail read by id does not filter on the group: a link into a group post
+                        // has to open, and RLS already refuses the rows this reader may not see.
+                        else if (groupId != null) eq("group_id", groupId) else exact("group_id", null)
+                    }
+                    // Pinned first on a group page (mockup 67). nullsFirst = false keeps the
+                    // unpinned posts - which are all of them in the open feed - below.
+                    if (groupId != null) order("pinned_at", Order.DESCENDING, nullsFirst = false)
                     order("created_at", Order.DESCENDING)
-                    limit(100)
+                    limit(if (onlyPostId != null) 1 else 100)
                 }
                 .decodeList<CommunityPostDto>()
                 .let { all ->
                     // Removed posts come back only to their author (RLS). Keep them out of the feed and
                     // show them to that author as the warning banner instead.
-                    val dismissed = dismissedRemovedIds()
-                    _removedMine.value = all
-                        .filter { it.removedAt != null && it.userId != null && it.userId == currentUserId && it.id !in dismissed }
-                        .map { com.lullabyai.app.data.model.RemovedPost(it.id, it.removedReason, it.content.take(60)) }
+                    //
+                    // Only a full feed read may rebuild that banner list. A single-post read sees one
+                    // row, and letting it write here would clear every other warning the author has
+                    // not yet dismissed.
+                    if (isOpenFeed) {
+                        val dismissed = dismissedRemovedIds()
+                        _removedMine.value = all
+                            .filter { it.removedAt != null && it.userId != null && it.userId == currentUserId && it.id !in dismissed }
+                            .map { com.lullabyai.app.data.model.RemovedPost(it.id, it.removedReason, it.content.take(60)) }
+                    }
                     all.filter { it.removedAt == null }
                 }
 
@@ -340,23 +405,29 @@ class CommunityRepository(
                 emptyList()
             }
 
-            // 3. Fetch user's post likes if logged in
-            val likedPostIds = if (currentUserId != null && postIds.isNotEmpty()) {
+            // 3. Reactions. Every row, not only mine: the emoji cluster on the card is a tally of
+            //    everyone's, and likes_count alone cannot say which faces to draw.
+            val reactionRows = if (postIds.isNotEmpty()) {
                 runCatching {
                     supabase.from("community_post_likes")
-                        .select {
-                            filter {
-                                eq("user_id", currentUserId)
-                                isIn("post_id", postIds)
-                            }
-                        }
+                        .select { filter { isIn("post_id", postIds) } }
                         .decodeList<CommunityPostLikeDto>()
-                        .map { it.postId }
-                        .toSet()
-                }.getOrDefault(emptySet())
+                }.getOrDefault(emptyList())
             } else {
-                emptySet()
+                emptyList()
             }
+
+            val reactionsByPost = reactionRows
+                .groupBy { it.postId }
+                .mapValues { (_, rows) ->
+                    rows.groupingBy { Reaction.fromWire(it.reaction) }.eachCount()
+                }
+
+            val myReactionByPost = reactionRows
+                .filter { currentUserId != null && it.userId == currentUserId }
+                .associate { it.postId to Reaction.fromWire(it.reaction) }
+
+            val likedPostIds = myReactionByPost.keys
 
             // 4. Fetch user's comment likes if logged in
             val commentIds = commentDtos.map { it.id }
@@ -377,6 +448,53 @@ class CommunityRepository(
                 emptySet()
             }
 
+            // 5. Polls, for the post rows that are polls. Three small reads rather than one join,
+            //    because PostgREST embedding across three tables plus a per-user vote filter is
+            //    harder to read than it is worth for a hundred rows.
+            val pollPostIds = postDtos.filter { it.kind == PostKind.POLL.wire }.map { it.id }
+            val pollsById = if (pollPostIds.isNotEmpty()) {
+                runCatching {
+                    supabase.from("community_polls")
+                        .select { filter { isIn("post_id", pollPostIds) } }
+                        .decodeList<CommunityPollDto>()
+                        .associateBy { it.postId }
+                }.getOrDefault(emptyMap())
+            } else {
+                emptyMap()
+            }
+
+            val optionsByPost = if (pollsById.isNotEmpty()) {
+                runCatching {
+                    supabase.from("community_poll_options")
+                        .select {
+                            filter { isIn("post_id", pollsById.keys.toList()) }
+                            order("position", Order.ASCENDING)
+                        }
+                        .decodeList<CommunityPollOptionDto>()
+                        .groupBy { it.postId }
+                }.getOrDefault(emptyMap())
+            } else {
+                emptyMap()
+            }
+
+            // Every vote row, not only this user's: the tally has to be counted from somewhere, and
+            // the rows are readable by design. What show_results_after_vote controls is whether the
+            // screen DRAWS the tally - see CommunityPoll.resultsVisible.
+            val voteDtos = if (pollsById.isNotEmpty()) {
+                runCatching {
+                    supabase.from("community_poll_votes")
+                        .select { filter { isIn("post_id", pollsById.keys.toList()) } }
+                        .decodeList<CommunityPollVoteDto>()
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+
+            val votesByOption = voteDtos.groupingBy { it.optionId }.eachCount()
+            val myVotesByPost = voteDtos
+                .filter { currentUserId != null && it.userId == currentUserId }
+                .groupBy({ it.postId }, { it.optionId })
+
             val commentsByPostId = commentDtos.groupBy { it.postId }
 
             val mappedPosts = postDtos.map { dto ->
@@ -394,7 +512,29 @@ class CommunityRepository(
                         timeAgo = formatRelativeTime(cEpoch, isThai = true),
                         likesCount = cDto.likesCount,
                         isLiked = likedCommentIds.contains(cDto.id),
+                        isAi = cDto.isAi,
                         createdAtMillis = cEpoch
+                    )
+                }
+
+                val poll = pollsById[dto.id]?.let { pDto ->
+                    CommunityPoll(
+                        postId = pDto.postId,
+                        description = pDto.description,
+                        closesAtMillis = parseIsoToEpochMillis(pDto.closesAt),
+                        allowMultiple = pDto.allowMultiple,
+                        showResultsAfterVote = pDto.showResultsAfterVote,
+                        allowUserOptions = pDto.allowUserOptions,
+                        options = (optionsByPost[pDto.postId] ?: emptyList()).map { oDto ->
+                            CommunityPollOption(
+                                id = oDto.id,
+                                label = oDto.label,
+                                position = oDto.position,
+                                createdBy = oDto.createdBy,
+                                voteCount = votesByOption[oDto.id] ?: 0
+                            )
+                        },
+                        myVotes = (myVotesByPost[pDto.postId] ?: emptyList()).toSet()
                     )
                 }
 
@@ -411,14 +551,30 @@ class CommunityRepository(
                     videoUrl = dto.videoUrl,
                     likesCount = dto.likesCount,
                     isLiked = likedPostIds.contains(dto.id),
+                    myReaction = myReactionByPost[dto.id],
+                    reactionCounts = reactionsByPost[dto.id] ?: emptyMap(),
                     commentsCount = if (comments.size > dto.commentsCount) comments.size else dto.commentsCount,
                     comments = comments,
-                    createdAtMillis = epoch
+                    createdAtMillis = epoch,
+                    kind = PostKind.fromWire(dto.kind),
+                    title = dto.title,
+                    mediaUrls = dto.mediaUrls,
+                    commentsEnabled = dto.commentsEnabled,
+                    isAnonymous = dto.isAnonymous,
+                    isUrgent = dto.isUrgent,
+                    aiAssist = dto.aiAssist,
+                    poll = poll,
+                    groupId = dto.groupId,
+                    pinnedAtMillis = dto.pinnedAt?.let { parseIsoToEpochMillis(it) }
                 )
             }
 
-            _posts.value = mappedPosts
-            runCatching { OfflineCache.put("community_posts", mappedPosts) }
+            // A single-post read is a detail view, not the feed, and a group read is its own list.
+            // Letting either overwrite _posts would change the feed behind the user.
+            if (isOpenFeed) {
+                _posts.value = mappedPosts
+                runCatching { OfflineCache.put("community_posts", mappedPosts) }
+            }
             mappedPosts
         }.onFailure {
             // Keep existing in-memory / cached posts if network fails
@@ -504,17 +660,49 @@ class CommunityRepository(
         }
     }
 
+    /** Tapping the button: adds a plain ถูกใจ, or clears whatever reaction was already there. */
     fun toggleLike(postId: String) {
-        var nextLiked = false
-        var nextLikesCount = 0
+        val current = _posts.value.firstOrNull { it.id == postId }?.myReaction
+        setReaction(postId, if (current == null) Reaction.LIKE else null)
+    }
+
+    /**
+     * Sets, changes, or clears this person's reaction.
+     *
+     * One row per person per post, so changing รักเลย to ฮาา is an UPDATE of the existing row - an
+     * insert would collide with the (post_id, user_id) primary key. Passing null removes it.
+     *
+     * likes_count is deliberately never written here. A reactor is not the post's author, and the
+     * author-only UPDATE policy rejects it; the community_post_likes_count trigger recounts from
+     * the likes table. The local number below is optimistic until the next fetch.
+     */
+    fun setReaction(postId: String, reaction: Reaction?) {
+        var previous: Reaction? = null
 
         _posts.update { current ->
             current.map { p ->
-                if (p.id == postId) {
-                    nextLiked = !p.isLiked
-                    nextLikesCount = if (nextLiked) p.likesCount + 1 else (p.likesCount - 1).coerceAtLeast(0)
-                    p.copy(isLiked = nextLiked, likesCount = nextLikesCount)
-                } else p
+                if (p.id != postId) return@map p
+                previous = p.myReaction
+
+                // Move the tally locally so the card responds on the tap, not on the round trip.
+                val counts = p.reactionCounts.toMutableMap()
+                previous?.let { old -> counts[old] = (counts[old] ?: 1) - 1 }
+                reaction?.let { fresh -> counts[fresh] = (counts[fresh] ?: 0) + 1 }
+
+                val hadOne = previous != null
+                val hasOne = reaction != null
+                val likes = when {
+                    !hadOne && hasOne -> p.likesCount + 1
+                    hadOne && !hasOne -> (p.likesCount - 1).coerceAtLeast(0)
+                    else -> p.likesCount   // a change of face, not a new reactor
+                }
+
+                p.copy(
+                    myReaction = reaction,
+                    isLiked = hasOne,
+                    likesCount = likes,
+                    reactionCounts = counts.filterValues { it > 0 }
+                )
             }
         }
 
@@ -522,20 +710,29 @@ class CommunityRepository(
             runCatching { OfflineCache.put("community_posts", _posts.value) }
             runCatching {
                 val currentUserId = supabase.auth.currentUserOrNull()?.id ?: return@launch
-                if (nextLiked) {
-                    supabase.from("community_post_likes").insert(CommunityPostLikeDto(postId, currentUserId))
-                } else {
-                    supabase.from("community_post_likes").delete {
-                        filter {
-                            eq("post_id", postId)
-                            eq("user_id", currentUserId)
+                when {
+                    reaction != null && previous == null ->
+                        supabase.from("community_post_likes")
+                            .insert(CommunityPostLikeDto(postId, currentUserId, reaction.wire))
+
+                    reaction != null ->
+                        supabase.from("community_post_likes").update(
+                            buildJsonObject { put("reaction", JsonPrimitive(reaction.wire)) }
+                        ) {
+                            filter {
+                                eq("post_id", postId)
+                                eq("user_id", currentUserId)
+                            }
                         }
-                    }
+
+                    else ->
+                        supabase.from("community_post_likes").delete {
+                            filter {
+                                eq("post_id", postId)
+                                eq("user_id", currentUserId)
+                            }
+                        }
                 }
-                // likes_count is deliberately not written here. A liker is not the post's author,
-                // and the author-only UPDATE policy rejects it; the community_post_likes_count
-                // trigger recounts from the likes table instead. nextLikesCount remains the
-                // optimistic local value until the next fetch.
             }.onFailure { reportWriteFailure(it) }
         }
     }
@@ -582,20 +779,27 @@ class CommunityRepository(
     }
 
     fun addPost(post: CommunityPost) {
-        // 1. Optimistic update
-        _posts.update { listOf(post) + it }
+        // 1. Optimistic update - the OPEN feed only.
+        //
+        // A post written inside a group does not belong in [_posts]: that list is what the hub
+        // draws, and showing a group post there would put it in front of parents who never joined
+        // that group. The group page reloads through fetchGroupPosts instead.
+        val inOpenFeed = post.groupId == null
+        if (inOpenFeed) _posts.update { listOf(post) + it }
 
         // 2. Persist locally and remotely
         scope.launch {
             // ShieldGemma sees the text before anyone else does; a rejected post is taken back off
             // the feed rather than lingering locally as if it had been published.
             if (!com.lullabyai.app.data.remote.SparkChatClient.moderate(post.content).allowed) {
-                _posts.update { current -> current.filterNot { it.id == post.id } }
-                runCatching { OfflineCache.put("community_posts", _posts.value) }
+                if (inOpenFeed) {
+                    _posts.update { current -> current.filterNot { it.id == post.id } }
+                    runCatching { OfflineCache.put("community_posts", _posts.value) }
+                }
                 _writeError.value = ERR_MODERATION_BLOCKED
                 return@launch
             }
-            runCatching { OfflineCache.put("community_posts", _posts.value) }
+            if (inOpenFeed) runCatching { OfflineCache.put("community_posts", _posts.value) }
             runCatching {
                 val currentUserId = post.userId ?: supabase.auth.currentUserOrNull()?.id
                 val dto = CommunityPostDto(
@@ -610,10 +814,188 @@ class CommunityRepository(
                     videoUrl = post.videoUrl,
                     likesCount = post.likesCount,
                     commentsCount = post.commentsCount,
-                    createdAt = java.time.Instant.ofEpochMilli(post.createdAtMillis).toString()
+                    createdAt = java.time.Instant.ofEpochMilli(post.createdAtMillis).toString(),
+                    kind = post.kind.wire,
+                    title = post.title,
+                    mediaUrls = post.mediaUrls,
+                    commentsEnabled = post.commentsEnabled,
+                    isAnonymous = post.isAnonymous,
+                    isUrgent = post.isUrgent,
+                    aiAssist = post.aiAssist,
+                    // Null for the open feed. The insert policy refuses a group the author has not
+                    // joined, so this cannot be used to post into somebody elses group.
+                    groupId = post.groupId
                 )
                 supabase.from("community_posts").insert(dto)
+
+                // A poll is two more writes, and it is the options that make it a poll: a poll row
+                // with no options is a question nobody can answer. Written after the post so the
+                // foreign key has something to point at.
+                post.poll?.let { poll -> insertPoll(post.id, poll) }
             }.onFailure { reportWriteFailure(it) }
+        }
+    }
+
+    /** The poll settings and its starting options. Called from [addPost]; the post must exist. */
+    private suspend fun insertPoll(postId: String, poll: CommunityPoll) {
+        supabase.from("community_polls").insert(
+            CommunityPollDto(
+                postId = postId,
+                description = poll.description,
+                closesAt = java.time.Instant.ofEpochMilli(poll.closesAtMillis).toString(),
+                allowMultiple = poll.allowMultiple,
+                showResultsAfterVote = poll.showResultsAfterVote,
+                allowUserOptions = poll.allowUserOptions
+            )
+        )
+        poll.options.forEachIndexed { index, option ->
+            supabase.from("community_poll_options").insert(
+                CommunityPollOptionDto(
+                    id = option.id,
+                    postId = postId,
+                    label = option.label,
+                    position = index
+                )
+            )
+        }
+    }
+
+    /**
+     * Casts, changes, or withdraws a vote.
+     *
+     * Changing a vote on a single-answer poll means deleting the old row first - the database
+     * refuses a second row with 'poll_single_choice_already_voted' rather than silently replacing
+     * it, so the decision about what "change my vote" means is made here, in the open.
+     *
+     * Tapping an option you already picked withdraws it. On a single-answer poll that leaves the
+     * poll unanswered, which is the same thing the mockup radio buttons do.
+     */
+    suspend fun togglePollVote(postId: String, optionId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val userId = supabase.auth.currentUserOrNull()?.id
+                    ?: error("poll_vote_requires_sign_in")
+
+                val post = _posts.value.firstOrNull { it.id == postId }
+                val poll = post?.poll ?: error("poll_not_loaded:$postId")
+                if (poll.isClosed) error("poll_closed")
+
+                val alreadyPicked = optionId in poll.myVotes
+
+                if (alreadyPicked) {
+                    deleteVote(postId, userId, optionId)
+                } else {
+                    // Single-answer: clear whatever else this person picked, or the insert is refused.
+                    if (!poll.allowMultiple) {
+                        poll.myVotes.forEach { previous -> deleteVote(postId, userId, previous) }
+                    }
+                    supabase.from("community_poll_votes")
+                        .insert(CommunityPollVoteDto(postId = postId, userId = userId, optionId = optionId))
+                }
+
+                applyVoteLocally(postId, optionId, added = !alreadyPicked, allowMultiple = poll.allowMultiple)
+            }.onFailure { reportWriteFailure(it) }
+        }
+
+    private suspend fun deleteVote(postId: String, userId: String, optionId: String) {
+        supabase.from("community_poll_votes").delete {
+            filter {
+                eq("post_id", postId)
+                eq("user_id", userId)
+                eq("option_id", optionId)
+            }
+        }
+    }
+
+    /** Moves the on-screen tally without a refetch, so the bar animates the moment it is tapped. */
+    private fun applyVoteLocally(postId: String, optionId: String, added: Boolean, allowMultiple: Boolean) {
+        _posts.update { current ->
+            current.map { post ->
+                val poll = post.poll
+                if (post.id != postId || poll == null) return@map post
+
+                val cleared = if (added && !allowMultiple) emptySet() else poll.myVotes
+                val myVotes = if (added) cleared + optionId else cleared - optionId
+
+                post.copy(
+                    poll = poll.copy(
+                        myVotes = myVotes,
+                        options = poll.options.map { option ->
+                            val was = option.id in poll.myVotes
+                            val now = option.id in myVotes
+                            when {
+                                was == now -> option
+                                now -> option.copy(voteCount = option.voteCount + 1)
+                                else -> option.copy(voteCount = (option.voteCount - 1).coerceAtLeast(0))
+                            }
+                        }
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Adds an option a voter wrote themselves, when the poll allows it.
+     *
+     * The text is screened first, exactly like a post or a comment. A poll option is user-written
+     * text that every later voter reads; leaving it unscreened would make it the one unmoderated
+     * surface in the community.
+     */
+    suspend fun addPollOption(postId: String, label: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val trimmed = label.trim()
+                require(trimmed.isNotEmpty()) { "poll_option_empty" }
+
+                if (!com.lullabyai.app.data.remote.SparkChatClient.moderate(trimmed).allowed) {
+                    _writeError.value = ERR_MODERATION_BLOCKED
+                    error("poll_option_moderation_blocked")
+                }
+
+                val poll = _posts.value.firstOrNull { it.id == postId }?.poll
+                    ?: error("poll_not_loaded:$postId")
+
+                supabase.from("community_poll_options").insert(
+                    CommunityPollOptionDto(
+                        postId = postId,
+                        label = trimmed,
+                        position = poll.options.size
+                    )
+                )
+                Unit
+            }.onFailure { reportWriteFailure(it) }
+        }
+
+    /**
+     * Flags a post, comment, or poll option for the owner to look at.
+     *
+     * Reports are write-and-forget from the app's side: a reporter may read back only their own,
+     * and there is no status to poll. Filing the same report twice is refused by the database
+     * (one per person per thing), which the caller should present as "already reported", not as
+     * a failure.
+     */
+    suspend fun report(
+        targetType: String,
+        targetId: String,
+        reason: ReportReason,
+        note: String? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val userId = supabase.auth.currentUserOrNull()?.id ?: error("report_requires_sign_in")
+            require(targetType in setOf("post", "comment", "poll_option")) {
+                "report_bad_target_type:$targetType"
+            }
+            supabase.from("community_reports").insert(
+                CommunityReportDto(
+                    reporterId = userId,
+                    targetType = targetType,
+                    targetId = targetId,
+                    reason = reason.wire,
+                    note = note?.trim()?.take(500)?.ifBlank { null }
+                )
+            )
+            Unit
         }
     }
 

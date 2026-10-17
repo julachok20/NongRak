@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -82,3 +86,11 @@ internal fun formatCountdown(totalSec: Long): String {
 internal fun AccessPermissionBottomNav(navController: NavController) {
     ChildBottomNav(navController, currentTab = "")
 }
+
+internal fun permissionSectionIcon(id: String): androidx.compose.ui.graphics.vector.ImageVector =
+    when (id) {
+        "health" -> Icons.Filled.HealthAndSafety
+        "visits" -> Icons.Filled.CalendarMonth
+        "meds" -> Icons.Filled.LocalHospital
+        else -> Icons.Filled.Description
+    }

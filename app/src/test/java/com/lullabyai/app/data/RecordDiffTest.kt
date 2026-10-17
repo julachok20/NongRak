@@ -80,8 +80,18 @@ class RecordDiffTest {
     @Test
     fun `a value filled in from nothing shows a dash before it`() {
         val c = RecordDiff.changes(edit(mapOf("notes" to null), mapOf("notes" to "งอแงนิดหน่อย")), isThai = true, zone = bkk)
-        assertEquals("—", c.single().before)
+        assertEquals("ไม่มี", c.single().before)
         assertEquals("งอแงนิดหน่อย", c.single().after)
+    }
+
+    @Test
+    fun `clearing a value reads as reverted to none`() {
+        val c = RecordDiff.changes(edit(mapOf("weight_kg" to 12.0), mapOf("weight_kg" to null)), isThai = true, zone = bkk)
+        assertEquals("12.0 กก.", c.single().before)
+        assertEquals("ไม่มี", c.single().after)
+        assertTrue(c.single().cleared)
+        assertTrue(RecordDiff.isClearedToNone(c))
+        assertNull(c.single().delta)
     }
 
     @Test

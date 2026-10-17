@@ -161,24 +161,151 @@ class AccessRoleViewModel(
     }
 }
 
-/** The nine capabilities `child_can()` understands, with bilingual labels for the role editor. */
+/**
+ * Capability vocabulary `child_can()` / `valid_child_capabilities()` understand.
+ * Stitch Permission Settings Detail is the 14 editor toggles in [SECTIONS];
+ * [CANCEL_APPOINTMENTS] stays in the allowlist so older grants are not wiped on save.
+ */
 object AccessCapabilities {
-    val ALL = listOf(
-        "view_health", "log_symptoms", "edit_growth",
-        "view_appointments", "book_doctor", "cancel_appointments",
-        "view_documents", "upload_documents", "edit_profile"
+    const val VIEW_HEALTH = "view_health"
+    const val LOG_SYMPTOMS = "log_symptoms"
+    const val EDIT_GROWTH = "edit_growth"
+    const val VIEW_APPOINTMENTS = "view_appointments"
+    const val BOOK_DOCTOR = "book_doctor"
+    const val CANCEL_APPOINTMENTS = "cancel_appointments"
+    const val VIEW_DOCUMENTS = "view_documents"
+    const val UPLOAD_DOCUMENTS = "upload_documents"
+    const val EDIT_PROFILE = "edit_profile"
+    const val VIEW_ACTIVITIES = "view_activities"
+    const val LOG_ACTIVITIES = "log_activities"
+    const val LOG_MEDICATIONS = "log_medications"
+    const val LOG_FEEDING = "log_feeding"
+    const val VIEW_NUTRITION = "view_nutrition"
+    const val LOG_SLEEP = "log_sleep"
+
+    /** New daily-care keys. Missing on a row means "never saved the new grid" — treat as granted. */
+    val DAILY_CARE = setOf(
+        VIEW_ACTIVITIES, LOG_ACTIVITIES, LOG_MEDICATIONS, LOG_FEEDING, VIEW_NUTRITION, LOG_SLEEP
     )
 
-    fun label(cap: String, isThai: Boolean): String = when (cap) {
-        "view_health" -> if (isThai) "ดูข้อมูลสุขภาพ" else "View health data"
-        "log_symptoms" -> if (isThai) "บันทึกอาการ" else "Log symptoms"
-        "edit_growth" -> if (isThai) "แก้ไขการเจริญเติบโต" else "Edit growth records"
-        "view_appointments" -> if (isThai) "ดูนัดหมาย" else "View appointments"
-        "book_doctor" -> if (isThai) "นัดพบแพทย์" else "Book appointments"
-        "cancel_appointments" -> if (isThai) "ยกเลิกนัดหมาย" else "Cancel appointments"
-        "view_documents" -> if (isThai) "ดูเอกสาร" else "View documents"
-        "upload_documents" -> if (isThai) "อัปโหลดเอกสาร" else "Upload documents"
-        "edit_profile" -> if (isThai) "แก้ไขโปรไฟล์ลูก" else "Edit child profile"
-        else -> cap
+    data class ToggleSpec(val key: String, val titleTh: String, val titleEn: String)
+    data class SectionSpec(
+        val id: String,
+        val titleTh: String,
+        val titleEn: String,
+        val items: List<ToggleSpec>
+    )
+
+    val SECTIONS: List<SectionSpec> = listOf(
+        SectionSpec(
+            id = "health",
+            titleTh = "ข้อมูลสุขภาพและพัฒนาการ",
+            titleEn = "Health & Development",
+            items = listOf(
+                ToggleSpec(VIEW_HEALTH, "ดูประวัติสุขภาพและการเจริญเติบโต", "View Health & Growth History"),
+                ToggleSpec(LOG_SYMPTOMS, "บันทึกอาการป่วยและอุณหภูมิ", "Log Symptoms & Temperature"),
+                ToggleSpec(EDIT_GROWTH, "แก้ไขข้อมูลเติบโตและพัฒนาการ", "Edit Growth & Milestone Data")
+            )
+        ),
+        SectionSpec(
+            id = "visits",
+            titleTh = "การพบแพทย์และกิจกรรมการดูแล",
+            titleEn = "Doctor Visits & Care Activities",
+            items = listOf(
+                ToggleSpec(VIEW_APPOINTMENTS, "ดูประวัติการพบแพทย์", "View Doctor Visit History"),
+                ToggleSpec(BOOK_DOCTOR, "บันทึกการพบแพทย์และการวินิจฉัย", "Log Doctor Visits & Clinical Notes"),
+                ToggleSpec(VIEW_ACTIVITIES, "ดูบันทึกกิจกรรมประจำวัน", "View Daily Activity Records"),
+                ToggleSpec(LOG_ACTIVITIES, "บันทึกกิจกรรมและกิจวัตร", "Log Activities & Routines")
+            )
+        ),
+        SectionSpec(
+            id = "meds",
+            titleTh = "ยาและโภชนาการ",
+            titleEn = "Medications & Nutrition",
+            items = listOf(
+                ToggleSpec(LOG_MEDICATIONS, "จัดการตารางยาและบันทึกการให้ยา", "Manage & Log Medications"),
+                ToggleSpec(LOG_FEEDING, "บันทึกการกินนมและอาหาร", "Log Feeding & Meals"),
+                ToggleSpec(VIEW_NUTRITION, "ดูข้อมูลโภชนาการ", "View Nutrition Details"),
+                ToggleSpec(LOG_SLEEP, "บันทึกการนอนหลับ", "Log Sleep Sessions")
+            )
+        ),
+        SectionSpec(
+            id = "docs",
+            titleTh = "เอกสารและข้อมูลโปรไฟล์",
+            titleEn = "Documents & Child Profile",
+            items = listOf(
+                ToggleSpec(VIEW_DOCUMENTS, "ดูคลังเอกสาร", "View Document Vault"),
+                ToggleSpec(UPLOAD_DOCUMENTS, "อัปโหลดเอกสารใหม่", "Upload Documents"),
+                ToggleSpec(EDIT_PROFILE, "แก้ไขโปรไฟล์ลูก", "Edit Child Profile")
+            )
+        )
+    )
+
+    val EDITOR = SECTIONS.flatMap { it.items.map { item -> item.key } }
+
+    val ALL = EDITOR + CANCEL_APPOINTMENTS
+
+    fun spec(cap: String): ToggleSpec? = SECTIONS.asSequence().flatMap { it.items.asSequence() }.find { it.key == cap }
+
+    fun label(cap: String, isThai: Boolean): String {
+        spec(cap)?.let { return if (isThai) it.titleTh else it.titleEn }
+        return when (cap) {
+            CANCEL_APPOINTMENTS -> if (isThai) "ยกเลิกนัดหมาย" else "Cancel appointments"
+            else -> cap
+        }
+    }
+
+    fun actionTitle(cap: String, isThai: Boolean): String = label(cap, isThai)
+
+    fun roleBadge(role: String): String = when (role) {
+        "nanny" -> "Nanny / Caretaker Role"
+        "owner" -> "Owner Role"
+        "co_owner", "member" -> "Co-owner Role"
+        "doctor" -> "Doctor Role"
+        "grandparent" -> "Grandparent Role"
+        "relative" -> "Relative Role"
+        "teacher" -> "Teacher / Daycare Role"
+        "viewer" -> "View only Role"
+        else -> "${AccessRoleLabels.title(role, isThai = false)} Role"
+    }
+
+    fun effectiveCaps(member: com.lullabyai.app.data.model.ChildAccessMember): Set<String> {
+        val stored = member.capabilities.filter { it in ALL }.toMutableSet()
+        if (stored.isEmpty()) {
+            if (member.canViewHealth) stored += VIEW_HEALTH
+            if (member.canLogSymptoms) stored += LOG_SYMPTOMS
+            if (member.canEditGrowth) stored += EDIT_GROWTH
+            if (member.canViewAppointments) stored += VIEW_APPOINTMENTS
+            if (member.canBookDoctor) stored += BOOK_DOCTOR
+            if (member.canCancelAppointments) stored += CANCEL_APPOINTMENTS
+            if (member.canViewDocuments) stored += VIEW_DOCUMENTS
+            if (member.canUploadDocuments) stored += UPLOAD_DOCUMENTS
+            if (member.canEditProfile) stored += EDIT_PROFILE
+        }
+        // Rows saved before the Stitch daily-care toggles exist: keep daily care on until
+        // the owner explicitly saves this grid (which writes the keys on or off).
+        if (stored.none { it in DAILY_CARE }) stored += DAILY_CARE
+        if (member.canCancelAppointments || CANCEL_APPOINTMENTS in member.capabilities) {
+            stored += CANCEL_APPOINTMENTS
+        }
+        return stored
+    }
+
+    fun holds(member: com.lullabyai.app.data.model.ChildAccessMember, cap: String): Boolean {
+        if (AccessRoleLabels.isFullAccess(member.role) || member.role == "owner") return true
+        return cap in effectiveCaps(member)
+    }
+
+    fun accessSummary(caps: Set<String>, isThai: Boolean): String {
+        val canWrite = caps.any {
+            it.startsWith("log_") || it == EDIT_GROWTH || it == EDIT_PROFILE ||
+                it == UPLOAD_DOCUMENTS || it == BOOK_DOCTOR
+        }
+        return when {
+            !canWrite -> if (isThai) "อ่านบันทึกประจำวันเท่านั้น" else "View daily records only"
+            LOG_ACTIVITIES in caps && BOOK_DOCTOR !in caps && EDIT_GROWTH !in caps ->
+                if (isThai) "บันทึกกิจกรรมประจำวัน" else "Daily care logging"
+            else -> if (isThai) "สิทธิ์กำหนดเอง" else "Custom access"
+        }
     }
 }

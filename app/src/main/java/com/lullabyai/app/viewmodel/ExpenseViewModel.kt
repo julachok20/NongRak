@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /**
  * "Your children's goals add up to more than this total — clear them?" Carries both figures so the
@@ -53,6 +54,8 @@ data class ExpenseUiState(
     val summary: List<ExpenseCategoryTotal> = emptyList(),
     /** Warranties still live but running out — surfaced above the list, not buried in it. */
     val expiringWarranties: List<ChildExpense> = emptyList(),
+    /** Products expiring soon or already expired — surfaced above the list. */
+    val expiringProducts: List<ChildExpense> = emptyList(),
     /** Budget beside spend. The null-category line is the month's overall figure. */
     val budget: List<BudgetLine> = emptyList(),
     val trend: List<ExpenseTrendPoint> = emptyList(),
@@ -153,6 +156,7 @@ class ExpenseViewModel(
         // Warranties stay per-child: the banner names one thing to act on.
         val warranties = (scope ?: s.childId)
             ?.let { childRepo.expiringWarranties(it).getOrDefault(emptyList()) } ?: emptyList()
+        val expiring = childRepo.listExpiringProducts(scope, withinDays = 7).getOrDefault(emptyList())
         val budget = childRepo.budgetOverview(scope, month.toString()).getOrDefault(emptyList())
         val trend = childRepo.expenseTrend(scope).getOrDefault(emptyList())
         _uiState.update {
@@ -161,6 +165,7 @@ class ExpenseViewModel(
                 expenses = expenses,
                 summary = summary,
                 expiringWarranties = warranties,
+                expiringProducts = expiring,
                 budget = budget,
                 trend = trend
             )
@@ -285,9 +290,51 @@ class ExpenseViewModel(
             ).onSuccess {
                 _uiState.update { it.copy(saving = false, savedOk = true) }
                 refresh()
+                if (hasExpiration && !alreadyUsed && expiresOn != null) {
+                    val productName = name.takeIf { it.isNotBlank() }
+                        ?: note.takeIf { it.isNotBlank() }
+                        ?: "สินค้า"
+                    checkAndNotifyExpiringProduct(productName, expiresOn)
+                }
                 onDone()
             }.onFailure { e ->
                 _uiState.update { it.copy(saving = false, error = e.message) }
+            }
+        }
+    }
+
+    private fun checkAndNotifyExpiringProduct(productName: String, expiresOn: LocalDate) {
+        val days = ChronoUnit.DAYS.between(LocalDate.now(), expiresOn).toInt()
+        if (days in -7..7) {
+            viewModelScope.launch {
+                val childName = _uiState.value.childName
+                val childSuffix = if (childName.isNotBlank()) " ของน้อง$childName" else ""
+                val formattedDate = com.lullabyai.app.work.ProductExpirationWorker.formatThaiDate(expiresOn)
+                val title: String
+                val body: String
+                when {
+                    days < 0 -> {
+                        title = "สินค้าหมดอายุแล้ว!"
+                        body = "$productName$childSuffix หมดอายุแล้วเมื่อ $formattedDate กรุณาตรวจสอบและหลีกเลี่ยงการใช้งาน"
+                    }
+                    days == 0 -> {
+                        title = "สินค้าหมดอายุวันนี้!"
+                        body = "$productName$childSuffix จะหมดอายุในวันนี้ ($formattedDate) กรุณาตรวจสอบก่อนนำไปใช้งาน"
+                    }
+                    days == 1 -> {
+                        title = "สินค้าจะหมดอายุพรุ่งนี้!"
+                        body = "$productName$childSuffix จะหมดอายุในวันพรุ่งนี้ ($formattedDate) รีบนำมาใช้งานก่อนหมดอายุ"
+                    }
+                    else -> {
+                        title = "สินค้าใกล้หมดอายุ (อีก $days วัน)"
+                        body = "$productName$childSuffix จะหมดอายุในอีก $days วัน ($formattedDate)"
+                    }
+                }
+                com.lullabyai.app.data.repository.NotificationRepository().notify(
+                    category = com.lullabyai.app.data.repository.NotifCategory.WARNING,
+                    title = title,
+                    body = body
+                )
             }
         }
     }

@@ -51,6 +51,7 @@ import com.lullabyai.app.data.model.ChildAvatarPreset
 import com.lullabyai.app.data.model.ChildFavorite
 import com.lullabyai.app.data.model.FavoriteCategory
 import com.lullabyai.app.data.model.FavoriteSource
+import com.lullabyai.app.ui.components.SectionCard
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
@@ -707,39 +708,6 @@ private fun NavRow(
         }
         Text(actionText, fontSize = 12.sp, color = Primary, fontWeight = FontWeight.SemiBold)
         Icon(Icons.Filled.ChevronRight, null, tint = Primary, modifier = Modifier.size(18.dp))
-    }
-}
-
-@Composable
-private fun SectionCard(
-    title: String,
-    subtitle: String?,
-    icon: ImageVector,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).background(Primary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) { Icon(icon, null, tint = Primary, modifier = Modifier.size(17.dp)) }
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                subtitle?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        Spacer(Modifier.height(2.dp))
-        content()
     }
 }
 

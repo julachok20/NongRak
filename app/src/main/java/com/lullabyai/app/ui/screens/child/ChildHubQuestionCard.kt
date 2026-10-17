@@ -57,7 +57,12 @@ private val QSlate400 = Color(0xFF94A3B8)
  * [ChildViewModel.answerInfoAsk]; questions left blank stay open for later.
  */
 @Composable
-fun ChildHubQuestionCard(childViewModel: ChildViewModel, childName: String, isThai: Boolean) {
+fun ChildHubQuestionCard(
+    childViewModel: ChildViewModel,
+    childName: String,
+    isThai: Boolean,
+    onRecordNow: (String) -> Unit = {}
+) {
     val state by childViewModel.uiState.collectAsState()
     val prompts = state.infoAsks
     if (prompts.isEmpty()) return
@@ -218,6 +223,15 @@ fun ChildHubQuestionCard(childViewModel: ChildViewModel, childName: String, isTh
 
             // Footer: progress + skip + next / save
             HorizontalDivider(color = if (dark) QBlue.copy(alpha = 0.2f) else QBlue100)
+            InfoAskCatalog.recordRoute(prompt.fieldId)?.let { route ->
+                Text(
+                    if (isThai) "บันทึกเลย" else "Record now",
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = QBlue,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                        .clickable { onRecordNow(route) }
+                        .padding(vertical = 4.dp)
+                )
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (prompts.size in 2..6) {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

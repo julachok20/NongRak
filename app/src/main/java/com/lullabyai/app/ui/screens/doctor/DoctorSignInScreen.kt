@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.lullabyai.app.ui.components.GoogleLogo
 import com.lullabyai.app.ui.components.HCaptchaVerifyButton
 import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.components.PrimaryButton
@@ -284,7 +285,7 @@ fun DoctorSignInScreen(
                             enabled = !uiState.isLoading,
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
                         ) {
-                            Icon(Icons.Filled.AccountCircle, null, tint = Color(0xFF4285F4), modifier = Modifier.size(20.dp))
+                            GoogleLogo()
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 if (isThai) "เข้าสู่ระบบด้วย Google" else "Sign in with Google",

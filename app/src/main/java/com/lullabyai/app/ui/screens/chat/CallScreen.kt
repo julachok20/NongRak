@@ -18,6 +18,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +32,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.lullabyai.app.BuildConfig
+import com.lullabyai.app.data.remote.GeminiLiveClient
+import com.lullabyai.app.data.remote.NongRakMedicalRouter
+import com.lullabyai.app.data.remote.SparkChatClient
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,6 +48,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.lullabyai.app.ui.theme.Primary
@@ -134,67 +143,154 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
 
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
 
+    // Optimistic: try Live, and drop to the turn-based path the moment a token cannot be minted.
+    // There is no key on the device to test any more - whether Live is available is something only
+    // the server can answer, and it answers by minting a token or refusing to.
+    var useGeminiLive by remember { mutableStateOf(true) }
+    var liveInstructionText by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
 
     val recorder = remember { VoiceTurnRecorder() }
 
-    /**
-     * Stops the current recording so the AI can take its turn, or the parent can cut in.
-     *
-     * Ending the recording is all it takes: the capture loop below sees the call is no longer
-     * LISTENING and starts a fresh turn once the AI has finished.
-     */
+    val liveClient = remember(useGeminiLive) {
+        if (useGeminiLive) {
+            var client: GeminiLiveClient? = null
+            client = GeminiLiveClient(
+                onTextChunk = { chunk ->
+                    liveInstructionText = (liveInstructionText + chunk).takeLast(1200)
+                    callState = CallState.SPEAKING
+                },
+                onInterrupted = {
+                    callState = CallState.LISTENING
+                },
+                onToolCall = { name, callId, args ->
+                    if (name == "consult_nongrak_brain") {
+                        val symptoms = args["symptoms"]?.jsonPrimitive?.contentOrNull ?: ""
+                        coroutineScope.launch {
+                            // Emergencies short-circuit the model entirely.
+                            //
+                            // The turn-based call path has always run through NongRakMedicalRouter;
+                            // the Live path was added without it, so a parent saying ลูกชักเกร็ง into
+                            // a live call got a chatty answer and no 1669. On a voice call - where
+                            // a frightened parent is most likely to be - that is the worst place to
+                            // lose this check.
+                            val ageMonths = childState.child?.birthdate?.let { birthdate ->
+                                runCatching {
+                                    val born = java.time.LocalDate.parse(birthdate.take(10))
+                                    java.time.temporal.ChronoUnit.MONTHS
+                                        .between(born, java.time.LocalDate.now()).toInt()
+                                }.getOrNull()
+                            }
+
+                            if (NongRakMedicalRouter.isEmergencyForAge(symptoms, ageMonths)) {
+                                client?.sendToolResponse(
+                                    callId,
+                                    NongRakMedicalRouter.emergencyWarning(isThai)
+                                )
+                                return@launch
+                            }
+
+                            val answer = runCatching {
+                                SparkChatClient.chat(
+                                    question = symptoms,
+                                    prompt = "คำถามด่วนจากสายสด Live: $symptoms\nข้อมูลน้อง: ${childState.child?.name ?: "น้อง"} อายุ: ${childState.child?.birthdate ?: ""}",
+                                    system = "คุณคือสมองการแพทย์กุมารเวช สรุปคำแนะนำทางการแพทย์สั้นๆ 4-6 บรรทัดที่นำไปใช้ได้ทันที",
+                                    childIds = listOfNotNull(childState.child?.id)
+                                ).getOrNull()?.text
+                            }.getOrNull()
+
+                            // When the consult fails we say so. The previous fallbacks invented
+                            // clinical guidance out of nothing ("watch closely, see a doctor if
+                            // there is a high fever") - advice with no examination and no source
+                            // behind it, delivered in a voice the parent will trust.
+                            val reply = answer?.takeIf { it.isNotBlank() }
+                                ?: if (isThai) {
+                                    "ตอนนี้ยังดึงข้อมูลให้ไม่ได้ค่ะ ถ้ากังวลเรื่องอาการของน้อง " +
+                                        "แนะนำให้ปรึกษาแพทย์ และหากเป็นเหตุฉุกเฉินโทร 1669"
+                                } else {
+                                    "I could not look that up just now. If you are worried about " +
+                                        "your child, please speak to a doctor - and call 1669 in " +
+                                        "an emergency."
+                                }
+                            client?.sendToolResponse(callId, reply)
+                        }
+                    }
+                },
+                onFallbackRequested = {
+                    // Seamless fallback to Spark engine
+                    useGeminiLive = false
+                }
+            )
+            client
+        } else null
+    }
+
+    DisposableEffect(liveClient) {
+        liveClient?.connect()
+        onDispose {
+            liveClient?.disconnect()
+        }
+    }
+
+    val elapsedSeconds by (liveClient?.elapsedSeconds ?: remember { MutableStateFlow(0L) }).collectAsState()
+    val isApproachingLimit by (liveClient?.isApproachingLimit ?: remember { MutableStateFlow(false) }).collectAsState()
+    val showRefreshDialog by (liveClient?.showRefreshDialog ?: remember { MutableStateFlow(false) }).collectAsState()
+
     fun interruptAiAndListen() {
         tts.stop()
         recorder.stop()
+        liveClient?.flushAudioOutput()
         callState = CallState.LISTENING
     }
 
-    /**
-     * One turn at a time: record until the parent stops, send the audio, wait, repeat.
-     *
-     * The recogniser this replaced handed over its guess at the words, so the model never heard
-     * what it got wrong — and Thai transcription is exactly where it goes wrong. Sending the audio
-     * means the model hears the sentence, tone and all, and there is one fewer round trip before
-     * it can answer.
-     */
-    LaunchedEffect(hasAudioPermission) {
+    // Audio capture loop: streams PCM to Gemini Live if enabled, or turns for Spark fallback
+    LaunchedEffect(hasAudioPermission, useGeminiLive, muted, callState) {
         if (!hasAudioPermission) return@LaunchedEffect
-        while (isActive) {
-            if (muted || callState == CallState.THINKING || callState == CallState.SPEAKING) {
-                delay(120)
-                continue
-            }
+        if (useGeminiLive && liveClient != null) {
+            if (muted) return@LaunchedEffect
             callState = CallState.LISTENING
-            val wav = withContext(Dispatchers.IO) {
-                recorder.recordTurn(TURN_END_SILENCE_MS) {
-                    // Abandon the turn the moment the call moves on without us.
-                    muted || callState == CallState.THINKING || callState == CallState.SPEAKING
+            withContext(Dispatchers.IO) {
+                recorder.streamPcm(
+                    shouldStop = { !useGeminiLive || muted || !isActive }
+                ) { pcmChunk ->
+                    liveClient.sendAudioChunk(pcmChunk)
                 }
             }
-            // Null means silence or a noise too short to be a sentence — keep listening rather
-            // than sending the model something nobody said.
-            if (wav == null || callState != CallState.LISTENING) continue
+        } else {
+            while (isActive) {
+                if (muted || callState == CallState.THINKING || callState == CallState.SPEAKING) {
+                    delay(120)
+                    continue
+                }
+                callState = CallState.LISTENING
+                val wav = withContext(Dispatchers.IO) {
+                    recorder.recordTurn(TURN_END_SILENCE_MS) {
+                        muted || callState == CallState.THINKING || callState == CallState.SPEAKING
+                    }
+                }
+                if (wav == null || callState != CallState.LISTENING) continue
 
-            callState = CallState.THINKING
-            chatViewModel.sendMessage(
-                "",
-                childState.child,
-                imageBytes = latestFrame,
-                imageMime = if (latestFrame != null) "image/jpeg" else null,
-                spoken = true,
-                audioBytes = wav,
-                audioMime = VoiceTurnRecorder.MIME,
-                family = childState.children
-            )
+                callState = CallState.THINKING
+                chatViewModel.sendMessage(
+                    "",
+                    childState.child,
+                    imageBytes = latestFrame,
+                    imageMime = if (latestFrame != null) "image/jpeg" else null,
+                    spoken = true,
+                    audioBytes = wav,
+                    audioMime = VoiceTurnRecorder.MIME,
+                    family = childState.children
+                )
+            }
         }
     }
 
     val latestAiMessage = chatState.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
-    // "Action mode": the AI proposed a write and is waiting for the parent's approval.
     val pendingAction = chatState.messages.lastOrNull { it.agentAction != null && it.actionStatus == null }
 
-    // AI reply arrived while we were "thinking" → speak it (unless the speaker is off).
+    // Fallback turn-based playback
     LaunchedEffect(chatState.messages) {
+        if (useGeminiLive) return@LaunchedEffect
         val latest = latestAiMessage
         if (callState == CallState.THINKING && latest != null && latest.id != lastSpokenMessageId) {
             lastSpokenMessageId = latest.id
@@ -203,7 +299,6 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 tts.speak(
                     latest.content, isThai,
                     chatState.mode.speechRate, chatState.mode.speechPitch,
-                    // A call is a conversation: start talking now rather than after a round trip.
                     instant = true
                 )
             } else {
@@ -211,20 +306,21 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             }
         }
     }
-    // AI finished speaking → user's turn to speak.
     LaunchedEffect(tts.isSpeaking) {
-        if (!tts.isSpeaking && callState == CallState.SPEAKING) {
-            // Straight back to listening rather than through IDLE: the capture loop starts a turn
-            // the moment the state says so, and a detour through IDLE just adds a gap.
+        if (!useGeminiLive && !tts.isSpeaking && callState == CallState.SPEAKING) {
             callState = CallState.LISTENING
         }
     }
 
-    // Video mode: periodic frame capture, attached to the next message the capture loop sends.
-    LaunchedEffect(imageCapture, videoEnabled) {
+    // Video mode: periodic frame capture, sent to Gemini Live or attached to next turn
+    LaunchedEffect(imageCapture, videoEnabled, useGeminiLive) {
         val capture = imageCapture ?: return@LaunchedEffect
         while (isActive) {
-            latestFrame = if (videoEnabled) capture.captureJpegBytesOrNull() else null
+            val frame = if (videoEnabled) capture.captureJpegBytesOrNull() else null
+            latestFrame = frame
+            if (frame != null && useGeminiLive && liveClient != null) {
+                liveClient.sendVideoFrame(frame)
+            }
             delay(VIDEO_FRAME_INTERVAL_MS)
         }
     }
@@ -232,8 +328,6 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     fun toggleMute() {
         muted = !muted
         if (muted) {
-            // The capture loop checks `muted` itself; stopping here just ends the turn already
-            // in progress instead of letting it run to its own silence timeout.
             recorder.stop()
             if (callState == CallState.LISTENING) callState = CallState.IDLE
         } else {
@@ -250,6 +344,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
     fun endCall() {
         tts.stop()
         recorder.stop()
+        liveClient?.disconnect()
         onBack()
     }
 
@@ -291,33 +386,91 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Column {
-                    IconButton(onClick = { endCall() }) {
-                        Icon(Icons.Filled.KeyboardArrowDown, if (isThai) "ย่อ" else "Collapse", tint = Color.White)
-                    }
-                    IconButton(onClick = { showInstructions = !showInstructions }) {
-                        Icon(
-                            Icons.Filled.Notes,
-                            if (isThai) "แสดง/ซ่อนคำแนะนำ" else "Show/hide instructions",
-                            tint = if (showInstructions) Primary else Color.White
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { endCall() }) {
+                    Icon(Icons.Filled.KeyboardArrowDown, if (isThai) "ย่อ" else "Collapse", tint = Color.White)
+                }
+                IconButton(onClick = { showInstructions = !showInstructions }) {
+                    Icon(
+                        Icons.Filled.Notes,
+                        if (isThai) "แสดง/ซ่อนคำแนะนำ" else "Show/hide instructions",
+                        tint = if (showInstructions) Primary else Color.White
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+
+                // Engine Badge & Duration
+                Surface(
+                    color = Color.Black.copy(0.45f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, Color.White.copy(0.18f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            Modifier.size(8.dp).clip(CircleShape)
+                                .background(if (useGeminiLive) Color(0xFF4CAF50) else Color(0xFFFF9800))
+                        )
+                        Text(
+                            if (useGeminiLive) "Gemini Live" else "Spark (Local)",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text("•", color = Color.White.copy(0.5f), fontSize = 10.sp)
+                        val m = elapsedSeconds / 60
+                        val s = elapsedSeconds % 60
+                        val timeStr = String.format("%02d:%02d", m, s)
+                        Text(
+                            timeStr,
+                            color = Color.White.copy(0.85f),
+                            style = MaterialTheme.typography.labelSmall
                         )
                     }
                 }
+
                 Spacer(Modifier.weight(1f))
+
                 // Mascot: small ring top-right while the video is large, centre-stage otherwise.
                 if (videoEnabled) {
                     Box(
-                        Modifier.size(128.dp).clip(CircleShape)
+                        Modifier.size(80.dp).clip(CircleShape)
                             .background(Color.White)
                             .border(2.dp, Color.White, CircleShape)
                     ) {
                         com.lullabyai.app.ui.mascot.Mascot(
                             art = callMascot.rigArt(),
-                            mood = if (tts.isSpeaking) com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
+                            mood = if (callState == CallState.SPEAKING) com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
                             else com.lullabyai.app.ui.mascot.MascotMood.IDLE,
-                            speaking = tts.isSpeaking,
+                            speaking = (callState == CallState.SPEAKING),
                             modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            // Approaching 15-minute limit warning banner
+            if (isApproachingLimit) {
+                Spacer(Modifier.height(6.dp))
+                Surface(
+                    color = Color(0xFFFFF3E0),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFB74D))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Filled.Warning, null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                        Text(
+                            if (isThai) "สายจะหมดอายุในอีก 2-3 นาที (ระบบจะถามเพื่อต่อสายให้อัตโนมัติ)"
+                            else "Call will expire in 2-3 mins (system will prompt to resume)",
+                            color = Color(0xFFE65100),
+                            style = MaterialTheme.typography.labelSmall
                         )
                     }
                 }
@@ -348,9 +501,9 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 if (!videoEnabled) {
                     com.lullabyai.app.ui.mascot.Mascot(
                         art = callMascot.rigArt(),
-                        mood = if (tts.isSpeaking) com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
+                        mood = if (callState == CallState.SPEAKING) com.lullabyai.app.ui.mascot.MascotMood.SPEAKING
                         else com.lullabyai.app.ui.mascot.MascotMood.IDLE,
-                        speaking = tts.isSpeaking,
+                        speaking = (callState == CallState.SPEAKING),
                         modifier = Modifier.size(180.dp)
                     )
                 }
@@ -371,11 +524,15 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                 )
             }
 
+            val displayInstruction = if (useGeminiLive && liveInstructionText.isNotBlank()) {
+                liveInstructionText
+            } else {
+                latestAiMessage?.content.orEmpty()
+            }
+
             // The reply is spoken, so the text is opt-in. During a call a wall of text over the
             // mascot is something to dismiss, not something to read.
-            if (!showInstructions && latestAiMessage?.content?.isNotBlank() == true &&
-                callState != CallState.THINKING
-            ) {
+            if (!showInstructions && displayInstruction.isNotBlank() && callState != CallState.THINKING) {
                 TextButton(onClick = { showInstructions = true }) {
                     Icon(
                         Icons.Filled.Article, null,
@@ -384,7 +541,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        if (isThai) "ดูข้อความ" else "See transcript",
+                        if (isThai) "ดูข้อความ/คำแนะนำ" else "See transcript/instructions",
                         color = Color.White.copy(0.8f),
                         style = MaterialTheme.typography.labelMedium
                     )
@@ -392,7 +549,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
             }
 
             // Instruction overlay — big, readable, pointable.
-            if (showInstructions && latestAiMessage?.content?.isNotBlank() == true) {
+            if (showInstructions && displayInstruction.isNotBlank()) {
                 Surface(
                     color = Color.White.copy(0.88f),
                     shape = RoundedCornerShape(20.dp),
@@ -402,7 +559,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(Icons.Filled.TipsAndUpdates, null, tint = Primary, modifier = Modifier.size(18.dp))
                             Text(
-                                if (isThai) "คำแนะนำจากน้องรัก AI" else "Instructions from NongRak AI",
+                                if (isThai) "คำแนะนำสดจากน้องรัก AI" else "Live Instructions from NongRak AI",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold, color = Primary, modifier = Modifier.weight(1f)
                             )
@@ -411,7 +568,7 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                             }
                         }
                         Text(
-                            latestAiMessage?.content.orEmpty(),
+                            displayInstruction,
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color(0xFF1A1C1C),
                             modifier = Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())
@@ -563,6 +720,42 @@ fun CallScreen(chatViewModel: ChatViewModel, childViewModel: ChildViewModel, isT
                     }
                 }
             }
+        }
+
+        // 10-15 minute session refresh dialog to continue the call seamlessly
+        if (showRefreshDialog) {
+            AlertDialog(
+                onDismissRequest = { liveClient?.dismissRefreshDialog() },
+                icon = { Icon(Icons.Filled.Timer, null, tint = Primary) },
+                title = {
+                    Text(
+                        if (isThai) "ต้องการคุยสายต่อหรือไม่?" else "Resume the call?",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        if (isThai) "สายสนทนาสดใกล้ครบเวลา 15 นาที เพื่อความต่อเนื่องของคำแนะนำ เซสชันจะรีเฟรชใหม่โดยคงความจำและบริบทเดิมไว้ค่ะ"
+                        else "This live session is approaching the 15-minute limit. Would you like to resume the call to refresh the session while keeping your conversation context?"
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val summary = liveInstructionText.ifBlank { latestAiMessage?.content.orEmpty() }
+                            liveClient?.rolloverSession(summary)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                    ) {
+                        Text(if (isThai) "คุยสายต่อ (รีเฟรช)" else "Resume call")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = { endCall() }) {
+                        Text(if (isThai) "วางสาย" else "End call")
+                    }
+                }
+            )
         }
     }
 }

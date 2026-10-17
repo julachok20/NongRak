@@ -13,6 +13,7 @@ import com.lullabyai.app.work.VaccineReminderWorker
 import com.lullabyai.app.work.MedicineReminderWorker
 import com.lullabyai.app.work.WeeklyHealthReportWorker
 import com.lullabyai.app.work.SleepBedtimeRecommendationWorker
+import com.lullabyai.app.work.ProductExpirationWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,6 +35,7 @@ class NongRakApp : Application() {
         com.lullabyai.app.util.SystemNotifier.ensureChannel(this)
         scheduleVaccineReminders()
         scheduleMedicineReminders()
+        scheduleProductExpirationReminders()
         rescheduleSleepReminders()
         scheduleWeeklyHealthReport()
         scheduleSleepBedtimeRecommendation()
@@ -110,6 +112,22 @@ class NongRakApp : Application() {
             "vaccine_reminders_now",
             ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<VaccineReminderWorker>().setConstraints(constraints).build()
+        )
+    }
+
+    /** Background reminders for expiring products in cost records (checks every 12h + once now). */
+    private fun scheduleProductExpirationReminders() {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val wm = WorkManager.getInstance(this)
+        wm.enqueueUniquePeriodicWork(
+            "product_expiration_reminders",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<ProductExpirationWorker>(12, TimeUnit.HOURS).setConstraints(constraints).build()
+        )
+        wm.enqueueUniqueWork(
+            "product_expiration_reminders_now",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<ProductExpirationWorker>().setConstraints(constraints).build()
         )
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.lullabyai.app.ui.components.SectionCard
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.viewmodel.NutritionViewModel
@@ -61,7 +63,7 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SectionCard(if (isThai) "วันที่ทำกิจกรรม" else "Activity date") {
+            SectionCard(if (isThai) "วันที่ทำกิจกรรม" else "Activity date", Icons.Filled.CalendarToday) {
                 Text(
                     "%02d/%02d/%04d".format(date.monthValue, date.dayOfMonth, date.year),
                     style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold
@@ -73,7 +75,7 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
                 }
             }
 
-            SectionCard(if (isThai) "ประเภทการออกกำลังกาย" else "Activity type") {
+            SectionCard(if (isThai) "ประเภทการออกกำลังกาย" else "Activity type", Icons.AutoMirrored.Filled.DirectionsRun) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     quickPicks.forEach { name ->
                         ChoiceRow(name, activityName == name) { activityName = name; customQuery = "" }
@@ -89,7 +91,7 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
                 }
             }
 
-            SectionCard(if (isThai) "ระยะเวลา (นาที)" else "Duration (minutes)") {
+            SectionCard(if (isThai) "ระยะเวลา (นาที)" else "Duration (minutes)", Icons.Filled.Timer) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(0.5f)) {
                         Text(
@@ -105,7 +107,7 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
                 }
             }
 
-            SectionCard(if (isThai) "ความรู้สึกหลังทำ" else "Feeling after") {
+            SectionCard(if (isThai) "ความรู้สึกหลังทำ" else "Feeling after", Icons.Filled.Mood) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     MOODS.forEach { (key, label) ->
                         val selected = mood == key
@@ -124,7 +126,7 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
                 }
             }
 
-            SectionCard(if (isThai) "บันทึกเพิ่มเติมหรือสิ่งที่สังเกตเห็น" else "Notes or things you noticed") {
+            SectionCard(if (isThai) "บันทึกเพิ่มเติมหรือสิ่งที่สังเกตเห็น" else "Notes or things you noticed", Icons.Filled.EditNote) {
                 OutlinedTextField(
                     value = notes, onValueChange = { notes = it },
                     modifier = Modifier.fillMaxWidth().height(90.dp),
@@ -149,17 +151,6 @@ fun LogExerciseScreen(vm: NutritionViewModel, lang: String, navController: NavCo
                 Spacer(Modifier.width(8.dp))
                 Text(if (isThai) "บันทึกข้อมูล" else "Save entry", color = Color.White, fontWeight = FontWeight.Bold)
             }
-        }
-    }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Primary)
-            Spacer(Modifier.height(10.dp))
-            content()
         }
     }
 }

@@ -50,7 +50,7 @@ import java.time.ZoneId
 
 /**
  * Every currently open info-ask on one page. Save writes filled answers; blank ones stay open.
- * Skip hides the whole batch for the rest of today.
+ * Skip hides the form for this visit; unanswered questions stay on the stack.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -130,7 +130,10 @@ fun InfoAskScreen(
                     chipId = chips[prompt.fieldId],
                     onText = { texts = texts + (prompt.fieldId to it) },
                     onChip = { chips = chips + (prompt.fieldId to it) },
-                    onPickDate = { dateFieldId = prompt.fieldId }
+                    onPickDate = { dateFieldId = prompt.fieldId },
+                    onRecordNow = InfoAskCatalog.recordRoute(prompt.fieldId)?.let { route ->
+                        { navController.navigate(route) }
+                    }
                 )
             }
 
@@ -197,7 +200,8 @@ private fun InfoAskQuestionCard(
     chipId: String?,
     onText: (String) -> Unit,
     onChip: (String) -> Unit,
-    onPickDate: () -> Unit
+    onPickDate: () -> Unit,
+    onRecordNow: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -269,6 +273,11 @@ private fun InfoAskQuestionCard(
                             }
                         }
                     )
+                }
+            }
+            if (onRecordNow != null) {
+                TextButton(onClick = onRecordNow) {
+                    Text(if (isThai) "บันทึกเลย" else "Record now", color = Primary, fontWeight = FontWeight.Bold)
                 }
             }
         }

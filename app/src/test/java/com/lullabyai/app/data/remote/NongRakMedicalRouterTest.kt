@@ -86,4 +86,49 @@ class NongRakMedicalRouterTest {
         assertTrue(NongRakMedicalRouter.emergencyWarning(isThai = true).contains("1669"))
         assertTrue(NongRakMedicalRouter.emergencyWarning(isThai = false).contains("1669"))
     }
+
+    // --- Community symptom threads -------------------------------------------------------------
+
+    @Test
+    fun `a fever under three months is urgent at any temperature`() {
+        // The case the AI assist toggle was argued over: a reassuring answer here buys the delay.
+        assertTrue(NongRakMedicalRouter.isEmergencyForAge("ลูก 2 เดือน มีไข้ 38.0", ageMonths = 2))
+        assertTrue(NongRakMedicalRouter.isEmergencyForAge("2 month old has a fever", ageMonths = 2))
+        assertTrue(NongRakMedicalRouter.isEmergencyForAge("ตัวร้อนตั้งแต่เมื่อคืน", ageMonths = 0))
+    }
+
+    @Test
+    fun `an unknown age with a fever is treated as urgent`() {
+        assertTrue(NongRakMedicalRouter.isEmergencyForAge("ลูกมีไข้", ageMonths = null))
+    }
+
+    @Test
+    fun `an older child with a plain fever is not forced to emergency`() {
+        // Otherwise every teething toddler gets a 1669 banner and parents stop reading it.
+        assertFalse(NongRakMedicalRouter.isEmergencyForAge("ลูก 18 เดือน มีไข้ต่ำๆ", ageMonths = 18))
+        assertFalse(NongRakMedicalRouter.isEmergencyForAge("toddler has a mild fever", ageMonths = 18))
+    }
+
+    @Test
+    fun `age never downgrades a real emergency`() {
+        // isEmergencyForAge may only ever add to isEmergency, never subtract from it.
+        assertTrue(NongRakMedicalRouter.isEmergencyForAge("ลูกชักเกร็ง", ageMonths = 36))
+        assertTrue(NongRakMedicalRouter.isEmergencyForAge("my child is unresponsive", ageMonths = 60))
+    }
+
+    @Test
+    fun `the newly added infant red flags are recognised`() {
+        listOf("ซี่โครงบุ๋ม", "กระหม่อมบุ๋ม", "อาเจียนพุ่ง", "ถ่ายเป็นเลือด", "ผื่นจ้ำเลือด")
+            .forEach { assertTrue(it, NongRakMedicalRouter.isEmergency("น้องมีอาการ $it")) }
+
+        listOf("projectile vomiting", "blood in stool", "non-blanching rash", "chest indrawing")
+            .forEach { assertTrue(it, NongRakMedicalRouter.isEmergency("baby has $it")) }
+    }
+
+    @Test
+    fun `every added red flag also counts as a medical question`() {
+        // The gap that bit before: emergency-only terms read as non-medical and skipped the router.
+        listOf("กระหม่อมโป่ง", "ตัวอ่อนปวกเปียก", "floppy", "refusing to feed")
+            .forEach { assertTrue(it, NongRakMedicalRouter.isMedicalQuestion("น้อง $it")) }
+    }
 }

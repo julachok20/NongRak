@@ -410,15 +410,19 @@ private fun RoleEditorSheet(
                 )
             }
 
-            PermSection(
-                icon = Icons.Filled.VerifiedUser,
-                title = if (isThai) "สิทธิ์ในบทบาทนี้" else "Permissions in this role"
-            ) {
-                AccessCapabilities.ALL.forEach { cap ->
-                    PermToggle(
-                        AccessCapabilities.label(cap, isThai),
-                        cap in draft.capabilities
-                    ) { onToggle(cap) }
+            AccessCapabilities.SECTIONS.forEach { section ->
+                PermSection(
+                    icon = permissionSectionIcon(section.id),
+                    titleTh = section.titleTh,
+                    titleEn = section.titleEn
+                ) {
+                    section.items.forEach { item ->
+                        PermToggle(
+                            titleTh = item.titleTh,
+                            titleEn = item.titleEn,
+                            checked = item.key in draft.capabilities
+                        ) { onToggle(item.key) }
+                    }
                 }
             }
 

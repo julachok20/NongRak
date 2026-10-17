@@ -55,10 +55,50 @@ object ClaudeClient {
         if (result.text != null) {
             lastProvider = result.provider
             android.util.Log.i("ClaudeClient", "answered by ${result.provider.ifBlank { "fallback" }}")
-            return result.text
+            // Asking for prose does not guarantee prose. Models wrap the answer in {"report": "..."}
+            // often enough that four weekly-report notifications reached real parents reading
+            // literally `{ "report": "คุณพ่อคุณแม่ดูแลน้อง...`. Unwrapped here, once, because every
+            // prose generator in the app comes through this one function.
+            return if (jsonMode == true) result.text else unwrapProse(result.text)
         }
         lastProvider = ""
         android.util.Log.w("ClaudeClient", "AI proxy unreachable: ${errors.joinToString(" | ")}")
         return "ขออภัยค่ะ ระบบผู้ช่วย AI ไม่พร้อมให้บริการในขณะนี้ กรุณาลองใหม่อีกครั้งในอีกสักครู่"
+    }
+
+    /**
+     * Pulls the prose out of a JSON envelope the model was never asked for.
+     *
+     * Handles the shapes actually seen: a fenced ```json block, and an object whose values are the
+     * answer - {"report": "..."}, {"text": "..."}, or one wrapping a list of paragraphs. Several
+     * string values are joined, so an object of sections does not lose all but the first.
+     *
+     * Anything that is not a JSON object comes back untouched, which is the normal case. A reply
+     * that IS an object but holds no readable string is also returned untouched rather than
+     * emptied: showing the raw text is ugly, showing nothing is a silent failure.
+     */
+    internal fun unwrapProse(raw: String): String {
+        val text = raw.trim()
+            .removePrefix("```json").removePrefix("```JSON").removePrefix("```")
+            .removeSuffix("```")
+            .trim()
+        if (!text.startsWith("{")) return raw
+
+        val parsed = runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(text)
+        }.getOrNull() as? kotlinx.serialization.json.JsonObject ?: return raw
+
+        val pieces = mutableListOf<String>()
+        fun collect(element: kotlinx.serialization.json.JsonElement) {
+            when (element) {
+                is kotlinx.serialization.json.JsonPrimitive ->
+                    if (element.isString) element.content.trim().takeIf { it.isNotEmpty() }?.let { pieces += it }
+                is kotlinx.serialization.json.JsonArray -> element.forEach { collect(it) }
+                is kotlinx.serialization.json.JsonObject -> element.values.forEach { collect(it) }
+            }
+        }
+        parsed.values.forEach { collect(it) }
+
+        return pieces.joinToString("\n\n").ifBlank { raw }
     }
 }

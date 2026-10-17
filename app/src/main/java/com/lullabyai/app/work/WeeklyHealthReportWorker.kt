@@ -33,14 +33,37 @@ class WeeklyHealthReportWorker(ctx: Context, params: WorkerParameters) : Corouti
         val chatRepo = ChatRepository()
         val notifRepo = NotificationRepository()
         for (child in children) {
-            val report = chatRepo.generateWeeklyHealthReport(child, forceRefresh = true, isThai = true).getOrNull() ?: continue
-            val snippet = if (report.length > 120) report.take(120) + "..." else report
-            notifRepo.notify(
-                NotifCategory.NORMAL,
-                "รายงานสุขภาพประจำสัปดาห์ของ${child.name}พร้อมแล้ว",
-                snippet
-            )
+            val report = chatRepo.generateWeeklyHealthReport(child, forceRefresh = true, isThai = true)
+                .getOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: continue
+
+            // A child with no name yet read as "ของ.พร้อมแล้ว" in production, and a named one as
+            // "ของGigaพร้อมแล้ว" with no spaces. Both fixed here.
+            val name = child.name.trim().takeIf { it.isNotEmpty() && it != "." }
+            val title = if (name != null) {
+                "รายงานสุขภาพประจำสัปดาห์ของ $name พร้อมแล้ว"
+            } else {
+                "รายงานสุขภาพประจำสัปดาห์พร้อมแล้ว"
+            }
+
+            notifRepo.notify(NotifCategory.NORMAL, title, snippet(report))
         }
         return Result.success()
+    }
+
+    /**
+     * The preview line under the title. Cuts at a sentence end where there is one nearby, so the
+     * notification does not break mid-word - Thai has no spaces between words, which makes a blind
+     * substring especially unreadable.
+     */
+    private fun snippet(report: String, limit: Int = 120): String {
+        val oneLine = report.replace(Regex("\\s+"), " ").trim()
+        if (oneLine.length <= limit) return oneLine
+
+        val head = oneLine.take(limit)
+        val cut = head.lastIndexOfAny(charArrayOf('.', '!', '?', 'ๆ'))
+        return if (cut >= limit / 2) head.take(cut + 1) else "$head…"
     }
 }

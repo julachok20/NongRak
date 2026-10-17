@@ -145,7 +145,8 @@ fun InfoAskBanner(
     questionCount: Int,
     preview: String,
     onClick: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRecordNow: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -210,6 +211,18 @@ fun InfoAskBanner(
                     },
                     fontWeight = FontWeight.Bold
                 )
+            }
+            if (onRecordNow != null) {
+                OutlinedButton(
+                    onClick = onRecordNow,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(100.dp)
+                ) {
+                    Text(
+                        if (isThai) "บันทึกเลย" else "Record now",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

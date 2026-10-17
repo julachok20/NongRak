@@ -68,7 +68,8 @@ fun ActivityHistoryScreen(
     onChat: ((String) -> Unit)? = null,
     /** peerId + what the reply is about, so the carer sees which update is being questioned. */
     onReplyToEntry: ((String, String) -> Unit)? = null,
-    onOpenHub: (() -> Unit)? = null
+    onOpenHub: (() -> Unit)? = null,
+    onOpenRecord: (String) -> Unit = {}
 ) {
     val thai = LocalStrings.current.isThai
     val state by viewModel.uiState.collectAsState()
@@ -171,7 +172,8 @@ fun ActivityHistoryScreen(
                         onReply = if (state.canChat && onReplyToEntry != null && author != null && author != state.myUserId) {
                             { onReplyToEntry(author, ActivityKindLabels.title(e.kind, thai)) }
                         } else null,
-                        onOpenPhoto = { photoOpen = it }
+                        onOpenPhoto = { photoOpen = it },
+                        onOpenRecord = { onOpenRecord(e.kind) }
                     )
                 }
             }
@@ -325,7 +327,8 @@ private fun EntryCard(
     state: ActivityHistoryUiState,
     onRevert: (RecordEdit) -> Unit,
     onReply: (() -> Unit)?,
-    onOpenPhoto: (String) -> Unit
+    onOpenPhoto: (String) -> Unit,
+    onOpenRecord: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     val edits = state.edits[entry.sourceId].orEmpty()
@@ -363,12 +366,16 @@ private fun EntryCard(
                 Text(clockDay(entry.occurredAt, thai), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             val (actionIcon, actionText) = when {
+                latest != null && RecordDiff.isClearedToNone(changes) ->
+                    Icons.Filled.RemoveCircle to (if (thai) "คืนข้อมูลนี้เป็นไม่มี" else "Reverted this information to none")
                 latest != null && RecordDiff.isTimeOnly(changes) -> Icons.Filled.Update to (if (thai) "แก้ไขเวลา" else "Time edited")
                 latest != null -> Icons.Filled.EditNote to (if (thai) "แก้ไขข้อมูล" else "Edited")
                 else -> Icons.Filled.AddCircle to (if (thai) "บันทึกใหม่" else "New")
             }
             Row(
-                Modifier.clip(RoundedCornerShape(100.dp)).background(AhSoft).padding(horizontal = 10.dp, vertical = 6.dp),
+                Modifier.clip(RoundedCornerShape(100.dp)).background(AhSoft)
+                    .clickable(enabled = onOpenRecord != null, onClick = { onOpenRecord?.invoke() })
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(actionIcon, null, tint = AhPrimary, modifier = Modifier.size(14.dp))
@@ -465,7 +472,7 @@ private fun EntryCard(
                 }
                 else -> Spacer(Modifier.weight(1f))
             }
-            if (latest != null && state.isParent) {
+            if (latest != null && state.isParent && !RecordDiff.isClearedToNone(changes)) {
                 if (state.reverting == latest.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = AhRed)
                 else TextAction(Icons.Filled.History, if (thai) "คืนค่าข้อมูลเดิม" else "Restore", AhRed) { onRevert(latest) }
             } else if (onReply != null) {

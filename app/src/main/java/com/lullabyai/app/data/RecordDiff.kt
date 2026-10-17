@@ -26,7 +26,9 @@ object RecordDiff {
         val before: String,
         val after: String,
         /** Signed difference with its unit, for numeric fields only: "+0.2 กก.". */
-        val delta: String? = null
+        val delta: String? = null,
+        /** True when the new value is empty — history then says this was reverted to none. */
+        val cleared: Boolean = false
     )
 
     private enum class Kind { NUMBER_1DP, INTEGER, TIME, DATE, TEXT }
@@ -77,19 +79,28 @@ object RecordDiff {
             val a = before[key]
             val b = after[key]
             if (sameValue(a, b)) return@mapNotNull null
+            val afterText = render(b, field, isThai, zone)
+            val cleared = text(b) == null
             Change(
                 field = key,
                 label = if (isThai) field.th else field.en,
                 before = render(a, field, isThai, zone),
-                after = render(b, field, isThai, zone),
-                delta = delta(a, b, field, isThai)
+                after = afterText,
+                delta = if (cleared) null else delta(a, b, field, isThai),
+                cleared = cleared
             )
         }
     }
 
+    fun emptyValue(isThai: Boolean) = if (isThai) "ไม่มี" else "None"
+
+    /** True when every visible change wiped a value — history then says it was reverted to none. */
+    fun isClearedToNone(changes: List<Change>): Boolean =
+        changes.isNotEmpty() && changes.all { it.cleared }
+
     /** True when the edit only moved times — the history then says "แก้ไขเวลา" instead of "แก้ไขข้อมูล". */
     fun isTimeOnly(changes: List<Change>): Boolean =
-        changes.isNotEmpty() && changes.all { it.field in TIME_FIELDS }
+        changes.isNotEmpty() && changes.all { it.field in TIME_FIELDS } && !isClearedToNone(changes)
 
     /** "1 ชั่วโมง 52 นาที" for a sleep row that has both ends, else null. */
     fun sleepDuration(row: JsonObject?, isThai: Boolean): String? {
@@ -117,7 +128,7 @@ object RecordDiff {
     }
 
     private fun render(e: JsonElement?, f: Field, isThai: Boolean, zone: ZoneId): String {
-        val raw = text(e) ?: return "—"
+        val raw = text(e) ?: return emptyValue(isThai)
         val unit = if (isThai) f.unitTh else f.unitEn
         fun withUnit(v: String) = if (unit.isEmpty()) v else "$v $unit"
         return when (f.kind) {

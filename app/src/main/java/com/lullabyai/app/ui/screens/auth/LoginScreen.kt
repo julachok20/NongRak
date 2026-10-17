@@ -10,7 +10,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,8 +24,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lullabyai.app.data.settings.AppLanguage
+import com.lullabyai.app.ui.components.GoogleLogo
 import com.lullabyai.app.ui.components.HCaptchaVerifyButton
 import com.lullabyai.app.ui.components.LanguageToggleButton
+import com.lullabyai.app.ui.components.LineLogo
 import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.components.rememberGoogleSignInAction
 import com.lullabyai.app.ui.theme.*
@@ -426,7 +427,7 @@ fun LoginScreen(
                             shape = RoundedCornerShape(100.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
                         ) {
-                            Icon(Icons.Filled.AccountCircle, null, tint = Color(0xFF4285F4), modifier = Modifier.size(20.dp))
+                            GoogleLogo()
                             Spacer(Modifier.width(8.dp))
                             Text("เข้าสู่ระบบด้วย Google", style = MaterialTheme.typography.labelLarge)
                         }
@@ -446,7 +447,7 @@ fun LoginScreen(
                                 contentColor = Color.White
                             )
                         ) {
-                            Icon(Icons.Filled.Chat, null, modifier = Modifier.size(20.dp))
+                            LineLogo()
                             Spacer(Modifier.width(8.dp))
                             Text("เข้าสู่ระบบด้วย LINE", style = MaterialTheme.typography.labelLarge)
                         }

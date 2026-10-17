@@ -20,13 +20,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.lullabyai.app.ui.components.SectionCard
 import com.lullabyai.app.ui.localization.LocalStrings
+import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.*
 import com.lullabyai.app.util.HealthRecordRules
 import com.lullabyai.app.viewmodel.ChildViewModel
@@ -212,6 +215,48 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
                 Text(it.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
 
+            // No open illness record means there is nothing to attach a daily symptom to, so
+            // saveSymptomLog returns early and both Save buttons are disabled. Saying so is the
+            // point: a greyed button with no reason is the same as a broken screen to a parent at
+            // 2am. This screen is the DAY-2 follow-up; the first day is AddHealthRecord.
+            if (record == null) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Primary.copy(alpha = 0.08f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            if (s.isThai) "ยังไม่มีอาการที่กำลังติดตามอยู่ค่ะ"
+                            else "No illness is being tracked yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (s.isThai)
+                                "หน้านี้ใช้บันทึกอาการของแต่ละวันหลังเริ่มติดตามแล้ว ถ้าลูกเพิ่งไม่สบาย เริ่มที่บันทึกสุขภาพก่อนนะคะ"
+                            else
+                                "This page records each day of an illness already being tracked. If your child has just become unwell, start with a health record.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Outline
+                        )
+                        Button(
+                            onClick = { navController.navigate(Screen.AddHealthRecord.route) },
+                            shape = RoundedCornerShape(100.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                        ) {
+                            Text(
+                                if (s.isThai) "บันทึกสุขภาพ / ไข้" else "Record a fever or symptoms",
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+
             // Multi-day strip (Stitch)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -261,8 +306,9 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
             // Entries already recorded for this day — tap to edit, or start a fresh one.
             if (dayLogs.isNotEmpty()) {
                 SectionCard(
-                    if (s.isThai) "บันทึกของวันนี้ (${dayLogs.size} ครั้ง)"
-                    else "Entries this day (${dayLogs.size})"
+                    title = if (s.isThai) "บันทึกของวันนี้ (${dayLogs.size} ครั้ง)"
+                    else "Entries this day (${dayLogs.size})",
+                    icon = Icons.Filled.History
                 ) {
                     dayLogs.forEachIndexed { i, log ->
                         val sel = log.id == editingId
@@ -338,7 +384,7 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
             }
 
             // Temperature / feeling toggle
-            SectionCard(if (s.isThai) "อุณหภูมิร่างกาย" else "Body temperature") {
+            SectionCard(if (s.isThai) "อุณหภูมิร่างกาย" else "Body temperature", Icons.Filled.Thermostat) {
                 Row(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(0.5f), RoundedCornerShape(12.dp)).padding(4.dp)
                 ) {
@@ -391,7 +437,7 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
                 }
             }
 
-            SectionCard(if (s.isThai) "รายการอาการ" else "Symptoms") {
+            SectionCard(if (s.isThai) "รายการอาการ" else "Symptoms", Icons.Filled.Sick) {
                 Text(
                     if (s.isThai) "เลือกระดับความรุนแรงของแต่ละอาการ · ระดับความเจ็บปวดรวม $derivedPain / 10"
                     else "Pick a level for each symptom · overall pain $derivedPain / 10",
@@ -432,7 +478,7 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
                 )
             }
 
-            SectionCard(if (s.isThai) "สถานะอาการปัจจุบัน" else "Current status") {
+            SectionCard(if (s.isThai) "สถานะอาการปัจจุบัน" else "Current status", Icons.Filled.Timeline) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     DAY_STATUSES.forEach { (key, label) ->
                         Row(
@@ -451,7 +497,7 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
                 }
             }
 
-            SectionCard(if (s.isThai) "ข้อสังเกตเพิ่มเติม" else "Additional notes") {
+            SectionCard(if (s.isThai) "ข้อสังเกตเพิ่มเติม" else "Additional notes", Icons.Filled.EditNote) {
                 OutlinedTextField(
                     value = notes, onValueChange = { if (!editBlocked) notes = it },
                     enabled = !editBlocked, modifier = Modifier.fillMaxWidth().height(96.dp),
@@ -460,7 +506,7 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
                 )
             }
 
-            SectionCard(if (s.isThai) "รูปภาพประกอบ" else "Attached images") {
+            SectionCard(if (s.isThai) "รูปภาพประกอบ" else "Attached images", Icons.Filled.PhotoLibrary) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(
                         Modifier.size(100.dp).clip(RoundedCornerShape(14.dp))
@@ -516,17 +562,6 @@ fun LogSicknessSymptomsScreen(childViewModel: ChildViewModel, navController: Nav
 
 private fun ChronoDaysBetween(start: LocalDate, end: LocalDate): Int =
     java.time.temporal.ChronoUnit.DAYS.between(start, end).toInt().coerceAtLeast(0)
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            content()
-        }
-    }
-}
 
 @Composable
 private fun ChoiceChip(label: String, selected: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {

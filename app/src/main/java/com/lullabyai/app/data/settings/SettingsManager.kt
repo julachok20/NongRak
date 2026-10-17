@@ -159,6 +159,9 @@ class SettingsManager(private val context: Context) {
     private val INFO_ASK_SHOWN_DATE = stringPreferencesKey("info_ask_shown_date")
     private val INFO_ASK_SHOWN_IDS = stringPreferencesKey("info_ask_shown_ids")
     private val INFO_ASK_ANSWERED_IDS = stringPreferencesKey("info_ask_answered_ids")
+    private val INFO_ASK_STACK = stringPreferencesKey("info_ask_stack")
+    private val INFO_ASK_ADDED_TODAY = stringPreferencesKey("info_ask_added_today")
+    private val INFO_ASK_ADDED_DATE = stringPreferencesKey("info_ask_added_date")
     private val FAVORITE_SCAN_DONE = stringPreferencesKey("favorite_scan_done")
 
     /**
@@ -210,6 +213,33 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { prefs ->
             val current = (prefs[INFO_ASK_ANSWERED_IDS] ?: "").split(',').filter { it.isNotBlank() }
             prefs[INFO_ASK_ANSWERED_IDS] = (current + "$childId|$fieldId").distinct().joinToString(",")
+        }
+    }
+
+    suspend fun infoAskDrip(childId: String): com.lullabyai.app.data.infoask.InfoAskCatalog.AskDrip {
+        val prefs = context.dataStore.data.first()
+        val today = java.time.LocalDate.now().toString()
+        val stacked = (prefs[INFO_ASK_STACK] ?: "").split(',')
+            .mapNotNull { entry ->
+                val parts = entry.split('|')
+                if (parts.size < 3 || parts[0] != childId) return@mapNotNull null
+                val ms = parts[2].toLongOrNull() ?: return@mapNotNull null
+                com.lullabyai.app.data.infoask.InfoAskCatalog.StackedAsk(parts[1], ms)
+            }
+        val addedToday = if (prefs[INFO_ASK_ADDED_DATE] == today) fieldIdsForChild(prefs[INFO_ASK_ADDED_TODAY], childId)
+        else emptySet()
+        return com.lullabyai.app.data.infoask.InfoAskCatalog.AskDrip(stacked, addedToday)
+    }
+
+    suspend fun saveInfoAskDrip(childId: String, drip: com.lullabyai.app.data.infoask.InfoAskCatalog.AskDrip) {
+        val today = java.time.LocalDate.now().toString()
+        context.dataStore.edit { prefs ->
+            val others = (prefs[INFO_ASK_STACK] ?: "").split(',').filter { it.isNotBlank() && !it.startsWith("$childId|") }
+            prefs[INFO_ASK_STACK] = (others + drip.stacked.map { "$childId|${it.fieldId}|${it.addedAtMs}" }).joinToString(",")
+            val reset = prefs[INFO_ASK_ADDED_DATE] != today
+            val currentAdded = if (reset) emptyList() else (prefs[INFO_ASK_ADDED_TODAY] ?: "").split(',').filter { it.isNotBlank() && !it.startsWith("$childId|") }
+            prefs[INFO_ASK_ADDED_DATE] = today
+            prefs[INFO_ASK_ADDED_TODAY] = (currentAdded + drip.addedToday.map { "$childId|$it" }).distinct().joinToString(",")
         }
     }
 
@@ -288,6 +318,7 @@ class SettingsManager(private val context: Context) {
     private val SERVICE_USAGE = stringPreferencesKey("service_usage")
     private val REMINDED_KEYS = stringPreferencesKey("vaccine_reminded_keys")
     private val MEDICINE_REMINDED_KEYS = stringPreferencesKey("medicine_reminded_keys")
+    private val PRODUCT_EXPIRATION_REMINDED_KEYS = stringPreferencesKey("product_expiration_reminded_keys")
     private val DEVICE_WARNING_KEYS = stringPreferencesKey("device_warning_keys")
     private val DOCTOR_VACCINE_INBOX_DISMISSED = stringPreferencesKey("doctor_vaccine_inbox_dismissed")
     private val DOCTOR_SCHEDULE_NUDGE_DISMISSED = booleanPreferencesKey("doctor_schedule_nudge_dismissed")
@@ -350,6 +381,14 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setMedicineRemindedKeys(keys: Set<String>) {
         context.dataStore.edit { it[MEDICINE_REMINDED_KEYS] = keys.joinToString("|||") }
+    }
+
+    /** Dedupe markers ("expenseId:daysLeft") so product expiration reminders fire once per threshold. */
+    suspend fun getProductExpirationRemindedKeys(): Set<String> =
+        context.dataStore.data.first()[PRODUCT_EXPIRATION_REMINDED_KEYS]?.split("|||")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+
+    suspend fun setProductExpirationRemindedKeys(keys: Set<String>) {
+        context.dataStore.edit { it[PRODUCT_EXPIRATION_REMINDED_KEYS] = keys.joinToString("|||") }
     }
 
     /** Dedupe markers for wearable/IoT warning notifications ("childId:metric:recordedAt"). */

@@ -1,14 +1,11 @@
 package com.lullabyai.app.ui.screens.community
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -18,25 +15,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.lullabyai.app.data.model.CommunityComment
 import com.lullabyai.app.data.model.CommunityPost
-import com.lullabyai.app.data.model.ProfessionalAdviceBlog
+import com.lullabyai.app.data.model.PostKind
 import com.lullabyai.app.data.repository.CommunityRepository
-import com.lullabyai.app.data.settings.SettingsManager
-import com.lullabyai.app.ui.components.AppBottomNav
-import com.lullabyai.app.ui.components.BottomTab
-import com.lullabyai.app.ui.components.LullabyTopBar
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.navigation.Screen
 import com.lullabyai.app.ui.theme.Primary
@@ -46,6 +37,18 @@ import com.lullabyai.app.viewmodel.AuthViewModel
 import com.lullabyai.app.viewmodel.ChildViewModel
 import kotlinx.coroutines.launch
 
+/**
+ * ชุมชนคุณแม่ — the community feed, rebuilt to the Stitch mockups (images 51-53).
+ *
+ * This REPLACES the previous hub rather than extending it. Gone, because none of it is in the
+ * design: the always-open search bar, the category chip row, the popular-hashtags card, the
+ * community-rules card, the inline AI article list, and the floating + button. The composer row
+ * is the way to post now, and the doctor articles moved into the story rail so the feature keeps
+ * an entry point instead of being deleted with the section that held it.
+ *
+ * Kept deliberately: the removed-posts banner. It is the only way an author learns their post was
+ * taken down, and it is not decoration.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParentCommunityHubScreen(
@@ -57,1160 +60,634 @@ fun ParentCommunityHubScreen(
     val s = LocalStrings.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsManager = remember { SettingsManager(context) }
 
     val authState by authViewModel.uiState.collectAsState()
-    val childState by childViewModel.uiState.collectAsState()
+    val posts by communityRepo.posts.collectAsState(initial = emptyList())
+    val removedMine by communityRepo.removedMine.collectAsState(initial = emptyList())
 
     LaunchedEffect(Unit) {
         authViewModel.loadProfile()
         communityRepo.fetchPosts()
     }
 
-    val childrenNames = remember(childState.children, childState.child) {
-        if (childState.children.isNotEmpty()) {
-            childState.children.mapNotNull { it.name.trim().takeIf { n -> n.isNotEmpty() } }
-        } else {
-            listOfNotNull(childState.child?.name?.trim()?.takeIf { it.isNotEmpty() })
-        }
-    }
+    val snackbar = remember { SnackbarHostState() }
 
-    val currentUserName = remember(authState.profile, childState.child, s.isThai) {
-        authState.profile?.username?.trim()?.takeIf { it.isNotEmpty() }
-            ?: authState.profile?.fullName?.trim()?.takeIf { it.isNotEmpty() }
-            ?: (if (s.isThai) "คุณแม่น้องรัก" else "NongRak Parent")
-    }
+    // Search is an icon in the header, not a permanent bar — mockup 51.
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
 
-    val currentUserRole = remember(authState.profile, childrenNames, s.isThai) {
-        val rel = authState.profile?.relationship?.trim()?.takeIf { it.isNotEmpty() }
-        if (childrenNames.isNotEmpty()) {
-            val namesStr = childrenNames.joinToString(", ")
-            val relTitle = when (rel?.lowercase()) {
-                "พ่อ", "father", "dad" -> if (s.isThai) "คุณพ่อของน้อง" else "Father of"
-                "แม่", "mother", "mom" -> if (s.isThai) "คุณแม่ของน้อง" else "Mother of"
-                null -> if (s.isThai) "คุณแม่ของน้อง" else "Mother of"
-                else -> if (s.isThai) "$rel ของน้อง" else "$rel of"
+    // กำลังฮิต (Hot) / ล่าสุด (New) and the topic chip beside them.
+    var hotSort by remember { mutableStateOf(true) }
+    var topic by remember { mutableStateOf<CommunityTopic?>(null) }
+
+    val avatarUrl = authState.avatarSignedUrl ?: authState.profile?.avatarUrl
+
+    val visiblePosts = remember(posts, query, hotSort, topic) {
+        posts
+            .filter { post ->
+                val matchesQuery = query.isBlank() ||
+                    post.content.contains(query, ignoreCase = true) ||
+                    post.title.orEmpty().contains(query, ignoreCase = true) ||
+                    post.authorName.contains(query, ignoreCase = true) ||
+                    post.tags.any { it.contains(query, ignoreCase = true) }
+                matchesQuery && (topic == null || topic!!.matches(post))
             }
-            "($relTitle $namesStr)"
-        } else {
-            val relTitle = rel ?: (if (s.isThai) "ผู้ปกครอง" else "Parent")
-            "($relTitle)"
-        }
-    }
-
-    val posts by communityRepo.posts.collectAsState(initial = emptyList())
-    val removedMine by communityRepo.removedMine.collectAsState(initial = emptyList())
-    val blogs by communityRepo.blogs.collectAsState(initial = communityRepo.getProfessionalBlogs())
-
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("ทั้งหมด") }
-    var selectedHashtagFilter by remember { mutableStateOf<String?>(null) }
-
-    val popularHashtags = remember(posts) { communityRepo.getPopularHashtags() }
-    val recommendedHashtags = remember { communityRepo.getRecommendedHashtags() }
-
-    var selectedPostForComments by remember { mutableStateOf<CommunityPost?>(null) }
-
-    val categories = listOf(
-        if (s.isThai) "ทั้งหมด" else "All",
-        if (s.isThai) "โภชนาการ" else "Nutrition",
-        if (s.isThai) "การนอน" else "Sleep",
-        if (s.isThai) "พัฒนาการ" else "Development",
-        if (s.isThai) "สุขภาพ" else "Health"
-    )
-
-    val filteredPosts = remember(posts, searchQuery, selectedCategory, selectedHashtagFilter) {
-        posts.filter { post ->
-            val matchesQuery = searchQuery.isBlank() ||
-                post.content.contains(searchQuery, ignoreCase = true) ||
-                post.authorName.contains(searchQuery, ignoreCase = true) ||
-                post.tags.any { it.contains(searchQuery, ignoreCase = true) }
-
-            val matchesCategory = selectedCategory == "ทั้งหมด" || selectedCategory == "All" ||
-                post.tags.any { it.contains(selectedCategory, ignoreCase = true) } ||
-                (selectedCategory == "โภชนาการ" && post.content.contains("อาหาร", ignoreCase = true)) ||
-                (selectedCategory == "การนอน" && post.content.contains("นอน", ignoreCase = true)) ||
-                (selectedCategory == "สุขภาพ" && (post.content.contains("ไข้", ignoreCase = true) || post.content.contains("วัคซีน", ignoreCase = true))) ||
-                (selectedCategory == "พัฒนาการ" && post.content.contains("พัฒนาการ", ignoreCase = true))
-
-            val matchesHashtag = selectedHashtagFilter == null ||
-                post.tags.any { it.equals(selectedHashtagFilter, ignoreCase = true) } ||
-                post.content.contains(selectedHashtagFilter!!, ignoreCase = true)
-
-            matchesQuery && matchesCategory && matchesHashtag
-        }
-    }
-
-    val filteredBlogs = remember(blogs, selectedCategory) {
-        if (selectedCategory == "ทั้งหมด" || selectedCategory == "All") blogs
-        else blogs.filter { it.category.contains(selectedCategory, ignoreCase = true) }
+            .let { visible ->
+                if (!hotSort) {
+                    visible.sortedByDescending { it.createdAtMillis }
+                } else {
+                    // Engagement decayed over hours, so a busy post from this morning beats a
+                    // busier one from last week. A comment counts double a like: replying took
+                    // more effort and is a better sign the thread is worth opening.
+                    val now = System.currentTimeMillis()
+                    visible.sortedByDescending { post ->
+                        val score = post.likesCount + post.commentsCount * 2
+                        val ageHours = ((now - post.createdAtMillis) / 3_600_000.0).coerceAtLeast(0.0)
+                        // +2 so a brand-new post with no engagement does not divide by ~0 and
+                        // rocket to the top; 1.5 is a gentle decay rather than a cliff.
+                        score / Math.pow(ageHours + 2.0, 1.5)
+                    }
+                }
+            }
     }
 
     Scaffold(
         topBar = {
-            LullabyTopBar(
-                title = if (s.isThai) "ชุมชนคุณแม่ & บล็อกความรู้" else "Parent Community & Expert Blog",
-                navController = navController,
-                showNotification = true,
-                showProfile = false,
-                actions = {
-                    IconButton(onClick = { scope.launch { communityRepo.fetchPosts() } }) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = if (s.isThai) "รีเฟรช" else "Refresh",
-                            tint = Primary
-                        )
-                    }
-                    IconButton(onClick = { navController.navigate(Screen.CommunityUserProfile.route("me")) }) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(PrimaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val avatarUrl = authState.avatarSignedUrl ?: authState.profile?.avatarUrl
-                            if (!avatarUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = avatarUrl,
-                                    contentDescription = "My Profile",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                )
-                            } else {
-                                Icon(Icons.Filled.Person, contentDescription = "My Profile", tint = Primary, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                }
+            CommunityHeader(
+                isThai = s.isThai,
+                searching = searching,
+                query = query,
+                onQueryChange = { query = it },
+                onToggleSearch = {
+                    searching = !searching
+                    if (!searching) query = ""
+                },
+                onNotifications = { navController.navigate(Screen.Notifications.route) }
             )
         },
         bottomBar = {
-            AppBottomNav(
-                selected = BottomTab.COMMUNITY,
-                onHome = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
-                onChatbot = { navController.navigate(Screen.AiChat.route) { launchSingleTop = true } },
-                onChild = { navController.navigate(Screen.ChildSummary.route) { launchSingleTop = true } },
-                onStats = { navController.navigate(Screen.StatisticsInsights.route) { launchSingleTop = true } },
-                onSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                onCommunity = { /* already here */ }
+            CommunityBottomBar(
+                selected = CommunityTab.FEED,
+                isThai = s.isThai,
+                onExitToApp = { navController.navigate(Screen.Dashboard.route) { launchSingleTop = true } },
+                onFeed = { /* already here */ },
+                onGroup = {
+                    navController.navigate(Screen.CommunityGroups.route) { launchSingleTop = true }
+                },
+                onProfile = { navController.navigate(Screen.CommunityUserProfile.route("me")) }
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { navController.navigate(Screen.CreateCommunityPost.route) },
-                shape = CircleShape,
-                containerColor = Primary,
-                contentColor = Color.White,
-                modifier = Modifier.padding(bottom = 12.dp)
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = if (s.isThai) "สร้างโพสต์" else "Create Post")
-            }
-        },
+        snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            // Only the TOP inset is consumed. The footer floats rather than docking, so the feed is
+            // meant to pass beneath it; the bottom contentPadding is what keeps the last card clear
+            // of the pill instead of hidden behind it.
+            modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // The owner removed one of this person's posts (migration 20260915230000): tell them.
+            // An author only ever learns their post was removed from here.
             if (removedMine.isNotEmpty()) {
-                item {
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Icon(
-                                androidx.compose.material.icons.Icons.Filled.Warning, null,
-                                tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp)
-                            )
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    if (s.isThai) "โพสต์ของคุณถูกลบ ${removedMine.size} รายการ" else "${removedMine.size} of your posts were removed",
-                                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                removedMine.take(3).forEach { removed ->
-                                    val reason = removed.reason?.takeIf { it.isNotBlank() }
-                                        ?: if (s.isThai) "ไม่เป็นไปตามแนวทางชุมชน" else "Against community guidelines"
-                                    Text("\"${removed.preview}\" — $reason", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer)
-                                }
-                                Text(
-                                    if (s.isThai) "ผู้อื่นจะไม่เห็นโพสต์นี้แล้ว" else "Others can no longer see it.",
-                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                                )
-                            }
-                            TextButton(onClick = { communityRepo.dismissRemoved(removedMine.map { it.id }) }) {
-                                Text(if (s.isThai) "รับทราบ" else "OK", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
+                item { RemovedBanner(count = removedMine.size, isThai = s.isThai) }
             }
 
-            // Search Bar
             item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    placeholder = {
-                        Text(
-                            if (s.isThai) "ค้นหาบทความคุณหมอ หรือหัวข้อพูดคุย..." else "Search articles or discussions...",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.outline
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Filled.Close, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                        focusedBorderColor = Primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
+                StoryRail(
+                    isThai = s.isThai,
+                    myAvatarUrl = avatarUrl,
+                    selected = topic,
+                    onCompose = { navController.navigate(Screen.CreateCommunityPostOfKind.route(PostKind.POST.wire)) },
+                    onTopic = { picked -> topic = if (topic == picked) null else picked },
+                    onDoctorArticles = { navController.navigate(Screen.CommunityDoctorArticles.route) }
                 )
             }
 
-            // Category Filter Pills
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    categories.forEach { category ->
-                        val isSelected = selectedCategory == category
-                        Surface(
-                            onClick = { selectedCategory = category },
-                            shape = RoundedCornerShape(100.dp),
-                            color = if (isSelected) Primary else MaterialTheme.colorScheme.surface,
-                            border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                            shadowElevation = if (isSelected) 1.dp else 0.dp
-                        ) {
-                            Text(
-                                text = category,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
+                ComposerBox(
+                    isThai = s.isThai,
+                    avatarUrl = avatarUrl,
+                    onOpen = { kind -> navController.navigate(Screen.CreateCommunityPostOfKind.route(kind.wire)) }
+                )
             }
 
-            // Hashtags Discovery Bar (Popular & Recommended)
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Active filter indicator if any
-                    if (selectedHashtagFilter != null) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = PrimaryContainer.copy(alpha = 0.5f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.3f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(Icons.Filled.Tag, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
-                                    Text(
-                                        text = (if (s.isThai) "กำลังกรองด้วย: " else "Filtering by: ") + selectedHashtagFilter,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Primary
-                                    )
-                                }
-                                TextButton(
-                                    onClick = { selectedHashtagFilter = null },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Icon(Icons.Filled.Close, contentDescription = null, tint = Primary, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(if (s.isThai) "ล้างตัวกรอง" else "Clear", color = Primary, style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                    }
-
-                    // 1. Popular Hashtags
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Filled.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF5722), modifier = Modifier.size(16.dp))
-                            Text(
-                                text = if (s.isThai) "แฮชแท็กยอดนิยม" else "Popular Hashtags",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            popularHashtags.forEach { stat ->
-                                val isSelected = selectedHashtagFilter == stat.tag
-                                Surface(
-                                    onClick = {
-                                        selectedHashtagFilter = if (isSelected) null else stat.tag
-                                    },
-                                    shape = RoundedCornerShape(100.dp),
-                                    color = if (isSelected) Color(0xFFFF5722) else MaterialTheme.colorScheme.surface,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isSelected) Color.Transparent else Color(0xFFFF5722).copy(alpha = 0.3f)
-                                    ),
-                                    shadowElevation = if (isSelected) 1.dp else 0.dp
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = stat.tag,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Surface(
-                                            shape = RoundedCornerShape(100.dp),
-                                            color = if (isSelected) Color.White.copy(alpha = 0.25f) else Color(0xFFFF5722).copy(alpha = 0.1f)
-                                        ) {
-                                            Text(
-                                                text = "${stat.count}",
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) Color.White else Color(0xFFFF5722)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 2. Recommended Hashtags
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Primary, modifier = Modifier.size(16.dp))
-                            Text(
-                                text = if (s.isThai) "แฮชแท็กแนะนำสำหรับคุณแม่" else "Recommended Topics",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            recommendedHashtags.forEach { tag ->
-                                val isSelected = selectedHashtagFilter == tag
-                                Surface(
-                                    onClick = {
-                                        selectedHashtagFilter = if (isSelected) null else tag
-                                    },
-                                    shape = RoundedCornerShape(100.dp),
-                                    color = if (isSelected) Primary else MaterialTheme.colorScheme.surface,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isSelected) Color.Transparent else Primary.copy(alpha = 0.25f)
-                                    ),
-                                    shadowElevation = if (isSelected) 1.dp else 0.dp
-                                ) {
-                                    Text(
-                                        text = tag,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) Color.White else Primary
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                SortChips(
+                    isThai = s.isThai,
+                    hot = hotSort,
+                    topic = topic,
+                    onHot = { hotSort = it },
+                    onClearTopic = { topic = null }
+                )
             }
 
-            // Professional Doctor Advice Blogs Section (บล็อกคำแนะนำจากแพทย์ผู้เชี่ยวชาญ)
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.AutoAwesome,
-                                contentDescription = null,
-                                tint = Primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Text(
-                                text = if (s.isThai) "บทความคำแนะนำจาก AI น้องรัก" else "AI NongRak Advice & Insights",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(100.dp),
-                            color = PrimaryContainer.copy(alpha = 0.5f)
-                        ) {
-                            Text(
-                                text = "${filteredBlogs.size} " + (if (s.isThai) "บทความ" else "articles"),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        filteredBlogs.forEach { blog ->
-                            DoctorBlogCard(
-                                blog = blog,
-                                isThai = s.isThai,
-                                onClick = { navController.navigate(Screen.ProfessionalBlogDetail.route(blog.id)) }
-                            )
-                        }
-                    }
-                }
+            if (visiblePosts.isEmpty()) {
+                item { EmptyFeed(isThai = s.isThai, filtered = query.isNotBlank() || topic != null) }
             }
 
-            // Community Feed Header
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            items(visiblePosts, key = { it.id }) { post ->
+                CommunityFeedCard(
+                    post = post,
+                    isThai = s.isThai,
+                    onOpen = { navController.navigate(Screen.CommunityPostDetail.route(post.id)) },
+                    onLike = { communityRepo.toggleLike(post.id) },
+                    onReact = { reaction -> communityRepo.setReaction(post.id, reaction) },
+                    onAuthorClick = {
+                        val me = authState.profile?.id
+                        val target = if (me != null && post.userId == me) "me" else post.authorName
+                        navController.navigate(Screen.CommunityUserProfile.route(target))
+                    },
+                    onShare = { sharePostLink(context, post) },
+                    onVote = { optionId -> scope.launch { communityRepo.togglePollVote(post.id, optionId) } },
+                    onAddPollOption = { label -> scope.launch { communityRepo.addPollOption(post.id, label) } },
+                    onTagClick = { tag -> query = tag }
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun CommunityHeader(
+    isThai: Boolean,
+    searching: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onToggleSearch: () -> Unit,
+    onNotifications: () -> Unit
+) {
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        Column(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.Diversity3,
-                            contentDescription = null,
-                            tint = Primary,
-                            modifier = Modifier.size(20.dp)
-                        )
                         Text(
-                            if (s.isThai) "กระทู้แลกเปลี่ยนจากผู้ปกครอง" else "Parent Discussions",
-                            style = MaterialTheme.typography.titleMedium,
+                            if (isThai) "ชุมชนคุณแม่" else "Parent Community",
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
+                        Surface(shape = RoundedCornerShape(50), color = PrimaryContainer) {
+                            Text(
+                                "NONGRAK",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
-
                     Text(
-                        "${filteredPosts.size} " + (if (s.isThai) "โพสต์" else "posts"),
+                        if (isThai) "แลกเปลี่ยน แบ่งปัน อุ่นใจไปด้วยกัน"
+                        else "Share, ask, and feel less alone",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
-            }
 
-            // Community Feed Items or Friendly Empty State
-            if (filteredPosts.isEmpty()) {
-                item {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryContainer.copy(alpha = 0.4f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.Forum,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-
-                            Text(
-                                if (s.isThai) "ยังไม่มีโพสต์ในชุมชนขณะนี้" else "No Community Discussions Yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Text(
-                                if (s.isThai)
-                                    "มาร่วมเป็นคนแรกที่แบ่งปันเรื่องราว ถามคำถาม หรือแชร์ประสบการณ์การเลี้ยงลูกเพื่อแลกเปลี่ยนกับคุณพ่อคุณแม่ท่านอื่นกันเถอะ!"
-                                else
-                                    "Be the first parent to share a question, story, or moment to connect with other parents!",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Button(
-                                onClick = { navController.navigate(Screen.CreateCommunityPost.route) },
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
-                                Icon(Icons.Filled.AddComment, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (s.isThai) "เริ่มสร้างโพสต์แรกของคุณ" else "Create First Post", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                IconButton(onClick = onToggleSearch) {
+                    Icon(
+                        if (searching) Icons.Filled.Close else Icons.Filled.Search,
+                        contentDescription = if (isThai) "ค้นหา" else "Search",
+                        tint = Primary
+                    )
                 }
-            } else {
-                items(filteredPosts, key = { it.id }) { post ->
-                    CommunityPostCard(
-                        post = post,
-                        isThai = s.isThai,
-                        onLike = { communityRepo.toggleLike(post.id) },
-                        onCommentClick = { selectedPostForComments = post },
-                        onAuthorClick = {
-                            val target = if (post.authorName.equals(currentUserName, ignoreCase = true) ||
-                                post.authorName.equals(authState.profile?.username, ignoreCase = true) ||
-                                post.authorName.equals(authState.profile?.fullName, ignoreCase = true)) "me" else post.authorName
-                            navController.navigate(Screen.CommunityUserProfile.route(target))
-                        },
-                        onTagClick = { tag ->
-                            selectedHashtagFilter = if (selectedHashtagFilter == tag) null else tag
-                        }
+                IconButton(onClick = onNotifications) {
+                    Icon(
+                        Icons.Filled.NotificationsNone,
+                        contentDescription = if (isThai) "การแจ้งเตือน" else "Notifications",
+                        tint = Primary
                     )
                 }
             }
 
-            item { Spacer(Modifier.height(24.dp)) }
+            if (searching) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    shape = RoundedCornerShape(50),
+                    placeholder = {
+                        Text(
+                            if (isThai) "ค้นหาหัวข้อ หรือคุณแม่..." else "Search posts or parents...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(18.dp)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
+}
 
-    // Community Post Comments & Interaction Sheet
-    selectedPostForComments?.let { post ->
-        val latestPost = posts.find { it.id == post.id } ?: post
-        CommunityPostCommentsSheet(
-            post = latestPost,
-            isThai = s.isThai,
-            onDismiss = { selectedPostForComments = null },
-            onLikePost = { communityRepo.toggleLike(latestPost.id) },
-            onAddComment = { text ->
-                communityRepo.addComment(
-                    postId = latestPost.id,
-                    authorName = currentUserName,
-                    authorRole = currentUserRole,
-                    content = text,
-                    authorAvatarUrl = authState.avatarSignedUrl ?: authState.profile?.avatarUrl,
-                    userId = authState.profile?.id
+// ---------------------------------------------------------------------------------------------
+// Story rail
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The topics in the rail. These filter the feed on words the posts actually contain, so a chip
+ * never shows an empty list while matching posts sit below it.
+ */
+enum class CommunityTopic(
+    val thai: String,
+    val english: String,
+    val icon: ImageVector,
+    val accent: Color,
+    private val words: List<String>
+) {
+    FOOD("อาหารเด็ก", "Feeding", Icons.Filled.Restaurant, CommunityPalette.Food,
+        listOf("อาหาร", "BLW", "นม", "กิน")),
+    SLEEP("ทริคลูกหลับ", "Sleep", Icons.Filled.Bedtime, CommunityPalette.Sleep,
+        listOf("นอน", "หลับ", "sleep")),
+    PLAY("ของเล่นเสริม", "Play", Icons.Filled.Toys, CommunityPalette.Play,
+        listOf("ของเล่น", "เล่น", "พัฒนาการ")),
+    HEALTH("สุขภาพลูก", "Health", Icons.Filled.MonitorHeart, CommunityPalette.Health,
+        listOf("ไข้", "วัคซีน", "ป่วย", "ผื่น"));
+
+    fun label(isThai: Boolean): String = if (isThai) thai else english
+
+    fun matches(post: CommunityPost): Boolean {
+        val haystack = post.content + " " + post.title.orEmpty() + " " + post.tags.joinToString(" ")
+        return words.any { haystack.contains(it, ignoreCase = true) }
+    }
+}
+
+@Composable
+private fun StoryRail(
+    isThai: Boolean,
+    myAvatarUrl: String?,
+    selected: CommunityTopic?,
+    onCompose: () -> Unit,
+    onTopic: (CommunityTopic) -> Unit,
+    onDoctorArticles: () -> Unit
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            RailItem(
+                label = if (isThai) "เรื่องเล่าวันนี้" else "Your story",
+                isThai = isThai,
+                avatarUrl = myAvatarUrl,
+                badge = Icons.Filled.Add,
+                selected = false,
+                accent = CommunityPalette.Story,
+                onClick = onCompose
+            )
+        }
+        item {
+            // The AI/doctor articles used to have their own section on this page. The section is
+            // gone with the redesign, so the feature keeps its entry point here rather than
+            // becoming unreachable.
+            RailItem(
+                label = if (isThai) "หมอเด็กตอบ" else "Ask a doctor",
+                isThai = isThai,
+                avatarUrl = null,
+                icon = Icons.Filled.LocalHospital,
+                selected = false,
+                accent = CommunityPalette.Doctor,
+                onClick = onDoctorArticles
+            )
+        }
+        items(CommunityTopic.entries.toList(), key = { it.name }) { topic ->
+            RailItem(
+                label = topic.label(isThai),
+                isThai = isThai,
+                avatarUrl = null,
+                icon = topic.icon,
+                selected = selected == topic,
+                accent = topic.accent,
+                onClick = { onTopic(topic) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RailItem(
+    label: String,
+    isThai: Boolean,
+    avatarUrl: String?,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+    badge: ImageVector? = null
+) {
+    Column(
+        modifier = Modifier.width(72.dp).clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) CommunityPalette.soft(accent).copy(alpha = 0.3f) else CommunityPalette.soft(accent)),
+                contentAlignment = Alignment.Center
+            ) {
+                when {
+                    !avatarUrl.isNullOrBlank() -> AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                    icon != null -> Icon(icon, null, tint = accent, modifier = Modifier.size(26.dp))
+                    else -> Icon(Icons.Filled.Person, null, tint = accent, modifier = Modifier.size(26.dp))
+                }
+            }
+            badge?.let {
+                Surface(
+                    shape = CircleShape,
+                    color = accent,
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                ) {
+                    Icon(
+                        it, null, tint = Color.White,
+                        modifier = Modifier.padding(3.dp).size(13.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Composer box and sort chips
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun ComposerBox(isThai: Boolean, avatarUrl: String?, onOpen: (PostKind) -> Unit) {
+    // Flat and bordered, same as the ข้อมูลลูก cards.
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (!avatarUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(38.dp).clip(CircleShape)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.size(38.dp).clip(CircleShape).background(SecondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Person, null, tint = Primary, modifier = Modifier.size(20.dp))
+                    }
+                }
+                Surface(
+                    onClick = { onOpen(PostKind.POST) },
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        if (isThai) "คุณแม่กำลังคิดอะไรอยู่? ถามหรือแชร์ประสบการณ์..."
+                        else "What is on your mind? Ask or share...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ComposerEntry(
+                    label = if (isThai) "รูปภาพ/วิดีโอ" else "Photo/Video",
+                    icon = Icons.Filled.Image,
+                    accent = CommunityPalette.Photo,
+                    modifier = Modifier.weight(1f)
+                ) { onOpen(PostKind.POST) }
+                ComposerEntry(
+                    label = if (isThai) "ตั้งกระทู้ถามหมอ" else "Ask a doctor",
+                    icon = Icons.Filled.LocalHospital,
+                    accent = CommunityPalette.AskDoctor,
+                    modifier = Modifier.weight(1f)
+                ) { onOpen(PostKind.THREAD) }
+                ComposerEntry(
+                    label = if (isThai) "โพลสำรวจ" else "Poll",
+                    icon = Icons.Filled.BarChart,
+                    accent = CommunityPalette.Poll,
+                    modifier = Modifier.weight(1f)
+                ) { onOpen(PostKind.POLL) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SortChips(
+    isThai: Boolean,
+    hot: Boolean,
+    topic: CommunityTopic?,
+    onHot: (Boolean) -> Unit,
+    onClearTopic: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FilterChip(
+            selected = hot,
+            onClick = { onHot(true) },
+            label = {
+                Text(
+                    if (isThai) "กำลังฮิต (Hot)" else "Hot",
+                    style = MaterialTheme.typography.labelMedium
                 )
             },
-            onLikeComment = { commentId ->
-                communityRepo.toggleCommentLike(latestPost.id, commentId)
+            leadingIcon = {
+                Icon(
+                    Icons.Filled.LocalFireDepartment, null,
+                    tint = if (hot) CommunityPalette.Hot else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(16.dp)
+                )
             },
-            onAuthorClick = { name ->
-                selectedPostForComments = null
-                navController.navigate(Screen.CommunityUserProfile.route(name))
-            }
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = CommunityPalette.soft(CommunityPalette.Hot),
+                selectedLabelColor = CommunityPalette.Hot
+            )
+        )
+        FilterChip(
+            selected = !hot,
+            onClick = { onHot(false) },
+            label = {
+                Text(
+                    if (isThai) "ล่าสุด (New)" else "New",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    Icons.Filled.Schedule, null,
+                    tint = if (!hot) CommunityPalette.New else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(16.dp)
+                )
+            },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = CommunityPalette.soft(CommunityPalette.New),
+                selectedLabelColor = CommunityPalette.New
+            )
+        )
+        // The active topic appears as a removable chip, so it is obvious why the feed is short.
+        topic?.let {
+            FilterChip(
+                selected = true,
+                onClick = onClearTopic,
+                label = { Text(it.label(isThai), style = MaterialTheme.typography.labelMedium) },
+                trailingIcon = { Icon(Icons.Filled.Close, null, modifier = Modifier.size(15.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = CommunityPalette.soft(it.accent),
+                    selectedLabelColor = it.accent,
+                    selectedTrailingIconColor = it.accent
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyFeed(isThai: Boolean, filtered: Boolean) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            Icons.Filled.ChatBubbleOutline, null,
+            tint = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(42.dp)
+        )
+        Text(
+            // Two different situations, two different messages: nothing here yet is not the same
+            // problem as a filter hiding everything.
+            when {
+                filtered && isThai -> "ไม่พบโพสต์ที่ตรงกับที่เลือก"
+                filtered -> "No posts match that filter"
+                isThai -> "ยังไม่มีโพสต์ในชุมชน เริ่มเรื่องแรกได้เลยค่ะ"
+                else -> "No posts yet — start the first one"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.outline,
+            textAlign = TextAlign.Center
         )
     }
 }
 
 @Composable
-private fun RuleRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, description: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(Primary.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-/** Rich Doctor Advice Card */
-@Composable
-private fun DoctorBlogCard(
-    blog: ProfessionalAdviceBlog,
-    isThai: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier
-            .width(310.dp)
-            .height(190.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(2.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(PrimaryContainer.copy(alpha = 0.25f), MaterialTheme.colorScheme.surface)
-                    )
-                )
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Category & Read Time
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(100.dp),
-                        color = Primary.copy(alpha = 0.12f)
-                    ) {
-                        Text(
-                            text = blog.category,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Primary
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(Icons.Filled.Schedule, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(12.dp))
-                        Text(
-                            "${blog.readTimeMinutes} " + (if (isThai) "นาที" else "min"),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-
-                // Title
-                Text(
-                    blog.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // AI NongRak Byline
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(Icons.Filled.AutoAwesome, null, tint = Primary, modifier = Modifier.size(14.dp))
-                    Text(
-                        blog.doctorName,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                }
-            }
-
-            // Bottom CTA
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(Icons.Filled.Favorite, null, tint = Color(0xFFE53935), modifier = Modifier.size(12.dp))
-                    Text(
-                        "${blog.likesCount}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-
-                Text(
-                    if (isThai) "อ่านบทความฉบับเต็ม >" else "Read Article >",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Primary
-                )
-            }
-        }
-    }
-}
-
-/** Community Post Card Component */
-@Composable
-private fun CommunityPostCard(
-    post: CommunityPost,
-    isThai: Boolean,
-    onLike: () -> Unit,
-    onCommentClick: () -> Unit,
-    onAuthorClick: () -> Unit,
-    onTagClick: (String) -> Unit = {}
-) {
-    Card(
-        onClick = onCommentClick,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(1.dp),
+private fun RemovedBanner(count: Int, isThai: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Author header (clickable to view profile)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onAuthorClick() },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (!post.authorAvatarUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = post.authorAvatarUrl,
-                        contentDescription = "Avatar",
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(SecondaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.Person, null, tint = Primary, modifier = Modifier.size(22.dp))
-                    }
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(post.authorName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Text("${post.authorRole} • ${post.timeAgo}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                }
-            }
-
-            // Post content
-            Text(
-                post.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
+            Icon(
+                Icons.Filled.Warning, null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp)
             )
-
-            if (!post.imageUrl.isNullOrBlank()) {
-                val mediaContext = androidx.compose.ui.platform.LocalContext.current
-                val thumbnail: @Composable () -> Unit = {
-                    Box(contentAlignment = Alignment.Center) {
-                        AsyncImage(
-                            model = post.imageUrl,
-                            contentDescription = if (post.videoUrl.isNullOrBlank()) "Post image" else "Video thumbnail",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 240.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
-                        if (!post.videoUrl.isNullOrBlank()) {
-                            Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f)) {
-                                Icon(
-                                    Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White,
-                                    modifier = Modifier.padding(8.dp).size(26.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-                if (post.videoUrl.isNullOrBlank()) {
-                    thumbnail()
-                } else {
-                    // ponytail: no in-app player — the clip opens in the phone's own video app.
-                    Surface(
-                        onClick = {
-                            runCatching {
-                                mediaContext.startActivity(
-                                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(post.videoUrl))
-                                )
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.Transparent
-                    ) { thumbnail() }
-                }
-            }
-
-            // Tags (clickable to filter)
-            if (post.tags.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    post.tags.forEach { tag ->
-                        Surface(
-                            onClick = { onTagClick(tag) },
-                            shape = RoundedCornerShape(100.dp),
-                            color = Primary.copy(alpha = 0.08f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.2f))
-                        ) {
-                            Text(
-                                text = tag,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Primary
-                            )
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-            // Action row (Like, Comment)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.clickable { onLike() }
-                    ) {
-                        Icon(
-                            if (post.isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            contentDescription = "Like",
-                            tint = if (post.isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            "${post.likesCount}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (post.isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.outline,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.clickable { onCommentClick() }
-                    ) {
-                        Icon(
-                            Icons.Filled.ModeComment,
-                            contentDescription = "Comment",
-                            tint = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            "${post.commentsCount}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.outline,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Text(
-                    if (isThai) "ดูความคิดเห็น >" else "View Comments >",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Primary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text(
+                if (isThai) "โพสต์ของคุณถูกนำออก $count รายการ" else "$count of your posts were removed",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
         }
     }
 }
 
-/** Community Post Comments BottomSheet Modal */
-@OptIn(ExperimentalMaterial3Api::class)
+/** One of the three composer entry points under the composer box. */
 @Composable
-private fun CommunityPostCommentsSheet(
-    post: CommunityPost,
-    isThai: Boolean,
-    onDismiss: () -> Unit,
-    onLikePost: () -> Unit,
-    onAddComment: (String) -> Unit,
-    onLikeComment: (String) -> Unit,
-    onAuthorClick: (String) -> Unit
+private fun ComposerEntry(
+    label: String,
+    icon: ImageVector,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
-    var commentText by remember { mutableStateOf("") }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = CommunityPalette.soft(accent),
+        modifier = modifier
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding()
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    if (isThai) "ความคิดเห็น (${post.comments.size})" else "Comments (${post.comments.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close")
-                }
-            }
-
-            // Scrollable Content & Comments List
-            Column(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Original Post summary Card
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.clickable { onAuthorClick(post.authorName) },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (!post.authorAvatarUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = post.authorAvatarUrl,
-                                    contentDescription = "Avatar",
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                    .background(PrimaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Filled.Person, null, tint = Primary, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            Column {
-                                Text(post.authorName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                Text(post.timeAgo, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-                        Text(post.content, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                // Comments List
-                if (post.comments.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            if (isThai) "ยังไม่มีความคิดเห็น มาร่วมแสดงความคิดเห็นคนแรกกันเถอะ!" else "No comments yet. Be the first to reply!",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                } else {
-                    post.comments.forEach { comment ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            if (!comment.authorAvatarUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = comment.authorAvatarUrl,
-                                    contentDescription = "Avatar",
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .clickable { onAuthorClick(comment.authorName) }
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(SecondaryContainer)
-                                        .clickable { onAuthorClick(comment.authorName) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Filled.Person, null, tint = Primary, modifier = Modifier.size(18.dp))
-                                }
-                            }
-
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { onAuthorClick(comment.authorName) },
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(comment.authorName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                    Text(comment.timeAgo, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                }
-                                Text(comment.content, style = MaterialTheme.typography.bodySmall)
-                            }
-
-                            IconButton(
-                                onClick = { onLikeComment(comment.id) },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    if (comment.isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                    contentDescription = "Like comment",
-                                    tint = if (comment.isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add Comment Input Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = commentText,
-                    onValueChange = { commentText = it },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    placeholder = {
-                        Text(if (isThai) "เขียนความคิดเห็น..." else "Write a comment...", fontSize = 13.sp)
-                    },
-                    maxLines = 3,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-
-                IconButton(
-                    onClick = {
-                        if (commentText.isNotBlank()) {
-                            onAddComment(commentText.trim())
-                            commentText = ""
-                        }
-                    },
-                    enabled = commentText.isNotBlank(),
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(if (commentText.isNotBlank()) Primary else MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Icon(
-                        Icons.Filled.Send,
-                        contentDescription = "Send",
-                        tint = if (commentText.isNotBlank()) Color.White else MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
         }
     }
+}
+
+/**
+ * The share sheet for a feed card.
+ *
+ * Shares the web link rather than a deep link, so it opens for someone who does not have the app.
+ */
+private fun sharePostLink(context: android.content.Context, post: CommunityPost) {
+    val link = "$COMMUNITY_SHARE_BASE/${post.id}"
+    val subject = post.title?.takeIf { it.isNotBlank() } ?: post.content.take(80)
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
+        putExtra(android.content.Intent.EXTRA_TEXT, "$subject\n$link")
+    }
+    runCatching { context.startActivity(android.content.Intent.createChooser(intent, null)) }
 }

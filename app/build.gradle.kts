@@ -20,11 +20,10 @@ android {
         applicationId = "com.publish.NongRak"
         minSdk = 26
         targetSdk = 36
-        // Next after the newest artifact in Releases/ (v1.0.9, vc26). This file had been
-        // left on vc16/1.0.3-dev36 while five releases shipped from elsewhere, so read Releases/
-        // rather than this line when picking the next number.
-        versionCode = 28
-        versionName = "1.0.1"
+        // V.1.1 (2026-09-25), the first non-beta build of 1.1. versionCode must always rise for Play;
+        // versionName is what Settings and the store listing show.
+        versionCode = 30
+        versionName = "V.1.1"
         testInstrumentationRunner = "com.lullabyai.app.NongRakTestRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${localProps["SUPABASE_URL"]}\"")
@@ -49,6 +48,17 @@ android {
         // otherwise the userId from login never matches the one the OA sees and notifications
         // silently go nowhere.
         buildConfigField("String", "LINE_LOGIN_CHANNEL_ID", "\"${localProps["LINE_LOGIN_CHANNEL_ID"] ?: ""}\"")
+        // GEMINI_LIVE_API_KEY is deliberately NOT a BuildConfig field.
+        //
+        // It used to be, and that put a real Google API key inside every APK - extractable by
+        // anyone who downloaded the app, billable to this project, and a direct contradiction of
+        // the note eight lines above. The Live voice call now asks the `gemini-live-token` edge
+        // function for a single-use token instead, so the key stays a Supabase secret:
+        //   supabase secrets set GEMINI_LIVE_API_KEY=...
+        //
+        // The old key is already inside every build made before 2026-09-28, including the v1.1
+        // bundle (versionCode 30). Rotate it in Google AI Studio; removing it here does not
+        // un-ship what already went out.
 
         manifestPlaceholders["supabaseRedirectScheme"] = "lullabyai"
     }

@@ -154,12 +154,16 @@ fun GrowthHistoryScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                     GrowthStatBentoCard(
                         icon = Icons.Filled.MonitorWeight, label = if (isThai) "น้ำหนักล่าสุด" else "Latest weight",
-                        value = latestWeight?.weightKg?.toString() ?: "-", unit = "kg", trend = weightTrend, trendUnit = "kg",
+                        value = com.lullabyai.app.util.VitalsFormat.amount(latestWeight?.weightKg, isThai),
+                        unit = if (latestWeight?.weightKg == null) "" else "kg",
+                        trend = weightTrend, trendUnit = "kg",
                         color = Primary, modifier = Modifier.weight(1f)
                     )
                     GrowthStatBentoCard(
                         icon = Icons.Filled.Height, label = if (isThai) "ส่วนสูงล่าสุด" else "Latest height",
-                        value = latestHeight?.heightCm?.toString() ?: "-", unit = "cm", trend = heightTrend, trendUnit = "cm",
+                        value = com.lullabyai.app.util.VitalsFormat.amount(latestHeight?.heightCm, isThai),
+                        unit = if (latestHeight?.heightCm == null) "" else "cm",
+                        trend = heightTrend, trendUnit = "cm",
                         color = Secondary, modifier = Modifier.weight(1f)
                     )
                 }

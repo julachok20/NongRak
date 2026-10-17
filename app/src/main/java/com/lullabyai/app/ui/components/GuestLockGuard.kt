@@ -133,6 +133,8 @@ fun GuestLockGuard(
                     shape = RoundedCornerShape(100.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = LineGreen)
                 ) {
+                    LineLogo()
+                    Spacer(Modifier.width(8.dp))
                     Text(if (isThai) "ใช้งานต่อด้วย LINE" else "Continue with LINE", fontWeight = FontWeight.Bold)
                 }
 
@@ -144,6 +146,8 @@ fun GuestLockGuard(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(100.dp)
                 ) {
+                    GoogleLogo()
+                    Spacer(Modifier.width(8.dp))
                     Text(if (isThai) "ใช้งานต่อด้วย Google" else "Continue with Google", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 }
 

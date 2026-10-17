@@ -6,7 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,17 +15,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.lullabyai.app.data.model.ChildAccessMember
 import com.lullabyai.app.ui.components.LullabyTopBar
-import com.lullabyai.app.ui.components.PrimaryButton
 import com.lullabyai.app.ui.localization.LocalStrings
 import com.lullabyai.app.ui.theme.*
+import com.lullabyai.app.viewmodel.AccessCapabilities
 import com.lullabyai.app.viewmodel.AccessPermissionViewModel
 import com.lullabyai.app.viewmodel.AccessRoleLabels
 
 /**
- * Stitch: "Permission Settings Detail" — per-member granular toggles + role.
+ * Stitch: "Permission Settings Detail (พร้อมสิทธิ์บันทึกกิจกรรมและการพบแพทย์)"
+ * Header is the standard [LullabyTopBar]; everything below is the Stitch layout.
  */
 @Composable
 fun PermissionSettingsDetailScreen(
@@ -44,150 +45,127 @@ fun PermissionSettingsDetailScreen(
     }
 
     val member = state.selectedMember ?: state.members.find { it.userId == userId }
-    var draft by remember(member?.userId, member?.role) { mutableStateOf(member) }
+    var caps by remember(member?.userId, member?.capabilities) {
+        mutableStateOf(member?.let { AccessCapabilities.effectiveCaps(it) } ?: emptySet())
+    }
 
     LaunchedEffect(member) {
-        if (member != null) draft = member
+        if (member != null) caps = AccessCapabilities.effectiveCaps(member)
     }
 
     var confirmRemove by remember { mutableStateOf(false) }
-    var showTransferConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = Background,
         topBar = {
             LullabyTopBar(
-                title = if (isThai) "ตั้งค่าสิทธิ์ (Permissions)" else "Permission settings",
+                title = if (isThai) "การตั้งค่าสิทธิ์ (Permissions)" else "Permission settings",
                 onBack = onBack,
                 navController = navController
             )
         },
         bottomBar = { AccessPermissionBottomNav(navController) }
     ) { padding ->
-        if (draft == null) {
+        if (member == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 if (state.loading) CircularProgressIndicator(color = Primary)
                 else Text(if (isThai) "ไม่พบผู้ใช้นี้" else "Member not found")
             }
             return@Scaffold
         }
-        val d = draft!!
 
         Column(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 88.dp),
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AccessAvatar(d.avatarUrl, d.displayName, Modifier.size(56.dp))
-                Column {
-                    Text(d.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(AccessRoleLabels.title(d.role, isThai), color = Primary, style = MaterialTheme.typography.bodyMedium)
-                    d.email?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(0.dp)
+            ) {
+                Row(
+                    Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    AccessAvatar(member.avatarUrl, member.displayName, Modifier.size(56.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            member.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnBackground
+                        )
+                        Text(
+                            AccessCapabilities.roleBadge(member.role),
+                            color = Primary,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
                     }
                 }
             }
 
-            Text(if (isThai) "บทบาท" else "Role", fontWeight = FontWeight.Bold)
-            AccessRoleLabels.ROLES.forEach { r ->
-                FilterChip(
-                    selected = d.role == r || (d.role == "member" && r == "co_owner"),
-                    onClick = { draft = d.copy(role = r) },
-                    label = { Text(AccessRoleLabels.title(r, isThai)) },
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-            }
-
-            PermSection(
-                icon = Icons.Filled.HealthAndSafety,
-                title = if (isThai) "ข้อมูลสุขภาพ (Health Records)" else "Health Records"
-            ) {
-                PermToggle(if (isThai) "ดูประวัติสุขภาพ" else "View Health History", d.canViewHealth) {
-                    draft = d.copy(canViewHealth = it)
-                }
-                PermToggle(if (isThai) "บันทึกอาการป่วย" else "Log Symptoms", d.canLogSymptoms) {
-                    draft = d.copy(canLogSymptoms = it)
-                }
-                PermToggle(if (isThai) "แก้ไขข้อมูลการเจริญเติบโต" else "Edit Growth Data", d.canEditGrowth) {
-                    draft = d.copy(canEditGrowth = it)
-                }
-            }
-
-            PermSection(
-                icon = Icons.Filled.CalendarMonth,
-                title = if (isThai) "การนัดหมาย (Appointments)" else "Appointments"
-            ) {
-                PermToggle(if (isThai) "ดูนัดหมาย" else "View Appointments", d.canViewAppointments) {
-                    draft = d.copy(canViewAppointments = it)
-                }
-                PermToggle(if (isThai) "จองนัดคุณหมอ" else "Book Doctor", d.canBookDoctor) {
-                    draft = d.copy(canBookDoctor = it)
-                }
-                PermToggle(if (isThai) "ยกเลิกนัดหมาย" else "Cancel Appointments", d.canCancelAppointments) {
-                    draft = d.copy(canCancelAppointments = it)
-                }
-            }
-
-            PermSection(
-                icon = Icons.Filled.Description,
-                title = if (isThai) "เอกสารและข้อมูล (Documents & Info)" else "Documents & Info"
-            ) {
-                PermToggle(if (isThai) "ดูคลังเอกสาร" else "View Document Vault", d.canViewDocuments) {
-                    draft = d.copy(canViewDocuments = it)
-                }
-                PermToggle(if (isThai) "อัปโหลดเอกสารใหม่" else "Upload Documents", d.canUploadDocuments) {
-                    draft = d.copy(canUploadDocuments = it)
-                }
-                PermToggle(if (isThai) "แก้ไขโปรไฟล์เด็ก" else "Edit Child Profile", d.canEditProfile) {
-                    draft = d.copy(canEditProfile = it)
-                }
-            }
-
-            PrimaryButton(
-                text = if (state.savedOk) (if (isThai) "บันทึกแล้ว" else "Saved")
-                else (if (isThai) "บันทึกสิทธิ์" else "Save permissions"),
-                onClick = { viewModel.savePermissions(d) },
-                isLoading = state.saving
-            )
-
-            val isCurrentOwner = state.isOwner || state.myRole == "owner"
-            val canTransferToThisMember = isCurrentOwner && d.userId != state.myUserId && d.role != "owner"
-
-            if (canTransferToThisMember) {
-                OutlinedButton(
-                    onClick = { showTransferConfirm = true },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE65100)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE65100).copy(alpha = 0.5f))
+            AccessCapabilities.SECTIONS.forEach { section ->
+                PermSection(
+                    icon = permissionSectionIcon(section.id),
+                    titleTh = section.titleTh,
+                    titleEn = section.titleEn
                 ) {
-                    Icon(Icons.Filled.SwapHoriz, null, tint = Color(0xFFE65100), modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (isThai) "โอนสิทธิ์เจ้าของหลักให้ผู้ใช้นี้" else "Transfer primary ownership",
-                        fontWeight = FontWeight.Bold
-                    )
+                    section.items.forEach { item ->
+                        PermToggle(
+                            titleTh = item.titleTh,
+                            titleEn = item.titleEn,
+                            checked = item.key in caps,
+                            onChange = { on ->
+                                val next = if (on) caps + item.key else caps - item.key
+                                caps = next
+                                viewModel.saveCapabilitySet(userId, member.role, next)
+                            }
+                        )
+                    }
                 }
             }
 
             val canRemoveThisMember = AccessRoleLabels.canRemove(
                 myRole = state.myRole,
-                targetRole = d.role,
-                isSelf = d.userId == state.myUserId
+                targetRole = member.role,
+                isSelf = member.userId == state.myUserId
             )
 
             if (canRemoveThisMember) {
-                TextButton(
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
                     onClick = { confirmRemove = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Error),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Error.copy(alpha = 0.45f))
                 ) {
-                    Icon(Icons.Filled.Delete, null, tint = Error)
+                    Icon(Icons.Filled.PersonRemove, null, tint = Error, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isThai) "ถอดสิทธิ์ผู้ใช้นี้" else "Remove access", color = Error)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "ลบสิทธิ์การเข้าถึง",
+                            color = Error,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            "Remove this user's access",
+                            color = Error.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
 
@@ -197,60 +175,8 @@ fun PermissionSettingsDetailScreen(
         }
     }
 
-    if (showTransferConfirm) {
-        val targetName = draft?.displayName ?: ""
-        AlertDialog(
-            onDismissRequest = { if (!state.transferring) showTransferConfirm = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Filled.SwapHoriz, null, tint = Primary)
-                    Text(
-                        if (isThai) "โอนสิทธิ์ความเป็นเจ้าของ" else "Transfer Ownership",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            text = {
-                Text(
-                    if (isThai)
-                        "คุณแน่ใจหรือไม่ว่าต้องการโอนสิทธิ์ความเป็นเจ้าของของ \"${state.childName.ifBlank { "ลูก" }}\" ให้กับ \"$targetName\"?\n\nเมื่อโอนแล้ว คุณจะถูกเปลี่ยนบทบาทเป็น \"ผู้ปกครองร่วม (Co-owner)\" และผู้ใช้ใหม่จะได้รับสิทธิ์เจ้าของหลักเต็มรูปแบบ"
-                    else
-                        "Are you sure you want to transfer ownership of \"${state.childName.ifBlank { "your child" }}\" to \"$targetName\"?\n\nYou will become a Co-owner and they will receive full primary owner authority."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.transferOwnership(userId) { ok ->
-                            if (ok) {
-                                showTransferConfirm = false
-                                onBack()
-                            }
-                        }
-                    },
-                    enabled = !state.transferring
-                ) {
-                    if (state.transferring) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Primary)
-                    } else {
-                        Text(
-                            if (isThai) "ยืนยันโอนสิทธิ์" else "Transfer",
-                            color = Primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTransferConfirm = false }, enabled = !state.transferring) {
-                    Text(if (isThai) "ยกเลิก" else "Cancel")
-                }
-            }
-        )
-    }
-
     if (confirmRemove) {
-        val targetName = draft?.displayName ?: ""
+        val targetName = member?.displayName ?: ""
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text(if (isThai) "ถอดสิทธิ์ $targetName?" else "Remove $targetName?", fontWeight = FontWeight.Bold) },
@@ -277,16 +203,51 @@ fun PermissionSettingsDetailScreen(
 }
 
 @Composable
-internal fun PermSection(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun PermSection(
+    icon: ImageVector,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    PermSection(icon = icon, titleTh = title, titleEn = null, content = content)
+}
+
+@Composable
+internal fun PermSection(
+    icon: ImageVector,
+    titleTh: String,
+    titleEn: String?,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(icon, null, tint = Primary)
-                Text(title, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                Icon(icon, null, tint = Primary, modifier = Modifier.size(22.dp))
+                Column {
+                    Text(
+                        titleTh,
+                        fontWeight = FontWeight.Bold,
+                        color = OnBackground,
+                        style = MaterialTheme.typography.titleMedium,
+                        lineHeight = 22.sp
+                    )
+                    if (!titleEn.isNullOrBlank()) {
+                        Text(
+                            "($titleEn)",
+                            color = OnSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
             content()
         }
@@ -295,16 +256,49 @@ internal fun PermSection(icon: ImageVector, title: String, content: @Composable 
 
 @Composable
 internal fun PermToggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    PermToggle(titleTh = label, titleEn = null, checked = checked, onChange = onChange)
+}
+
+@Composable
+internal fun PermToggle(
+    titleTh: String,
+    titleEn: String?,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                titleTh,
+                style = MaterialTheme.typography.bodyMedium,
+                color = OnBackground,
+                fontWeight = FontWeight.Medium
+            )
+            if (!titleEn.isNullOrBlank()) {
+                Text(
+                    titleEn,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceVariant,
+                    fontSize = 12.sp
+                )
+            }
+        }
         Switch(
             checked = checked,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = Primary)
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = Primary,
+                checkedThumbColor = Color.White,
+                uncheckedTrackColor = Color(0xFFE4E6EB),
+                uncheckedThumbColor = Color.White,
+                uncheckedBorderColor = Color.Transparent
+            )
         )
     }
 }

@@ -1,7 +1,7 @@
 # 🧠 NongRak AI — Memory Graph
 
 > Single source of truth for this project. I read & update THIS file instead of re-scanning full context.
-> Last updated: **2026-09-16 (Cursor — caregiver handover checklist, batch CP)** · Branch **`Track-YSC.02`** · HEAD **`79d1df4`**
+> Last updated: **2026-09-24 (Cursor — nutrition summary continued from Claude)** · Branch **`Track-YSC.02`**
 
 ---
 
@@ -3472,3 +3472,265 @@ User: parent "ส่งต่อการดูแล" (the screen that assigns 
 - **#2 `GuestLockGuard`** (40 call sites, unchanged thanks to a defaulted `authViewModel`): LINE (green, first) + Google one-tap, then email sign-up / sign-in as links. On success it routes like Login: `resolveHomeForPortal(PARENT)`, then `childViewModel.loadChild()` (which replaces the guest child, since the auth user is now non-null), then Dashboard. It does not return to the blocked screen: a new account has no child for it to act on (`b1dc01d`).
 - **Not verified on a device:** the LINE/Google launch from the wall, and the minutes form on a phone.
 - **Walkthrough follow-up (`fd54a49`)**: `SignUpScreen` puts LINE/Google first and cuts the email form to name + email + password. Phone was removed (nullable; info-ask `guardian_phone` collects it later); confirm-password kept at user request (removed then restored). Terms checkbox and adaptive hCaptcha kept. `AddChildChoiceScreen` = one big "เพิ่มลูกของฉัน" card plus two situation-worded rows (สูติบัตร auto-fill, join a spouse's child); same 3 callbacks. `GuestLockGuard` LINE button is now gated on `LineAuthHelper.isConfigured`. Still one extra step for a first child: `MedicalDisclaimer` before OnboardingStep1 (kept on purpose, it is the medical disclaimer).
+
+## BATCH CV — Beta V.1.1 / versionCode 29 (2026-09-21)
+
+Owner: first task after Claude's CU.11 work — ship name **Beta V.1.1**, Play `versionCode` **29**.
+
+- `app/build.gradle.kts`: `28` / `"1.0.1"` → `29` / `"Beta V.1.1"`. Settings and Feedback already read `PackageManager.versionName`, so the footer updates with the next install.
+- Signed `bundleRelease` BUILD SUCCESSFUL (26m 52s). Copied to `LullabyAI/Releases/Beta-V.1.1/com.publish.NongRak-vc29-Beta-V.1.1.aab` (~49.4 MB). Unsigned Gradle twin: `app/build/outputs/bundle/release/app-release.aab`.
+
+## BATCH CW — Google / LINE auth button logos (2026-09-21)
+
+Owner: replace placeholder Material icons on sign-in / sign-up Google and LINE buttons with files from `D:\120.NongRak\Picture` (`Google.svg` is actually WEBP 250²; LINE PNG is WEBP 980² with alpha).
+
+- Drawables: `res/drawable-nodpi/ic_logo_google.png` + `ic_logo_line.png` (cropped to alpha bbox, 192²).
+- Shared `GoogleLogo` / `LineLogo` in `SocialBrandIcons.kt`. LINE sits on a white disc so the green bubble stays visible on the `#06C755` button.
+- Wired on `LoginScreen`, `SignUpScreen`, `GuestLockGuard` (Google + LINE), `DoctorSignInScreen` / `DoctorSignUpScreen` (Google). Header AccountCircle on Login and LINE OA `LineLinkScreen` left as-is.
+
+## BATCH CX — empty vitals as none, activity-history tap-to-record, question drip (2026-09-21)
+
+Owner: four product notes after the Google/LINE logos.
+
+1. **Height / weight show none** when the parent cleared them or deleted the last growth rows. `updateVitals(..., clearMissing)` writes JSON null; Hub / Summary / Growth History use `VitalsFormat` ("ไม่มี" / "None") instead of `-`.
+2. **ประวัติกิจกรรม:** a wipe shows "คืนข้อมูลนี้เป็นไม่มี" / "Reverted this information to none" (not a blank dash). Restore is hidden on those wipes. Tapping แก้ไขข้อมูล / แก้ไขเวลา / บันทึกใหม่ opens the matching record page.
+3. **Question banner:** unanswered stay on the stack. At most **3 new / hour**, **12 stacked**, **12 introduced per day**. Sleep / milk / play / visit questions get **บันทึกเลย** to the record screen.
+
+## BATCH CY — กราฟพัฒนาการ menu opens สถิติ (2026-09-22)
+
+Hub tile `กราฟพัฒนาการ` now navigates to `Screen.StatisticsInsights` (สถิติ), not Growth History. Child Info already used that route.
+
+## BATCH CZ — Permission Settings Detail + Access Denied (2026-09-22)
+
+Owner: replace per-person permission settings and show Stitch Access Denied on every page a member cannot open. Header stays standard `LullabyTopBar`. Stitch names: **Permission Settings Detail (พร้อมสิทธิ์บันทึกกิจกรรมและการพบแพทย์)** and **จำกัดสิทธิ์การเข้าถึง (Access Denied)**.
+
+- **Settings UI** (`PermissionSettingsDetailScreen`): four Stitch sections (health, visits/care, meds/nutrition, documents/profile), bilingual stacked toggle labels, auto-save on switch, red ลบสิทธิ์การเข้าถึง. Role chips / transfer / save button removed (not in the photo). Role editor (`RoleManagementScreen`) uses the same 14 toggles.
+- **Access Denied** (`MemberAccessBlockedScreen`): lock + Secured, context card, 3-step request, Request Access, chat, back to Home, PDPA & HIPAA footer.
+- **Guard:** `PermissionAccessGuard` wraps capability-gated parent routes (health, growth, visits, activities, meds, feeding, nutrition, sleep, documents, profile, Connect). Guests still hit `GuestLockGuard` on writes. Owners / co-owners pass. Connect still uses `book_doctor` (now labeled Log Doctor Visits).
+- **Caps:** `view_activities`, `log_activities`, `log_medications`, `log_feeding`, `view_nutrition`, `log_sleep` added to `valid_child_capabilities()` + `default_capabilities_for_role`. App sends `p_capabilities`. `request_child_capability` logs `access_requested` and inserts a `notifications` row for the owner (`คำขอเพิ่มสิทธิ์`, ทั่วไป tab). The owner's open app polls and shows the bell badge plus the in-app banner. Pre-migration rows with none of the new keys still get daily-care access until the owner saves the new grid.
+- Local SQL: `LullabyAI/supabase/migrations/20260922120000_expand_child_daily_care_capabilities.sql`. Compile `:app:compileDebugKotlin` GREEN.
+
+## BATCH DA — Nutrition summary from the Thai table (2026-09-24) · FINISHED in code
+
+Claude hit its session limit while finishing สถิติ → โภชนาการ. Cursor confirmed the page is in place and added the unit test Claude's notes said was still missing.
+
+- **Done:** `NutritionInsightsScreen` (Stitch detailed summary, water card left off). Energy ring, macros, vitamin/mineral rows, Nutri-Bot tips, expandable source card.
+- **Numbers:** targets from `DriReference` (Thai DRI 2563, `assets/nutrition/dri_th_2563.json`). Intake from `ThaiFoodTable`. Foods the table lacks go through `NutritionAiService.estimatePer100g` once per name. Vitamin D, B12 and DHA are not in the table, so those three stay AI-judged and are labelled that way. Breastfed minutes and foods with no kcal stay uncounted.
+- **Wiring:** `NutritionViewModel.loadDayNutrition`. Opened from สถิติ.
+- **Test:** `DayNutritionTest` — portion weight, scaling, and "a gap is incomplete, not low". `:app:testDebugUnitTest --tests com.lullabyai.app.util.DayNutritionTest` GREEN (2026-09-24).
+- **Not on a device:** the summary screen itself has not been opened on a phone.
+- **Committed by Claude (2026-09-24):** data `89896fc` (DRI + 1,066-food table + `tools/fct` transcriptions/build script) and page `9dca0a1` (`DriReference`, `ThaiFoodTable`, `DayNutrition`, `estimatePer100g`, VM, screen) with `NutritionReferenceTest` (15 cases on the real assets) — GREEN alongside Cursor's `DayNutritionTest` (4). Cursor's test file is still untracked. The DRI now also replaces the old US-IOM brackets behind `targetKcal/targetMacros/targetCalciumMg/targetIronMg` on the other nutrition screens. Food-table groups not yet transcribed: spices (10), insects (13), misc (14) — candidates for Typhoon OCR.
+
+- **Nutrition hub rebuilt (Claude, 2026-09-24, `fa8f379`):** `nutrition/NutritionScreen.kt` redone to Stitch "โภชนาการและการเจริญเติบโต (Nutrition & Growth Guardian)". Header card (energy ring vs DRI, milk + boiled-water tiles, Insights button → NutritionInsights), 2 risk cards (overweight = `DayNutrition.overweightRisk(WHO BMI-for-age z from profile, energy share)`; undernutrition = Thai 5 หมู่ via `DayNutrition.thaiGroups(table group)` + `NutritionAiService.classifyThaiGroups` for dishes/unmatched, cached `aiGroups`), 4 pillars (protein/carb/Ca/Fe, `overallShare` capped per nutrient), 5 tool tiles (CalorieCalculator, Exercise, RefrigeratorScanner, MilkRecord, FoodHistory), 2 AI menus, AI insight, allergy card kept. Decisions (user): water logged on MilkRecord as `milk_type = "water"` from 6 months (no migration, no DB constraint on milk_type); `MilkLog.isWater` filters it out of milk sums in NutritionVM, NutritionRepository.getDailySummary, ParentHandoffBrief, WidgetData, InfoAskCatalog.hasMilkSince; units ml; allergy card kept. No fat-share rule for หมู่ 5 (egg/milk/nuts are หมู่ 1; missing หมู่ 5 prompts adding oil). `deficientNutrients` now prefers table totals when fresh (`totalsFor` guard). Tests: NutritionReferenceTest 18, full suite 312 green. Not device-tested. AI chat/LINE milk tools still only know breast/formula.
+
+- **Log Food + Record Food rebuilt (Claude, 2026-09-24, `6f6c7fe`):** `CalorieCalculatorScreen` = Stitch "AI Calorie & Nutrition Calculator" (energy header, named camera action via `TakePicture` + FileProvider, portion presets, spill chips, this-sitting list via `mealFoodIds` + `clearMealSession`, 4-macro card incl. fibre, Ca/Fe and Na pills, snackbar on save). `EditFoodEntriesScreen` = Stitch "ไทม์ไลน์อาหารวันนี้" (day arrows + picker, energy + 4 macro minis, search, meal-slot filters, per-dish cards with real photo or meal symbol, eaten share, ≥25%-of-day "high in" chips, allergen warning). Data: migration `20260924120000_food_photo_and_eaten.sql` adds `food_logs.photo_path` (reuses the **care-media** bucket, `{child}/{uploader}/file`, member-read policy — no new bucket) and `eaten_pct`; `addFood` now returns the row id. `DayNutrition` gains `Portion.logId/amountOf`, `fibreTargetG` (age+5 rule, null <24 mo — the DRI book has no fibre table), `strongPoints`. AI: `estimateFood`/`estimateFoodFromPhoto` ask for `gemma-4` by name via a new optional `model` field on `ai-generate` → `tryLocal`; typed estimate dropped `useSearch` (it forced the cloud path). **User decisions:** cloud fallback allowed when the box is off; "clear all" clears the sitting + form only, never rows; history screen kept. **Pending:** `supabase functions deploy ai-generate`, and secrets `LOCAL_AI_URL` / `LOCAL_AI_VISION=true` (+ `LOCAL_AI_MODEL`) for Gemma 4 to actually answer. Tests 315 green.
+
+- **Pantry + tutorial rebuilt (Claude, 2026-09-25, `259facd`):** migration `20260925120000_pantry_household_and_food_trials.sql` (applied). **fridge_ingredients is now HOUSEHOLD-scoped**: new `owner_user_id` filled by trigger `fridge_ingredients_set_owner` from `children.user_id` (client cannot set it); RLS = `is_household_member(owner_user_id)` (owner, or member of ANY child of that owner) for select/update/delete, insert checked on the child. Rule the user asked for: H owns J+A → one shared fridge; nanny U of J sees H's fridge; U also caring for G (owner P) sees P's fridge separately — never merged. `sync_fridge_ingredients` RPC dropped, plus `repo.syncFridgeIngredients` / `setFridgeIngredients` / `vm.syncFridgeToSibling`. New columns bought_on/expires_on/storage/storage_note/note. **food_trials** table = the 3-4 day wait rule, **per child** (unique on child + lower(food_name)); allergic result also writes `allergies`. `util/PantrySafety.kt` (+6 tests): expiry buckets (URGENT ≤1d, SOON ≤3d, UNKNOWN when no date), WATCH_DAYS=4, trialState (no row = UNTESTED, never SAFE). Screens: RefrigeratorScannerScreen = Stitch คลังวัตถุดิบ; RecipeDetailScreen = tutorial (video hero, 4 stats, ingredient list pre-ticked from pantry, `vm.logRecipeAsMeal` uses the recipe kcal, pantry NOT auto-deducted — user's choice). Tests 326 green. Not device-tested; the two-family nanny case needs a real second account to confirm end-to-end.
+
+- **Calorie check rebuilt (Claude, 2026-09-25, `b39586e`):** `CalorieCheckScreen` = Stitch "ระบบวิเคราะห์อาหารเด็กเล็กด้วย Vision AI". `NutritionAiService.CalorieCheck` extended: portionText/portionGrams/meal/fibreG/ironMg/calciumMg/sodiumMg/fromTable, shared `CHECK_SCHEMA` + `JsonObject.toCheck()` for both the typed and photo prompts, both now `model = ClaudeClient.GEMMA`. New `NutritionViewModel.fromTableIfKnown()`: when `ThaiFoodTable.match(itemName)` hits, the กรมอนามัย per-100g row replaces the AI numbers scaled to `portionGrams`, and sets `fromTable` — badge reads อ้างอิงตารางกรมอนามัย vs ประเมินโดย AI. Page: child header + daily target, input card (text, สแกนกล้องสด AI via TakePicture+FileProvider, อัปโหลดภาพ, cancel while loading), result card (meal, dish, portion, kcal ring vs DRI target, พลังงานคงเหลือวันนี้ from `dayIntakeKcal()`, 4 macro cells incl. fibre vs `DayNutrition.fibreTargetG`), mineral card (Fe/Ca vs DRI, sodium vs DRI ceiling), advice card. **Deliberately NOT reproduced from the mockup:** the "98% แม่นยำ" score (model self-confidence is not a measurement) and "ปลอดภัย 100% / ไม่พบสารก่อภูมิแพ้" — replaced by a name-match statement against the child's own allergy records, which also says when there are no records to check. Tests 326 green; not device-tested.
+
+- **Milk/water recorder rebuilt (Claude, 2026-09-25, `b746e79`):** `MilkRecordScreen` = Stitch "สรุปการรับของเหลววันนี้". Migration `20260925160000_milk_water_detail.sql` (applied) adds to `milk_logs`: `subtype` (direct|pumped for breast, boiled|mineral|warm for water), `left_min`/`right_min` (0-120 check), `temperature`, `reaction`, `method`; `duration_min` still holds the TOTAL so existing readers (food page, handoff, health book, widget) are untouched, and `milk_type = water` still drives `MilkLog.isWater`. Conditional sections as the user asked: เข้าเต้า → per-side timer (1-min tick via `delay(60_000)`, +5/+10, สมดุลสองข้าง when |L-R| ≤ 3); ปั๊ม/นมผง/UHT → ml with ml-oz toggle + อุณหภูมินม; water tab → water kind, labelled quick amounts, วิธีให้ดื่ม. UHT disabled under 12 months. New `util/HydrationGuide.kt` (+6 tests): `milkTargetMl` from DRI energy ÷ 0.67 (×0.6 at 6-11 mo, **null from 12 mo** — no ml target), `waterTargetMl` (0 under 6 mo, 120 at 6-11, 240/year capped at 960), `waterNotAdvised`, `balance`, `toOunces`. **Under 6 months the water tab is closed with an explanation** rather than showing a goal. Tests 332 green; not device-tested.
+
+- **Photo fix + activity page (Claude, 2026-09-25, `711e275`):** (1) **Avatar bug**: `children.avatar_url` is a private bucket PATH, so passing it to Coil showed nothing. `NutritionUiState.childAvatarUrl` now holds `StorageHelper.signedAvatarUrl(...)` (signed in `load()`); hub, CalorieCalculator and CalorieCheck read it. Any future nutrition screen must use `ui.childAvatarUrl`, never `child.avatarUrl`. (2) **Feed timer**: starts at 0 (was 10) and each side has -5/+5/+10; the -5 disables at 0. (3) **ExerciseScreen redesigned** as the burn tracker and linked to nutrition: goal is MINUTES per WHO under-fives (30/day <12mo tummy time, 180/day after) via new `util/ActivityGuide.kt` (+6 tests); kcal shown only as an estimate of logged activities; blue BalanceCard compares `dayIntakeKcal()` vs DRI energy AND minutes vs goal, with a button to `Screen.Nutrition`. **Deliberate:** `ActivityGuide.Balance` has no "eat less" outcome — MOVE_MORE / EAT_MORE / BOTH_GOOD / EARLY only, and a test asserts that eating 160% of target still returns BOTH_GOOD. Metabolism note explains why play time, not kcal, is the measure. Tests 338 green; not device-tested.
+
+- **Community rebuild round 1 of 4 — post kinds, polls, safety (Claude, 2026-09-27, uncommitted):** The community goes from one post type to three, per Stitch mockups 51-53 and 72-76. Rounds 2-4 (profiles+friends, groups, E2E chat) are NOT built.
+
+  **Migrations, all applied to `rdylsezwjdujvllyjhqb`:**
+  - `20260927120000_community_post_kinds_and_polls.sql` — `community_posts` gains `kind` (post|thread|poll, default post so every existing row stays valid), `title`, `media_urls` jsonb (max 10; `image_url` stays the cover so older rows and older app builds still render), `comments_enabled`, and the thread-only `is_anonymous`/`is_urgent`/`ai_assist`. Check constraints mirror the composer exactly: title required unless post, thread title 80 / body 1000, otherwise 200/2000, thread tags max 2, and the three thread flags are refused on any other kind. `community_comments.is_ai` marks an AI reply in the DATABASE, so no client can mistake it for a person. New `community_polls` + `_options` + `_votes` with every rule from mockup 73 in triggers: closed polls refuse both new and withdrawn votes, single-answer polls refuse a second row by name (`poll_single_choice_already_voted`), an option must belong to its own poll, voter-added options need `allow_user_options` and stop at 6.
+  - `20260927130000_community_trigger_functions_not_callable.sql` — the Supabase advisor flagged the new poll guards as directly callable by signed-in users; revoked, along with the three pre-existing `*_recount` functions flagged the same way. Triggers still fire: a trigger runs as the table owner whatever the caller may execute.
+  - `20260927140000_community_safety.sql` — rate limits in Postgres, not the client (10 posts / 60 comments / 100 votes / 20 reports per hour; AI comments do not consume the author allowance), and `community_reports` (post|comment|poll_option, 6 reasons, one per person per thing). **Nobody can read anyone else reports** — who reported whom is what gets a parent harassed for reporting. No update policy at all; status is a dashboard job.
+
+  **Anonymity is enforced on the way out, not asked of the client.** New view `community_posts_public` (`security_invoker = true`, so RLS still applies) nulls `user_id` for anonymous threads, and a BEFORE trigger pins `author_name` to ไม่ระบุตัวตน at write time. `CommunityRepository.fetchPosts` reads the VIEW — reading `community_posts` directly from the app would silently undo this. Tracing an anonymous thread is deliberately a dashboard-only query.
+
+  **Red flags — `NongRakMedicalRouter` extended, not duplicated.** It already owned emergency detection and the 1669 warning. Added ~35 infant phrases (ซี่โครงบุ๋ม, กระหม่อมบุ๋ม/โป่ง, อาเจียนพุ่ง, ถ่ายเป็นเลือด, ผื่นจ้ำเลือด, ตัวอ่อนปวกเปียก, chest indrawing, projectile vomiting, non-blanching rash, floppy, refusing to feed) and one new `isEmergencyForAge(text, ageMonths)`: **a fever under 3 months is urgent at any temperature, and an unknown age with a fever is treated as urgent too.** It may only ever ADD a warning, never remove one — asserted by a test. 6 new tests.
+
+  **Kotlin:** `PostKind` (+`fromWire`, unknown reads as POST so a newer server cannot crash an older app), `CommunityPoll`/`CommunityPollOption` (+`resultsVisible`, `sharePercent`), `ReportReason`, new DTO fields. Repository: `fetchPostById` (a shared link opens cold — the feed holds only the newest 100), `togglePollVote` (clears the previous choice on single-answer polls, because the DB refuses a silent replace), `addPollOption` (moderated like any post — it is text every later voter reads), `report`. New `CommunityPostCards.kt` (`CommunityFeedCard`, `PollBlock`, `UrgentNotice`, `AiReplyNotice`) shared by feed and detail; new `CommunityPostDetailScreen` (share target, comments, report dialog, named DB errors turned into readable text); composer rebuilt with three tabs, thread switches and the full poll builder; the old 186-line single-kind `CommunityPostCard` deleted as dead. New routes `CommunityPostDetail`, `CreateCommunityPostOfKind`.
+
+  **User decisions this round** (recorded in `~/.claude/projects/D--Claude-Access/memory/nongrak-decisions.md`, check before re-asking): parent-to-parent-only E2E for round 4, recovery-phrase key backup, 4-round rollout, anonymity hidden from doctors too, urgent = flag plus permanent 1669 banner.
+
+  **Deliberately NOT built from the mockups:** "AI ตรวจสอบความถูกต้องแล้ว" (an AI cannot verify medical correctness), "ช่วยลดอาการได้ 70%" for colic (an efficacy figure with no source), the ราชวิทยาลัยกุมารแพทย์ citation and "ตรวจทานโดยทีมกุมารแพทย์ผู้ทรงคุณวุฒิ" — the user confirmed they have neither the guidelines nor a review team. The AI first pass itself IS built, as the user chose, with a permanent "AI ไม่ใช่แพทย์" notice under every AI comment. Poll hidden results is worded as not-yet-shown, never as secret, because the vote rows are readable by anyone who can query.
+
+  Tests 344 green. **Nothing device-tested**, and the AI first-pass writer itself (the thing that creates the `is_ai` comment) is not wired yet — `ai_assist` is stored but no comment is generated.
+
+- **Community round 2 — profiles, friends, blocks + the Call System key (Claude, 2026-09-28, uncommitted):**
+
+  **Friends.** `20260927150000_community_friends.sql` (applied): `community_friendships` (requester/addressee, status pending|accepted|declined, optional 200-char note) with a UNIQUE index on `(least(a,b), greatest(a,b))` so one pair can only ever have one live row whichever direction it was asked; RLS gives the row to its two people only, INSERT is `auth.uid() = requester_id and status = 'pending'` (a client cannot insert itself as already-accepted), and UPDATE belongs to the ADDRESSEE alone. `community_blocks` ships WITH friends, not with chat: the moment strangers can send requests a parent needs a way to make one stop. A block deletes the friendship both ways (trigger) and beats any later request (guard raises `friend_request_blocked`). 20 requests/hour/account. `profiles` gains `bio`, `city`, `discoverable`.
+
+  **Telling the other person** is a DATABASE trigger (`community_friendship_notify`), not app code: there is no FCM, so `SystemNotifier` only fires inside a live process and could never reach the person being asked. Only INSERT and accept notify; a decline is not news anyone needs.
+
+  **Profile stats.** `20260927160000_community_profile_stats.sql`: `community_friend_count(target)` and `community_mutual_friends(target)`. Both SECURITY DEFINER because `community_friendships` RLS - correctly - shows a client only its own rows, so neither number is computable client-side. `community_mutual_friends` returns ONLY people the CALLER already knows, so it never exposes a stranger's friend list. These two are the only community functions the advisor still flags for `authenticated`, and that is BY DESIGN - they are RPCs the app calls. Every trigger/guard/recount is revoked from public, anon AND authenticated.
+
+  **Badges are earned, not decoration.** New `util/ContributorLevel.kt` (+8 tests) turns real counts (posts + likes received + answers-given x2) into the mockup's badges, Top Contributor at level 4+. Answering counts double posting - helping is what to encourage and it is harder to farm. **Every badge carries `caveat()`: the level counts community participation and is NOT a medical qualification**, and a test asserts no badge string ever contains แพทย์/หมอ/doctor/expert/verified. A badge on a parenting profile is read as authority at 2am.
+
+  **Profile page** (`CommunityUserProfileScreen`): identity card (badge + caveat + progress + city + bio), stat row where the third stat was a **hardcoded "1+"** for other people and is now the real `friend_count`, friend/block action bar, request dialog with an optional screened note, เพื่อนร่วมกัน strip, เพื่อนที่คุณอาจรู้จัก strip, and tabs โพสต์ / กระทู้ถาม-ตอบ / สื่อ&วิดีโอ filtering by `kind`. New `FriendRequestsScreen` (ยอมรับ/ปฏิเสธ/block). **`discoverable` defaults TRUE**; the switch sits ON THE PROFILE beside the suggestion strip, not buried in settings, and says exactly what is shared (age BAND, never birthdate, never the child's name). Flip the default to false if PDPA/Play Families review says so.
+
+  **Call System (Antigravity damage).** `CallScreen` authenticated Gemini Live with `BuildConfig.GEMINI_LIVE_API_KEY` - a real Google key compiled into the APK and **present in the v1.1 bundle (vc30)**. Fixed: new `gemini-live-token` edge function (deployed, verify_jwt on) mints a single-use token (15 min TTL, 2 min start window); `GeminiLiveToken.fetch()` calls it; the socket uses `?access_token=` not `?key=`; the `buildConfigField` is DELETED and the generated BuildConfig verified clean. **The key must be rotated - removing it does not un-ship what already went out.** Also: the Live path never ran through `NongRakMedicalRouter`, so a voice call had no 1669 - now `isEmergencyForAge(symptoms, ageMonths)` short-circuits the model; and two invented clinical fallbacks were removed - advice with no examination behind it.
+
+  **The "{...}" notification bug** (user-reported): 4 production rows had `body` = raw JSON because the model answers in JSON even when `jsonMode = false`. Fixed once in `ClaudeClient.generateContent` via `unwrapProse` (+8 tests incl. "do not mangle text that merely mentions a brace"), since every prose generator routes through it. The title also read "ของ.พร้อมแล้ว" for an unnamed child and "ของGigaพร้อมแล้ว" with no spaces - both fixed. The 4 existing rows are untouched real user data.
+
+  Tests 360 green. **Nothing device-tested.** Rounds 3 (groups) and 4 (E2E chat) not started.
+
+- **Community round 3 - groups + group directory (Claude, 2026-10-04, uncommitted):**
+
+  **Two bugs the groups schema had quietly introduced, both found before any UI existed.**
+  `community_posts_public` was created with an EXPLICIT column list, before groups. Postgres freezes
+  a view column list at creation, so `group_id` was invisible through it - meaning (a) every post
+  written in a public group would have appeared in the OPEN feed, which reads that view with no
+  group filter, and (b) a group page could not be queried at all. `20261004120000` appends
+  `group_id` and `pinned_at`; appending is the only safe shape, since `create or replace view` may
+  add columns at the end and may not reorder or retype the existing ones.
+
+  **Counts come from a function, never from rows.** `20261004130000` adds
+  `community_group_stats(uuid[]) -> (group_id, member_count, posts_today, has_doctor)`, one call for
+  a whole page of cards. Needed because `community_group_members_select` returns only the rows of
+  groups the caller is IN - correct, nobody browses another group member list - which means a
+  directory card for a group you have not joined could never count its members. SECURITY DEFINER, so
+  it restates the visibility rule itself: a private group reports its numbers only to its members.
+
+  **The pin guard now OWNS both values** rather than trusting the client: `pinned_at := now()` and
+  `pinned_by := auth.uid()`. Before, a phone with a wrong clock could pin a post into the future -
+  and `pinned_at` is exactly what the group page sorts on - while any client could name somebody
+  else as the pinner.
+
+  **App side.** `GroupsRepository` (directory, byCategory, group, join/leave, the header bell,
+  setPinned, create with moderation screening on name/description/rules, cross-group `hotThreads`
+  ranked with the SAME hot formula as the hub so the two lists cannot disagree about what hot means,
+  and `groupWriteError()` translating `pin_requires_moderator` and friends). `CommunityRepository`:
+  `fetchPosts()` now means the OPEN feed only (`group_id is null`), new `fetchGroupPosts(groupId)`
+  orders pinned-first, and NEITHER a single-post read nor a group read may touch `_posts` or the
+  offline cache any more. `addPost` carries `groupId` and no longer inserts a group post
+  optimistically into the hub feed. New `CommunityGroupsScreen` (mockups 70-71) and
+  `CommunityGroupDetailScreen` (66-69), both built from `SectionCard` to match the child-info theme.
+  New routes `CommunityGroups`, `CommunityGroupDetail/{groupId}`,
+  `CreateCommunityPostInGroup/{groupId}/compose/{kind}`; the composer took a `groupId` parameter so
+  posting into a group is possible at all. **The Group tab navigates for real now, in the hub AND
+  the profile** - the "coming next release" snackbar is gone from both.
+
+  **Refused on purpose:** no online count anywhere (there is no presence system - no heartbeat, no
+  last-seen - so mockup 66 "385 ออนไลน์" would be invented), and the doctor badge reads
+  "มีกุมารแพทย์ร่วมดูแลกลุ่ม", derived only from a moderator who actually holds the doctor role: the
+  GROUP is moderated by one, NOT any individual post checked by one.
+
+  Tests 366 green, `compileDebugKotlin` clean. **Nothing device-tested.** Round 4 (E2E chat) not
+  started.
+
+- **Full Personal AI Assistant - PLANNED, NOT BUILT (2026-10-04):** user asked for "FULL Personal AI
+  Assistance / That has own thing to do about child family", then parked it to focus on ease of use.
+  Written up in `docs/AI_ASSISTANT_PLAN.md`: the blocker is that this app has **no FCM**, so an
+  assistant cannot reach a parent while the app is closed (the same reason friend requests notify
+  from a DB trigger). Plan is `assistant_memory` + a `pg_cron` scheduler + a quiet filter (one
+  unprompted message a day, nothing 22:00-06:00, silence as the default) + every proactive message
+  gated through `NongRakMedicalRouter`, with observations and reminders allowed but conclusions
+  never. Four open decisions recorded there, deliberately unanswered.
+
+- **Ease-of-use audit (Claude, 2026-10-04, no code changed):** user shifted focus to "getting every
+  parent feel easy to use" and chose an audit document BEFORE any code. Written to
+  `docs/EASE_OF_USE_AUDIT.md`, 11 findings ranked by impact over effort, each with a file:line.
+  Measured: **190 routes, 195 wired destinations, 232 screen files, 48 quick actions.** The three
+  cheapest-and-biggest: (P1) `LogSicknessSymptoms` - the screen for "my child is ill" - is reachable
+  ONLY from a follow-up or an existing symptom row, so a parent must already have logged an illness
+  to log one; (P2) `DashboardScreen.kt:283` seeds the recommended row with `Random.nextLong()` per
+  launch, so the home screen is different every single time it opens and muscle memory is impossible;
+  (P5) the quick-action card has feeding/diaper/growth/sleep but NOT medicine, which is the 3am
+  question and a double-dose safety issue. Also flagged: two overlapping nav systems (the app footer
+  has a ชุมชน tab, then the community draws its own footer whose first item goes to Dashboard, itself
+  an app-footer tab); 8+ competing home banners; 8-screen onboarding; top-bar-only actions out of
+  thumb reach; four stacked disclaimers in `HandoffScreen` drowning out the 1669 one. **The home
+  screen redesign waits for the user to send mockups** - recorded in nongrak-decisions.md, do not
+  invent a layout.
+
+
+---
+
+## BATCH BL — nongrak-ai.vercel.app: "big company" multi-page redesign, built as a preview (2026-10-07)
+
+**Ask:** redesign the static marketing site to feel like a big-company launch (Apple / OpenAI / Gemini style): opening animation first, then information, vision focused on **AI in parenting / Smart Assistance**, prominent Google Play link, nav styled like the Siam Codex reference bar (boxed letter-spaced logo, uppercase mono links + dropdown, EN|TH segmented toggle, off-white CTA). Then: "seperate into many pages not all in one pages".
+
+**Where:** `Child-Project/Website/Site/preview/` — six pages sharing `site.css` + `site.js`:
+`index.html` (opening film → hero → scroll-lit vision manifesto → Explore tiles) · `assistant.html` (live chat demo + "knows your child" orbit) · `doctor.html` (PDF summary + PediaConnect) · `features.html` (10 features, outline numerals) · `screens.html` (9 real screenshots rail) · `contact.html` (question-led cards: download / message form / email admin). Every page ends with the download CTA. The live `/` home page was NOT touched.
+
+**Design decisions:**
+- Dark film look (#07090d), brand gradient used as light. Inter Tight + IBM Plex Sans Thai + IBM Plex Mono.
+- New asset `assets/logo-mark-mono.png`: blue mark → off-white, pink heart kept, inner white → transparent (blue vanished on the near-black nav).
+- Opening film (~3.3s, home only): spark → 8 gradient threads draw to centre → mark → "AI ที่เข้าใจ ลูกคุณ" word by word. Once per session (`sessionStorage nr_intro`), click/any key skips, skipped entirely under reduced motion.
+- Google Play: SVG badge in the official layout (**should be swapped for Google's official badge artwork before going live**), desktop QR via qrcodejs from cdnjs, sticky download bar on phones. Link is exactly the user's URL.
+- Chat demo is labelled "ตัวอย่างบทสนทนา"; each exchange maps to a shipped feature; every answer stays general and carries "ปรึกษาแพทย์". No accuracy badges, no efficacy numbers (standing rule).
+- Removed: invented "4.9★ / 100%" stats and invented testimonials. Tester sign-up demoted (app is public).
+- Contact form: FormSubmit (`_subject: NongRak Contact`) + hidden-iframe Apps Script sheet log — same proven path as before.
+
+**Bugs caught in verification:** `height="1910"` on screenshot `<img>`s overrode `aspect-ratio` (phones rendered 1928px tall and pushed the headline off-screen) → `height:auto`. `.node span` / `.play span` selectors also hit nested `.th/.en` spans → scoped to direct children.
+
+**Verified locally (port 8765):** all six pages 200 with distinct titles, shared nav + site.js on each, no console errors, film plays, manifesto lights on scroll, chat demo types when in view, orbit renders, QR renders.
+
+**NOT deployed:** `vercel --prod` from `Site/` first returned **"Not authorized"** (the CLI's logged-in account may not own the `nongrak-ai` project — `nongrak-web` deploys fine under `pgaslgofficial-9061s-projects`), and the retry was blocked by the auto-mode production-deploy guard. User must deploy or grant permission.
+
+---
+
+## BATCH BM — preview site: opening on every load, shutter hand-off, coded AI screen, hero fit (2026-10-07)
+
+User feedback on BATCH BL preview: "text and logo kinda out of side", wants the opening animation **on every open or refresh** then a transition into the page ("opening not between" — page-to-page was not the ask), and the hero phone should show an **AI Assistance screen built in code, not an image**.
+
+- **Opening rule:** head script reads `performance.getEntriesByType("navigation")[0].type` + same-origin referrer → `reload` or external arrival = full film; internal link = quick wipe (`page-in`); back/forward and reduced-motion = nothing. Film markup is injected by `site.js` on all six pages (removed from index.html); a `body::before` black cover painted before JS prevents a flash.
+- **Hand-off (replaces plain fade/wipe):** words + threads blur out → mark (cloned out of the film) flies via WAAPI onto `.nav .brand img`'s rect (nav logo hidden until it lands) → film removed under 4–6 vertical **shutters** that lift centre-outward (85ms stagger, glowing gradient trailing edge) → page builds in: headline lines rise, phone rises out of a 12px blur, hero glow blooms, nav items drop in.
+- **Hero fit:** phone width `clamp(220px, (100svh − 230px) × .44, 310px)` so it never runs off the bottom; tags given `max-width` and moved to the phone edges (one spilled off-screen right).
+- **Coded AI assistant screen** (`.ai-home`, all sizes in `cqw`): status bar, "✦ Smart Assistance" badge, pulsing conic-gradient AI orb with the mark, greeting + "วันนี้ให้น้องรักช่วยอะไรดีคะ?", child context card (sample "น้องมะลิ · 8 เดือน", "AI รู้จักน้อง"), animated 320/550 kcal meter, 3 staggered suggestion chips, input bar with live voice waveform + call button. One-shot entrances paused until `.ready`.
+- **Gotcha:** a `container-type` element's OWN padding/font-size in `cqw` resolves against the viewport, not itself — squeezed the screen. Use `%` padding on the container; `cqw` only on children.
+
+Still not deployed (BATCH BL blocker stands).
+
+**BATCH BM addendum — hero screen restyled.** User: the coded screen "look terrible", should match "the latest recent image" (= the Siam Codex nav bar reference) in an assistance/parenting theme. Rebuilt as `.screen.sc`: graphite gradient, boxed "NONGRAK" lockup, mono uppercase labels (`[ AI ASSISTANT ]`, AI ONLINE dot), greeting, child profile box with a 3-cell hairline stat grid (SLEEP / MEALS / KCAL), off-white AI INSIGHT block with blinking caret, 7-day sleep bar chart, numbered 01–03 question rows with arrows, input with TEXT|VOICE segmented toggle (mirrors the nav's EN|TH). Floating hero tags removed — they covered the screen. Device frame made neutral graphite.
+
+**BATCH BM addendum 2 — hero phone replaced by an AI core.** User asked for something other than a phone; chose "AI core + data". `.core-stage` (square, `container-type`): glowing core = breathing radial glow + 3 expanding waves + dashed/gradient rings spinning opposite ways + dark sphere with spinning conic rim and the logo mark. Four Siam-Codex-style data boxes (SLEEP 11:20 · MEALS 320 KCAL · GROWTH P50 ▲ · VACCINE NEXT 2 WK) float around it, each joined to the core by a curved dashed SVG stream with dots travelling in (SMIL `animateMotion` + `mpath`). One stream flows out to an off-white AI INSIGHT card that types a tip, then cycles every ~4s through sleep → meals → growth → vaccine; the source box flips to off-white and its stream turns gradient. Copy stays general + "ปรึกษาแพทย์". Core blooms in from blur after the shutters lift. Verified in-bounds at 1009×768, no console errors.
+
+---
+
+## BATCH BN — preview site: Home v2 (3 parts), FAQ, LINE OA, no PediaConnect, no screenshots (2026-10-07)
+
+Decisions (also in memory `nongrak-decisions.md`): Home shows the app's three parts **ผู้ช่วย AI · ไดอารี · คอมมูนิตี้**; **no real app screenshots** (UI changes too often); Diary = child's memory book; Community is live; **no PediaConnect** anywhere (user won't take responsibility for it); **no News** (maintenance); FAQ yes; LINE OA yes → `https://line.me/R/ti/p/@946xkztx` (basic ID verified via API, BATCH line ~2190).
+
+**Site is now 5 pages:** `index` · `assistant` (Assistant + Know-your-child + Doctor merged; orbit holds a coded AI core) · `features` (10 items; "Connect with your doctor"/PediaConnect replaced by **Community**; Memory Journal renamed **ไดอารี ความทรงจำของลูก**) · `faq` (new, 9 Q&A rewritten from facts — old one still said "closed beta") · `contact` (LINE + email card, no duplicate download block). `doctor.html` and `screens.html` deleted (backup of the pre-change folder in session scratchpad `preview-backup-before-home-v2`).
+
+**Home flow:** hero (AI core) → shortened vision → **sticky 3-part showcase** (330vh; scroll progress picks the tab; left tabs expand with copy + "ดูเพิ่มเติม", right side swaps coded mocks: AI chat with off-white answer + chips + TEXT|VOICE; Diary with gradient memory tiles, milestone timeline, yearly-recap block; Community with post/thread/poll segment, post + top comment, poll bars) → 3 steps → privacy strip (access roles · QR expires 10 min · AI doesn't diagnose + privacy-policy link) → download (Play + **LINE** + QR). Below 900px the showcase stops being sticky and tabs switch on tap.
+
+**Content rules applied site-wide:** flat nav (หน้าแรก · ผู้ช่วย AI · ฟีเจอร์ · คำถามที่พบบ่อย · ติดต่อเรา), no cross-page `[ NN ]` numbers, no '.' after Thai headings, Thai headings in Thai mode, Thai multi-line headings at line-height ≥1.22 (1.08 clipped ุ/ู).
+
+Verified on the local preview: all three showcase states render at their scroll points, FAQ opens/closes with FAQ marked current in nav, assistant page has no `app-0x.jpg` left, no "PediaConnect" in any file, no console errors. **Still not deployed.** Pricing question left out of the FAQ — user never confirmed whether the app is free.
+
+---
+
+## BATCH BO — preview site: no page transitions; privacy page rebuilt; copy aligned to the policy (2026-10-07)
+
+- **Page-to-page transitions removed** at the user's request (head-script `page-in` branch, the link-click wipe in `site.js`, and the wipe CSS). The opening film still plays on open/refresh only.
+- **`preview/privacy.html` rebuilt** in the site design: hero + version line + PDPA preamble, sticky contents list (highlights the section in view), 13 numbered sections + contact, square bullets, emoji removed. **Policy wording is verbatim** from `Site/privacy.html` — verified by script: 231/231 40-char windows of the old body text present in the new page. The live root `Site/privacy.html` (the URL Google Play links to) was **not** touched. Preview pages now link to `privacy.html`.
+- **Site copy brought in line with the policy:** policy §6 says the app has *no doctor-side mode, no appointment booking, no clinician-entered records*. Removed "grant access to คุณหมอ" (home privacy strip, features #08 → "invite co-parents or caregivers, see access history, revoke any time") and "doctor-verified vaccine certificates" (features #02).
+
+**OPEN — policy is out of date (needs the user, not me):** it is v1.0.3 of 5 Aug 2026. It does not cover **Community** (public posts, threads, polls, top comments, verified-doctor badge — which also implies a doctor role the policy says doesn't exist) or **chat incl. E2E keys/recovery phrase**, nor the **self-hosted Gemma** AI provider for nutrition. Under PDPA those need disclosure before/when shipped. I did not write legal text.
+
+---
+
+## BATCH BP — new marketing site promoted + deployed; nongrak-web reduced to the signed-in app (2026-10-07)
+
+**Two sites, now with clean roles:**
+- **`nongrak-ai.vercel.app`** (static, `Child-Project/Website/Site/`) = the public marketing site. The preview was promoted to the root: `index · assistant · features · faq · contact · privacy` + `site.css`/`site.js`. Asset paths fixed (`../assets` → `assets`), noindex removed, canonical/OG/Twitter on every page, JSON-LD SoftwareApplication (with Play `downloadUrl`) on home, sitemap lists all 6 pages. **Privacy wording re-verified identical to the old live file (231/231)** — the URL Play links to keeps the same text. The old single-page tabbed `index.html`, old `privacy.html`, old sitemap and the whole `preview/` folder are backed up in session scratchpad `site-backup-before-promote/`. Deployed — **the earlier "Not authorized" did not recur**.
+- **New "เข้าสู่ระบบ ↗" link** in the nav (desktop + mobile sheet) on every page → `https://nongrak-web.vercel.app/login`; FAQ gained "ดูข้อมูลลูกบนเว็บได้ไหม?".
+- **`nongrak-web.vercel.app`** (Next.js) = the signed-in part only. Marketing routes `/features /how-it-works /release /faq /contact`, `components/landing/*` and `app/home.module.css` moved out to scratchpad `nongrak-web-trash/` (full `src` backup in `nongrak-web-backup/`). Middleware `PUBLIC_PAGES` = `{"/"}`. Old marketing URLs now fall to the auth gate → `/login?next=…`.
+- **Sign-in redesigned** as `src/components/LoginScreen.tsx` + `.module.css`, used by both `/` and `/login`, in the marketing site's graphite style (boxed mono brand, "Sign in" kicker, gradient title, LINE green + off-white Google buttons, notices for `unlinked`/`no_account`/errors, link back to the marketing site + privacy). All logic carried over unchanged (`nr_next` cookie, bare `redirectTo`, `/auth/line?next=`, `LiffAutoLogin`). **`/` renders the sign-in screen in place rather than redirecting** — it is the LIFF endpoint and LIFF state rides the query string. IBM Plex Mono loaded only in this component.
+- **Gotcha:** the page's `::before` grid (mask-image) and `::after` glow (filter: blur) painted *over* the z-index:1 card despite `z-index:auto`. Fixed with `isolation:isolate` on the page and `z-index:-1` on both layers.
+
+Verified live: marketing 6 pages 200 with correct titles, sign-in link present, no noindex; nongrak-web `/` + `/login` 200 with the new screen, `/dashboard` → login, `/card/*` public, `/auth/callback` still reports `no_code`. `tsc` clean for `src` (stale `.next` validators only); eslint errors pre-existing in `link/`, `verify-email/`, `health/`.
+
+**Still open:** privacy policy content is out of date (no Community/chat/Gemma — see BATCH BO); FAQ has no pricing answer; Play badge is a hand-drawn SVG, not Google's official artwork.
+
+---
+
+## BATCH BQ — web email sign-in/sign-up; "free for now" FAQ; privacy policy v1.1 DRAFT (2026-10-07)
+
+**Web email accounts (nongrak-web, deployed).** User asked for "username and password" sign-in + sign-up on the web. The app has **no username login** — accounts are Supabase **email + password** (`AuthRepository.signUp/signIn`), so the web uses email to stay interchangeable with the app. `LoginScreen.tsx` now has เข้าสู่ระบบ | สมัครสมาชิก tabs (segmented, like the marketing EN|TH), LINE + Google kept on both, then an email form. Rules mirror `SignUpScreen.kt`: name, email, password ≥ 8, confirm, **required PDPA consent checkbox** linking the privacy policy. Metadata written = app's (`full_name`, `account_type: parent`) + `consent_given_at` + `consent_source: "web"` (the web never writes `profiles`; the `on_auth_user_created` trigger does). Confirm-email path shows "check your email" + resend; already-registered (identities = []) is reported, not mistaken for success; errors keep the received message. **hCaptcha is adaptive like the app** (app shows it only for risky attempts and normally sends no token): widget loads only if Supabase answers with a captcha error. `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` added to `.env.local` and Vercel production (must be `--no-sensitive` for a NEXT_PUBLIC var). Password reset left to the app (web has no set-new-password page). `?mode=signup` opens the sign-up tab.
+
+**FAQ (marketing, deployed):** "ใช้งานฟรีไหม?" → free right now because newly launched; changes will be announced in advance. Decision saved: never say "free forever".
+
+**Privacy policy v1.1 — DRAFT ONLY** at `Site/privacy-draft.html` (noindex, listed in new `Site/.vercelignore`, verified 404 live; live `privacy.html` still v1.0.3). Built from facts verified this session: community posts `SELECT USING (true)` (public), anonymous threads (user_id nulled in `community_posts_public`), AI moderation (gemma, politics/monarchy/false health advice/fake news), doctor badge; child ID card `/card/[token]` exposes child name/photo/DOB/sex/blood group/nationality/allergies/chronic conditions/recent visits + parent name/relationship/phone/address without sign-in; LINE login + OA reminders (`line-*` functions) + chat commands that write data; Google sign-in; Gemini Live voice calls (`gemini-live-token`); self-hosted Gemma for food photos (cloud fallback) and moderation; chat memory (`chat_sessions.memory`); invited roles nanny/doctor/other read-only; website form → FormSubmit + Google Sheets; hCaptcha; Vercel. Excluded as not live: E2E chat (round 4 not started), doctor Google Drive (`DoctorDriveFeatures.IS_READY = false`). **Open decision:** doctor portal / PediaConnect — Welcome entry removed 2026-08-25 but code + RLS (doctor reads patient data via links/appointments) still exist; draft §6 carries a yellow TO-CONFIRM box. Card-link revocation mechanism not verified — draft says "contact us".
+
+**Needs the user:** (1) confirm PediaConnect fully off (or add a doctor-sharing section), then approve → swap draft into `privacy.html`; (2) add `nongrak-web.vercel.app` (+ localhost) to the hCaptcha site's allowed hostnames or the challenge widget won't load when Supabase asks for it.
+
+**BATCH BQ addendum — phone layout fixed on nongrak-ai.vercel.app (deployed).** User: home "looks messy" on a phone. At 375px the hero was still **two columns** (AI core on top of the headline, "Google Play" wrapping, insight card off-screen). Cause: the later-appended "HERO FIT" block re-declared `.hero-in{grid-template-columns:…2 cols}` *after* the `@media (max-width:1000px)` one-column rule, so it won the cascade. Fix appended at the very end of `site.css` ("MOBILE HERO — must stay last"): one column ≤1000px, smaller headline/kicker, nowrap Play badge, chips/insight sized to the stage, scroll cue hidden; also `.parts-stage` 640px on phones (Community mock was clipped by ~70px). Verified at 375×812: no element wider than the viewport, all 3 mocks fit. **Second trap:** the browser kept serving the *old* `site.css` from cache — real phones would too. All pages now load `site.css?v=…` / `site.js?v=…`; **bump the version on every CSS/JS change.** Also: Google sign-in on the web confirmed via Supabase auth logs to be the redirect allowlist again (8/8 redirects to `lullabyai://auth` in 24h) — waiting on the user to add `https://nongrak-web.vercel.app/auth/callback` + `/**`.

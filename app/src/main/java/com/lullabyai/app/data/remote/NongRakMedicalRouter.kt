@@ -66,14 +66,35 @@ object NongRakMedicalRouter {
     private val EMERGENCY_TERMS_TH = listOf(
         "ชัก", "เกร็ง", "หายใจไม่ออก", "หยุดหายใจ", "ตัวเขียว", "ปากเขียว", "ไม่รู้สึกตัว",
         "หมดสติ", "เรียกไม่ตื่น", "ซึมมาก", "สำลัก", "เลือดออกไม่หยุด", "กินยาผิด",
-        "กลืนสิ่งแปลกปลอม", "ไข้สูงมาก", "คอแข็ง"
+        "กลืนสิ่งแปลกปลอม", "ไข้สูงมาก", "คอแข็ง",
+        // Added when the community opened symptom threads to an AI first pass: signs a parent is
+        // likely to describe in full rather than name, and which must not wait on an answer.
+        "หายใจเร็ว", "หอบ", "ซี่โครงบุ๋ม", "อกบุ๋ม", "กระหม่อมบุ๋ม", "กระหม่อมโป่ง",
+        "ไม่ปัสสาวะ", "ไม่ฉี่", "ปัสสาวะน้อยมาก", "อาเจียนพุ่ง", "อาเจียนสีเขียว",
+        "อาเจียนเป็นเลือด", "ถ่ายเป็นเลือด", "อุจจาระมีเลือด", "ผื่นจ้ำเลือด", "จุดเลือดออก",
+        "ตัวลาย", "ไม่ยอมกินนม", "ดูดนมไม่ได้", "ตัวอ่อนปวกเปียก"
     )
 
     private val EMERGENCY_TERMS_EN = listOf(
         "seizure", "convulsion", "not breathing", "stopped breathing", "blue lips", "turning blue",
         "unconscious", "unresponsive", "won't wake", "wont wake", "choking",
-        "bleeding heavily", "swallowed", "poison", "overdose", "stiff neck"
+        "bleeding heavily", "swallowed", "poison", "overdose", "stiff neck",
+        "struggling to breathe", "chest indrawing", "grunting", "sunken fontanelle",
+        "bulging fontanelle", "not urinating", "no wet nappy", "no wet diaper",
+        "projectile vomiting", "green vomit", "vomiting blood", "blood in stool",
+        "bloody stool", "petechiae", "non-blanching rash", "mottled", "floppy",
+        "refusing to feed", "won't feed", "wont feed"
     )
+
+    /**
+     * Below this age a fever is a reason to be seen NOW, whatever the number on the thermometer.
+     * A newborn with sepsis can present with nothing but a temperature, and the reassuring answer
+     * is the dangerous one - it buys the delay. This is the single case the keyword lists above
+     * cannot catch on their own, because it depends on the child, not on the words.
+     */
+    const val FEVER_ALWAYS_URGENT_UNDER_MONTHS = 3
+
+    private val FEVER_TERMS = listOf("ไข้", "ตัวร้อน", "fever", "febrile", "temperature")
 
     /**
      * Whether [text] reads as a medical question rather than general parenting.
@@ -95,6 +116,25 @@ object NongRakMedicalRouter {
     fun isEmergency(text: String): Boolean {
         val t = text.lowercase()
         return EMERGENCY_TERMS_TH.any { it in text } || EMERGENCY_TERMS_EN.any { it in t }
+    }
+
+    /**
+     * [isEmergency] plus the one judgement that needs to know whose child this is: a fever under
+     * three months old.
+     *
+     * Used by community symptom threads, which know the child's age; the chat router does not and
+     * keeps calling [isEmergency]. A null [ageMonths] means the age is unknown, and an unknown age
+     * with a fever is treated as urgent - erring toward "go and be seen" is the only error here
+     * that is cheap to be wrong about.
+     *
+     * ponytail: keyword matching, with the ceiling that implies. It catches the phrases listed and
+     * misses everything phrased another way, so it may only ever ADD a warning, never remove one
+     * and never decide that something is fine.
+     */
+    fun isEmergencyForAge(text: String, ageMonths: Int?): Boolean {
+        if (isEmergency(text)) return true
+        val mentionsFever = FEVER_TERMS.any { it in text } || FEVER_TERMS.any { it in text.lowercase() }
+        return mentionsFever && (ageMonths == null || ageMonths < FEVER_ALWAYS_URGENT_UNDER_MONTHS)
     }
 
     /** Rough language guess: any Thai codepoint means answer in Thai. */

@@ -288,4 +288,20 @@ object ActivityKindLabels {
         "care_logs" -> "care_note"
         else -> table
     }
+
+    /** Record page for this feed kind — tapping แก้ไขข้อมูล / แก้ไขเวลา opens it. */
+    fun recordRoute(kind: String): String = when {
+        kind.startsWith("care_") -> com.lullabyai.app.ui.navigation.Screen.CaregiverUpdate.route
+        else -> when (kind) {
+            "growth" -> com.lullabyai.app.ui.navigation.Screen.AddGrowthRecord.route
+            "vaccine" -> com.lullabyai.app.ui.navigation.Screen.VaccineBook.route
+            "milk" -> com.lullabyai.app.ui.navigation.Screen.MilkRecord.route
+            "food" -> com.lullabyai.app.ui.navigation.Screen.EditFoodEntries.route
+            "waste" -> com.lullabyai.app.ui.navigation.Screen.WasteRecord.route
+            "sleep" -> com.lullabyai.app.ui.navigation.Screen.SleepTracker.route
+            "symptom" -> com.lullabyai.app.ui.navigation.Screen.LogSicknessSymptoms.route
+            "medicine" -> com.lullabyai.app.ui.navigation.Screen.AddMedicineSchedule.route
+            else -> com.lullabyai.app.ui.navigation.Screen.QuickLogHub.route
+        }
+    }
 }

@@ -118,8 +118,18 @@ object InfoAskCatalog {
      * when the parent taps save. Keeping a list that was built for another child is how one child's
      * birth weight ends up on their sibling, so a change of child always reloads.
      */
-    fun needsReload(selectedChildId: String?, loadedForChildId: String?, loaded: Int): Boolean =
-        selectedChildId != null && (loaded == 0 || loadedForChildId != selectedChildId)
+    fun needsReload(
+        selectedChildId: String?,
+        loadedForChildId: String?,
+        loaded: Int,
+        lastEvalMs: Long = 0L,
+        nowMs: Long = 0L
+    ): Boolean {
+        if (selectedChildId == null) return false
+        if (loaded == 0 || loadedForChildId != selectedChildId) return true
+        if (lastEvalMs == 0L || nowMs == 0L) return false
+        return nowMs - lastEvalMs >= HOUR_MS
+    }
 
     fun isFilled(prompt: InfoAskPrompt, answer: InfoAskAnswer): Boolean = when (prompt.kind) {
         InfoAskKind.CHIPS -> !answer.chipId.isNullOrBlank()
@@ -170,8 +180,59 @@ object InfoAskCatalog {
         return out.map { fillName(it, childName) }
     }
 
+    const val MAX_STACK = 12
+    const val MAX_PER_HOUR = 3
+    const val MAX_PER_DAY = 12
+    const val HOUR_MS = 3_600_000L
+
+    data class StackedAsk(val fieldId: String, val addedAtMs: Long)
+
+    data class AskDrip(
+        val stacked: List<StackedAsk> = emptyList(),
+        val addedToday: Set<String> = emptySet()
+    )
+
+    /**
+     * Caps how many open gaps appear at once: unanswered stay, at most 3 new per hour,
+     * never more than 12 in the stack, and at most 12 introduced per day.
+     */
+    fun drip(
+        open: List<InfoAskPrompt>,
+        previous: AskDrip,
+        nowMs: Long,
+        maxStack: Int = MAX_STACK,
+        maxPerHour: Int = MAX_PER_HOUR,
+        maxPerDay: Int = MAX_PER_DAY
+    ): Pair<List<InfoAskPrompt>, AskDrip> {
+        val byId = open.associateBy { it.fieldId }
+        val addedThisHour = previous.stacked.count { nowMs - it.addedAtMs < HOUR_MS }
+        val keptOpen = previous.stacked.filter { it.fieldId in byId }
+        val canAdd = minOf(
+            (maxStack - keptOpen.size).coerceAtLeast(0),
+            (maxPerHour - addedThisHour).coerceAtLeast(0),
+            (maxPerDay - previous.addedToday.size).coerceAtLeast(0)
+        )
+        val already = previous.stacked.map { it.fieldId }.toSet()
+        val newcomers = open.filter { it.fieldId !in already }.take(canAdd)
+        val hourGhosts = previous.stacked.filter { nowMs - it.addedAtMs < HOUR_MS && it.fieldId !in byId }
+        val stacked = keptOpen + hourGhosts + newcomers.map { StackedAsk(it.fieldId, nowMs) }
+        val addedToday = previous.addedToday + newcomers.map { it.fieldId }
+        val prompts = stacked.mapNotNull { byId[it.fieldId] }
+        return prompts to AskDrip(stacked, addedToday)
+    }
+
+    /** Record page for a question that should be filled as a log, not typed in the banner. */
+    fun recordRoute(fieldId: String): String? = when (fieldId) {
+        "sleep_last_night", "nap_today", "mood_after_sleep" ->
+            com.lullabyai.app.ui.navigation.Screen.SleepTracker.route
+        "typical_bedtime" -> com.lullabyai.app.ui.navigation.Screen.SleepSchedule.route
+        "feeding_type" -> com.lullabyai.app.ui.navigation.Screen.MilkRecord.route
+        "play_today" -> com.lullabyai.app.ui.navigation.Screen.QuickLogHub.route
+        "recent_facility" -> com.lullabyai.app.ui.navigation.Screen.RecordDoctorVisit.route
+        else -> null
+    }
+
     fun isOpen(fieldId: String, snapshot: InfoAskSnapshot): Boolean {
-        if (fieldId in snapshot.shownToday) return false
         if (fieldId in PERSIST_ANSWERED && fieldId in snapshot.answeredEver) return false
         val c = snapshot.child
         val p = snapshot.profile

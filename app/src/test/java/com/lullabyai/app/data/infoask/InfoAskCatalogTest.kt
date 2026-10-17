@@ -111,17 +111,12 @@ class InfoAskCatalogTest {
     }
 
     @Test
-    fun `skips filled one-shots and shown-today fields`() {
+    fun `unanswered gaps stay open even if they were already shown today`() {
         val prompts = InfoAskCatalog.openAll(
-            snap(
-                shownToday = setOf("sleep_last_night", "typical_bedtime", "nap_today", "play_today", "feeding_type", "recent_facility", "mood_after_sleep"),
-                // Every ask-once field, from the set itself — spelling them out here meant the
-                // test broke the day one was added, which says nothing about the behaviour.
-                answeredEver = InfoAskCatalog.PERSIST_ANSWERED
-            ),
+            snap(shownToday = setOf("sleep_last_night")),
             seed = 1L
         )
-        assertEquals(listOf("open_notes"), prompts.map { it.fieldId })
+        assertTrue(prompts.any { it.fieldId == "sleep_last_night" })
     }
 
     @Test
