@@ -957,14 +957,31 @@ fun AppNavigation(
             ) {
                 com.lullabyai.app.ui.screens.access.PermissionAccessScreen(
                     viewModel = viewModel(), navController = navController,
+                    authViewModel = authViewModel,
                     onBack = { navController.popBackStack() }
                 )
             }
         }
-        composable(Screen.ActivityHistory.route) {
+        composable(
+            route = Screen.ActivityHistory.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("authorId") {
+                    type = androidx.navigation.NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { activityEntry ->
             CapGate(childViewModel, navController, AccessCapabilities.VIEW_ACTIVITIES) {
+                val activityVm: com.lullabyai.app.viewmodel.ActivityHistoryViewModel = viewModel()
+                // จัดการครอบครัว opens this filtered to one person. Null means everyone, which is
+                // the plain entry from the activity card.
+                val onlyAuthor = activityEntry.arguments?.getString("authorId")
+                androidx.compose.runtime.LaunchedEffect(onlyAuthor) {
+                    onlyAuthor?.let { activityVm.setAuthor(it) }
+                }
                 com.lullabyai.app.ui.screens.access.ActivityHistoryScreen(
-                    viewModel = viewModel(), navController = navController,
+                    viewModel = activityVm, navController = navController,
                     onBack = { navController.popBackStack() },
                     // The screen only offers this to owners/co-owners, and only against caregivers.
                     onChat = { peerId -> navController.navigate(Screen.CareChat.route(peerId)) },

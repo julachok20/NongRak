@@ -223,7 +223,14 @@ sealed class Screen(val route: String) {
     // --- Child sync + QR approval (#4). A scan raises a PENDING request; the owner approves or
     // denies it via a Realtime popup, or from PendingAccessRequests if the app was closed. ---
     object SyncChildProfile : Screen("sync_child_profile")
-    object ActivityHistory : Screen("activity_history")
+    /**
+     * The child activity feed. [forAuthor] pre-selects one person, which is how จัดการครอบครัว
+     * shows what a single carer recorded - the screen already filters by author, so this reuses it
+     * rather than adding a second history view.
+     */
+    object ActivityHistory : Screen("activity_history?authorId={authorId}") {
+        fun forAuthor(userId: String) = "activity_history?authorId=" + android.net.Uri.encode(userId)
+    }
     object CaregiverUpdate : Screen("caregiver_update")
     object Expenses : Screen("expenses")
     /** Always records against the child whose Cost Record was opened — no child argument. */
